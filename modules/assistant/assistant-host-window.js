@@ -147,7 +147,8 @@ export function createAssistantHostWindow(options) {
     }
 
     function getAssistantMobileViewportHeight() {
-        return Math.max(240, window.innerHeight - getAssistantMobileTopOffset());
+        const baseHeight = window.visualViewport?.height ?? window.innerHeight;
+        return Math.max(240, baseHeight - getAssistantMobileTopOffset());
     }
 
     function getIframe() {
@@ -772,9 +773,9 @@ function createWindowInteractionController(options) {
         if (isAssistantMobileDevice()) {
             const topOffset = getAssistantMobileTopOffset();
             const viewportHeight = getAssistantMobileViewportHeight();
-            overlay.style.top = `${topOffset}px`;
+            const offsetTop = window.visualViewport?.offsetTop || 0;
+            overlay.style.top = `calc(${topOffset + offsetTop}px + env(safe-area-inset-top, 0px))`;
             overlay.style.height = `${viewportHeight}px`;
-            shell.style.height = `${viewportHeight}px`;
             shell.style.maxHeight = `${viewportHeight}px`;
             shell.style.minHeight = `${viewportHeight}px`;
             return;
@@ -878,8 +879,9 @@ function createWindowInteractionController(options) {
     const initializeMobileMode = () => {
         const topOffset = getAssistantMobileTopOffset();
         const viewportHeight = getAssistantMobileViewportHeight();
+        const offsetTop = window.visualViewport?.offsetTop || 0;
         overlay.style.padding = '0';
-        overlay.style.top = `${topOffset}px`;
+        overlay.style.top = `calc(${topOffset + offsetTop}px + env(safe-area-inset-top, 0px))`;
         overlay.style.height = `${viewportHeight}px`;
         titleBar.style.height = '56px';
         titleBar.style.padding = '0 16px';
