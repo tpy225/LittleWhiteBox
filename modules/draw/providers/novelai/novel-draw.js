@@ -473,10 +473,13 @@ function syncOverlayHeight() {
     const overlay = document.getElementById('xiaobaix-novel-draw-overlay');
     if (!overlay) return;
     const offsetTop = window.visualViewport?.offsetTop || 0;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
     overlay.style.top = `calc(${offsetTop}px + env(safe-area-inset-top, 0px))`;
-    overlay.style.height = `${window.visualViewport?.height ?? window.innerHeight}px`;
+    // 这里减去了顶部和底部的安全距离
+    overlay.style.height = `calc(${vh}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`;
     syncOverlayFrameLayout();
 }
+
 
 function syncOverlayFrameLayout() {
     const frameWrap = document.querySelector('#xiaobaix-novel-draw-overlay .nd-frame-wrap');
@@ -4045,11 +4048,10 @@ function createOverlay() {
     const overlay = document.createElement('div');
     overlay.id = 'xiaobaix-novel-draw-overlay';
 
-    // --- 这里是修改的部分 开始 ---
     const offsetTop = window.visualViewport?.offsetTop || 0;
     const vh = window.visualViewport?.height ?? window.innerHeight;
-    overlay.style.cssText = `position:fixed!important;top:calc(${offsetTop}px + env(safe-area-inset-top, 0px))!important;left:0!important;width:100vw!important;height:${vh}px!important;z-index:100002!important;display:none;overflow:hidden!important;`;
-    // --- 这里是修改的部分 结束 ---
+    // 这里同样减去了顶部和底部的安全距离
+    overlay.style.cssText = `position:fixed!important;top:calc(${offsetTop}px + env(safe-area-inset-top, 0px))!important;left:0!important;width:100vw!important;height:calc(${vh}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))!important;z-index:100002!important;display:none;overflow:hidden!important;`;
 
     const updateHeight = () => {
         if (overlay.style.display !== 'none') {
