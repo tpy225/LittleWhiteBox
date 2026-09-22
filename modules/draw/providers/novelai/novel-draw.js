@@ -472,7 +472,9 @@ function ensureStyles() {
 function syncOverlayHeight() {
     const overlay = document.getElementById('xiaobaix-novel-draw-overlay');
     if (!overlay) return;
-    overlay.style.height = `${window.innerHeight}px`;
+    const offsetTop = window.visualViewport?.offsetTop || 0;
+    overlay.style.top = `calc(${offsetTop}px + env(safe-area-inset-top, 0px))`;
+    overlay.style.height = `${window.visualViewport?.height ?? window.innerHeight}px`;
     syncOverlayFrameLayout();
 }
 
@@ -4043,7 +4045,11 @@ function createOverlay() {
     const overlay = document.createElement('div');
     overlay.id = 'xiaobaix-novel-draw-overlay';
 
-    overlay.style.cssText = `position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:${window.innerHeight}px!important;z-index:100002!important;display:none;overflow:hidden!important;`;
+    // --- 这里是修改的部分 开始 ---
+    const offsetTop = window.visualViewport?.offsetTop || 0;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    overlay.style.cssText = `position:fixed!important;top:calc(${offsetTop}px + env(safe-area-inset-top, 0px))!important;left:0!important;width:100vw!important;height:${vh}px!important;z-index:100002!important;display:none;overflow:hidden!important;`;
+    // --- 这里是修改的部分 结束 ---
 
     const updateHeight = () => {
         if (overlay.style.display !== 'none') {
