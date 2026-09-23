@@ -217,6 +217,11 @@ const registerButtonToSubContainer = (messageId, buttonEl) => {
   if (!buttonEl) return false;
   const message = document.querySelector(`${SELECTORS.chat} ${SELECTORS.messages}[mesid="${messageId}"]`);
   if (!message) return false;
+     // 拦截：如果是剧情总结按钮，直接拒绝折叠！
+     if (buttonEl.classList?.contains('xiaobaix-story-summary-btn')) return false;
+
+     const message = document.querySelector(`${SELECTORS.chat} ${SELECTORS.messages}[mesid="${messageId}"]`);
+     if (!message) return false;
 
   processOneMessage(message);
 
