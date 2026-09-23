@@ -4419,6 +4419,78 @@ async function handleFrameMessage(event) {
             }); // ← 报错是因为你不小心删掉了这里的 }); 和 break;
             break;
         }
+        case 'IMPORT_CHATU8_PRESETS': {
+            const dataObj = data.payload;
+            // 检查是不是符合 chatu8 的格式 { "presets": { "名字": { "fixedPrompt": "..." } } }
+            if (!dataObj || !dataObj.presets || typeof dataObj.presets !== 'object') {
+                postStatus('error', '导入失败：不是有效的 ChatU8 格式', 'params');
+                break;
+            }
+
+            // 提取数据并保存到小白X设置中
+            updateSettingsPersistent(async (settings) => {
+                let importedCount = 0;
+
+                // 遍历 chatu8 的 presets 对象
+                for (const [presetName, presetData] of Object.entries(dataObj.presets)) {
+                    if (typeof presetData !== 'object') continue;
+
+                    // 构建一个小白X能看懂的新预设
+                    const newPreset = {
+                        id: generateSlotId(),
+                        name: presetName,
+                        positivePrefix: presetData.fixedPrompt || '',
+                        negativePrefix: presetData.negativePrompt || '',
+                        maxImages: 0,
+                        maxCharactersPerImage: 0,
+                        // 补齐其余默认参数
+                        params: {
+                            model: 'nai-diffusion-4-5-full',
+                            sampler: 'k_euler_ancestral',
+                            scheduler: 'karras',
+                            steps: 28,
+                            scale: 6,
+                            width: 832,
+                            height: 1216,
+                            seed: -1,
+                            qualityToggle: true,
+                            autoSmea: false,
+                            ucPreset: 0,
+                            cfg_rescale: 0,
+                            v5QualityPresetId: 'standard',
+                            v5UcPresetId: 'heavy',
+                            transparentBackground: false,
+                            variety_boost: false,
+                            sm: false,
+                            sm_dyn: false,
+                            decrisper: false
+                        }
+                    };
+                    settings.paramsPresets.push(newPreset);
+                    importedCount++;
+                    // 如果是最后导入的一个，就让界面选中它
+                    settings.selectedParamsPresetId = newPreset.id;
+                }
+
+                // 弹出界面提示
+                if (importedCount > 0) {
+                    showToast(`成功导入 ${importedCount} 个预设！`, 'success', 3000);
+                } else {
+                    showToast(`文件中没有找到预设！`, 'warning', 3000);
+                }
+
+                // 刷新 UI 的下拉菜单
+                const { refreshPresetSelect } = await import('./floating-panel.js');
+                refreshPresetSelect?.(settings, 'params');
+
+            }, `导入 ChatU8 预设`, { target: 'params' }).then((ok) => {
+                if (ok) {
+                    notifySettingsUpdated();
+                    sendInitData();
+                }
+            });
+            break;
+        }
 
         case 'EXPORT_CURRENT_PRESET': {
             const s = getSettings();
