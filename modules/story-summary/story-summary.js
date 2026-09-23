@@ -2009,7 +2009,8 @@ function hideOverlay() {
 
 function createSummaryBtn(mesId) {
     const btn = document.createElement("div");
-    btn.className = "mes_btn xiaobaix-story-summary-btn";
+    // 改成 mes_button，酒馆就会自动给它原生的大小、悬浮背景色
+    btn.className = "mes_button xiaobaix-story-summary-btn";
     btn.title = "剧情总结";
     btn.dataset.mesid = mesId;
     btn.innerHTML = '<i class="fa-solid fa-chart-line"></i>';
