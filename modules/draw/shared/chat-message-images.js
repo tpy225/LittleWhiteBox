@@ -138,8 +138,6 @@ function injectStyles() {
 .xb-img-error { display:inline-flex; flex-direction:column; align-items:center; gap:6px; padding:12px 16px; background:rgba(255,100,100,.08); border:1px dashed rgba(255,100,100,.3); border-radius:4px; color:#e57373; font-size:12px; }
 .xb-img-retry { padding:4px 10px; background:rgba(255,100,100,.1); border:1px solid rgba(255,100,100,.3); border-radius:3px; color:#e57373; font-size:11px; cursor:pointer; }
 .xb-img-retry:hover { background:rgba(255,100,100,.2); }
-.xb-img-lightbox { position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,.92); display:flex; align-items:center; justify-content:center; cursor:zoom-out; padding:calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 12px) calc(env(safe-area-inset-bottom, 0px) + 12px) calc(env(safe-area-inset-left, 0px) + 12px); }
-.xb-img-lightbox img { max-width:100%; max-height:100%; object-fit:contain; border-radius:4px; box-shadow:0 4px 30px rgba(0,0,0,.5); touch-action:pinch-zoom; }
 `;
     document.head.appendChild(style);
 }
@@ -172,13 +170,7 @@ function hydrateSlots(container) {
 }
 
 function escapeHtml(text) {
-    const entityAmp = '&' + 'amp;';
-    const entityLt = '&' + 'lt;';
-    const entityGt = '&' + 'gt;';
-    return String(text || '')
-        .replace(/&/g, entityAmp)
-        .replace(/</g, entityLt)
-        .replace(/>/g, entityGt);
+    return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function loadImage(slot, tags) {
@@ -235,32 +227,10 @@ function renderImage(slot, base64) {
     const image = document.createElement('img');
     image.src = `data:image/png;base64,${base64}`;
     image.className = 'xb-generated-img';
-    image.onclick = () => openXbImageLightbox(image.src);
+    image.onclick = () => window.open(image.src, '_blank');
     // eslint-disable-next-line no-unsanitized/property
     slot.innerHTML = '';
     slot.appendChild(image);
-}
-
-function openXbImageLightbox(src) {
-    closeXbImageLightbox();
-    const overlay = document.createElement('div');
-    overlay.className = 'xb-img-lightbox';
-    const image = document.createElement('img');
-    image.src = src;
-    image.alt = '';
-    overlay.appendChild(image);
-    overlay.addEventListener('click', () => closeXbImageLightbox());
-    document.body.appendChild(overlay);
-    document.addEventListener('keydown', xbImageLightboxKeydown);
-}
-
-function closeXbImageLightbox() {
-    document.querySelector('.xb-img-lightbox')?.remove();
-    document.removeEventListener('keydown', xbImageLightboxKeydown);
-}
-
-function xbImageLightboxKeydown(event) {
-    if (event.key === 'Escape') closeXbImageLightbox();
 }
 
 function bindRetryButton(slot) {
@@ -328,7 +298,6 @@ export function cleanupChatMessageImages() {
     xbLog.info('draw', 'cleanup chat message images');
     initialized = false;
     lifecycleGeneration += 1;
-    closeXbImageLightbox();
     clearPendingTimers();
     events.cleanup();
     afterAiGateDispose?.();
