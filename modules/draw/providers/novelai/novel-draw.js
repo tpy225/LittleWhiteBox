@@ -4421,34 +4421,12 @@ async function handleFrameMessage(event) {
         }
         case 'EXPORT_CURRENT_PRESET': {
             const s = getSettings();
-            if (!s.paramsPresets || s.paramsPresets.length === 0) {
+            const presetId = data.presetId || s.selectedParamsPresetId;
+            const preset = s.paramsPresets.find(p => p.id === presetId);
+            if (!preset) {
                 postStatus('error', '没有可导出的预设', 'params');
                 break;
             }
-
-            const chatu8Format = { presets: {} };
-            s.paramsPresets.forEach(p => {
-                const name = p.name || '未命名';
-                chatu8Format.presets[name] = {
-                    fixedPrompt: p.positivePrefix || "",
-                    fixedPrompt_end: "",
-                    negativePrompt: p.negativePrefix || ""
-                };
-            });
-
-            const blob = new Blob([JSON.stringify(chatu8Format, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'st-chatu8-imported-from-lwb.json';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            postStatus('success', `已导出 ${s.paramsPresets.length} 个预设`, 'params');
-            break;
-        }
             downloadPresetAsFile(preset);
             postStatus('success', '已导出', 'params');
             break;
