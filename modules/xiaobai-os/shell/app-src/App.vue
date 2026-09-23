@@ -158,13 +158,6 @@ function handleHostMessage(message: FrameMessage): void {
 }
 
 async function openApp(app: XiaobaiOsAppDefinition): Promise<void> {
-    // 【拦截器】如果点的是 assistant，跨环境打开外面的助手，并且什么都不做直接返回，不开内部窗口
-    if (app.id === 'assistant') {
-        const btn = document.getElementById('xiaobaix_assistant_open_settings');
-        if (btn) { btn.click(); }
-        return;
-    }
-
     const generation = ++navigationGeneration;
     appRenderKey.value += 1;
     const opening: PendingAppOpening = { appId: app.id };
