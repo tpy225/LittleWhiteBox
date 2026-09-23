@@ -40,13 +40,13 @@ text-shadow:0 0 10px rgba(255,255,255,.5),0 0 20px rgba(100,200,255,.3);color:#f
 .xiaobaix-xstack span:nth-child(1){color:rgba(255,255,255,.1);transform:scaleX(.8) translateX(-8px);text-shadow:none}
 .xiaobaix-xstack span:nth-child(2){color:rgba(255,255,255,.2);transform:scaleX(.8) translateX(-4px);text-shadow:none}
 .xiaobaix-xstack span:nth-child(3){color:rgba(255,255,255,.4);transform:scaleX(.8) translateX(-2px);text-shadow:none}
-.xiaobaix-sub-container{display:none;position:absolute;bottom:36px;right:0;border-radius:8px;padding:4px;gap:8px;pointer-events:auto;flex-direction:row;}
-.xiaobaix-collapse-btn.open .xiaobaix-sub-container{display:flex;background:var(--SmartThemeBlurTintColor);z-index:1000;box-shadow:0 4px 10px rgba(0,0,0,0.3);}
+.xiaobaix-sub-container{display:none;position:absolute;right:38px;border-radius:8px;padding:4px;gap:8px;pointer-events:auto}
+.xiaobaix-collapse-btn.open .xiaobaix-sub-container{display:flex;background:var(--SmartThemeBlurTintColor)}
 .xiaobaix-collapse-btn.open,.xiaobaix-collapse-btn.open ~ *{pointer-events:auto!important}
-.mes_block .mes_buttons.xiaobaix-expanded{width:auto}
+.mes_block .mes_buttons.xiaobaix-expanded{width:150px}
 .xiaobaix-sub-container,.xiaobaix-sub-container *{pointer-events:auto!important}
 .xiaobaix-sub-container .memory-button,.xiaobaix-sub-container .dynamic-prompt-analysis-btn,.xiaobaix-sub-container .mes_history_preview{opacity:1!important;filter:none!important}
-.xiaobaix-sub-container.dir-right{left:0;right:auto;bottom:36px;z-index:1000;margin-top:0;}
+.xiaobaix-sub-container.dir-right{left:38px;right:auto;z-index:1000;margin-top:2px}
 `;
   const style = document.createElement('style');
   style.textContent = css;
@@ -122,8 +122,12 @@ const processOneMessage = (message) => {
   const pos = getXBtnPosition();
   if (pos === 'edit-right' && !findInsertPoint(message)) { processed.add(message); return; }
 
-  const targetBtns = mesButtons.querySelectorAll(SELECTORS.buttons);
-  if (!targetBtns.length) { processed.add(message); return; }
+     let targetBtns = Array.from(mesButtons.querySelectorAll(SELECTORS.buttons));
+     // 剔除剧情总结按钮，让它不被折叠！
+     targetBtns = targetBtns.filter(btn => !btn.classList.contains('xiaobaix-story-summary-btn'));
+
+     if (!targetBtns.length) { processed.add(message); return; }
+
 
   const collapseBtn = ensureCollapseForMessage(message, pos);
   if (!collapseBtn) { processed.add(message); return; }
