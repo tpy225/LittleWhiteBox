@@ -4483,7 +4483,7 @@ async function handleFrameMessage(event) {
                 const { refreshPresetSelect } = await import('./floating-panel.js');
                 refreshPresetSelect?.(settings, 'params');
 
-            }, `导入 ChatU8 预设`, { target: 'params' }).then((ok) => {
+            }, `导入智绘姬预设`, { target: 'params' }).then((ok) => {
                 if (ok) {
                     notifySettingsUpdated();
                     sendInitData();
