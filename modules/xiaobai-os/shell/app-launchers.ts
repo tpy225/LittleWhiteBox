@@ -11,6 +11,7 @@ import { WALLET_APP_DESCRIPTOR } from '../apps/wallet/descriptor.js';
 import { WORLD_APP_DESCRIPTOR } from '../apps/world/descriptor.js';
 import { LEARNING_APP_DESCRIPTOR } from '../apps/learning/descriptor.js';
 import { DICE_APP_DESCRIPTOR } from '../apps/dice/descriptor.js';
+   const ASSISTANT_APP_DESCRIPTOR = { id: 'assistant', name: '小白助手', accent: '#4dabf7' };
 
 export interface XiaobaiOsAppLauncher {
     id: string;
@@ -22,6 +23,8 @@ export interface XiaobaiOsAppLauncher {
 // Presentation only: both the host shortcut panel and desktop can read this
 // catalog without importing Vue, APP components, or APP runtimes.
 const launchers: readonly XiaobaiOsAppLauncher[] = [
+           // 添加小白助手快捷方式（图标用了自带的小白脸图标 svg，如果你想用其他的也可以）
+       { ...ASSISTANT_APP_DESCRIPTOR, icon: new URL('../../assistant/app-src/ui/logo.svg', import.meta.url).href },
     { ...DICE_APP_DESCRIPTOR, icon: new URL('../apps/dice/ui/icon.svg', import.meta.url).href },
     { ...AGENT_API_APP_DESCRIPTOR, icon: new URL('../apps/agent-api/ui/icon.svg', import.meta.url).href },
     { ...FOURTH_WALL_APP_DESCRIPTOR, icon: new URL('../apps/fourth-wall/ui/icon.svg', import.meta.url).href },
