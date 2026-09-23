@@ -2032,7 +2032,8 @@ function addSummaryBtnToMessage(mesId) {
     const btn = createSummaryBtn(mesId);
     if (window.registerButtonToSubContainer?.(mesId, btn)) return;
 
-    msg.querySelector(".flex-container.flex1.alignitemscenter")?.appendChild(btn);
+    // 修改：将按钮追加到右侧的操作按钮栏中
+    msg.querySelector(".mes_block .mes_buttons")?.appendChild(btn);
 }
 
 export function configureStorySummaryRuntime({ ownsMessageButtons: nextOwnership = true } = {}) {
@@ -2043,10 +2044,12 @@ export function mountStorySummaryButton(message, mesId) {
     if (!getSettings().storySummary?.enabled || message.querySelector('.xiaobaix-story-summary-btn')) return;
     const button = createSummaryBtn(mesId);
     if (!window.registerButtonToSubContainer?.(mesId, button)) {
-        message.querySelector('.flex-container.flex1.alignitemscenter')?.appendChild(button);
+        // 修改：将按钮追加到右侧的操作按钮栏中
+        message.querySelector('.mes_block .mes_buttons')?.appendChild(button);
     }
     return () => button.remove();
 }
+
 
 function initButtonsForAll() {
     if (!messageButtonOwnership.ownsButtons()) return;
