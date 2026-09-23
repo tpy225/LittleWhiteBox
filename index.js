@@ -1154,12 +1154,13 @@ jQuery(async () => {
 });
 
 export { executeSlashCommand };
-// 确保在酒馆 API 就绪后再注册
-jQuery(async () => {
-    try {
-        const { SlashCommandParser } = window;
-        const { SlashCommand } = window;
+// 导入酒馆原生的斜杠命令模块
+import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 
+// 等待一下，让基础变量准备好再注册，防止顺序冲突
+setTimeout(() => {
+    try {
         if (SlashCommandParser && SlashCommand) {
             SlashCommandParser.addCommandObject(SlashCommand.fromProps({
                 name: 'xiaobaix',
@@ -1195,4 +1196,4 @@ jQuery(async () => {
     } catch (e) {
         console.error('注册小白助手斜杠命令失败:', e);
     }
-});
+}, 2000);
