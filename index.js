@@ -1154,43 +1154,45 @@ jQuery(async () => {
 });
 
 export { executeSlashCommand };
-// 注册快捷命令打开小白助手
-try {
-    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'xiaobaix',
-        callback: async () => {
-            if (!window.isXiaobaixEnabled) {
-                toastr.warning('LittleWhiteBox 扩展未启用');
-                return '';
-            }
-            // 如果没初始化就先初始化
-            if (!window.xiaobaixAssistant?.open) {
-                if (typeof initAssistant === 'function') {
-                    await initAssistant();
-                }
-            }
-            // 打开助手面板
-            if (window.xiaobaixAssistant?.open) {
-                window.xiaobaixAssistant.open();
-            } else {
-                toastr.warning('小白助手初始化失败');
-            }
-            return '';
-        },
-        helpString: '打开小白助手面板'
-    }));
+// 确保在酒馆 API 就绪后再注册
+jQuery(async () => {
+    try {
+        const { SlashCommandParser } = window;
+        const { SlashCommand } = window;
 
-    // 注册一个中文命令别名
-    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: '助手',
-        callback: async () => {
-            if (SlashCommandParser.commands['xiaobaix']) {
-                await SlashCommandParser.commands['xiaobaix'].callback({}, '');
-            }
-            return '';
-        },
-        helpString: '打开小白助手面板 (快捷别名)'
-    }));
-} catch (e) {
-    console.error('注册小白助手斜杠命令失败:', e);
-}
+        if (SlashCommandParser && SlashCommand) {
+            SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+                name: 'xiaobaix',
+                callback: async () => {
+                    if (!window.isXiaobaixEnabled) {
+                        toastr.warning('LittleWhiteBox 扩展未启用');
+                        return '';
+                    }
+                    if (!window.xiaobaixAssistant?.open) {
+                        if (typeof initAssistant === 'function') await initAssistant();
+                    }
+                    if (window.xiaobaixAssistant?.open) {
+                        window.xiaobaixAssistant.open();
+                    } else {
+                        toastr.warning('小白助手初始化失败');
+                    }
+                    return '';
+                },
+                helpString: '打开小白助手面板'
+            }));
+
+            SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+                name: '助手',
+                callback: async () => {
+                    if (SlashCommandParser.commands['xiaobaix']) {
+                        await SlashCommandParser.commands['xiaobaix'].callback({}, '');
+                    }
+                    return '';
+                },
+                helpString: '打开小白助手面板 (快捷别名)'
+            }));
+        }
+    } catch (e) {
+        console.error('注册小白助手斜杠命令失败:', e);
+    }
+});
