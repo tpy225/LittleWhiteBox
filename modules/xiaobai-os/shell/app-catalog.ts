@@ -37,6 +37,8 @@ export function createAppComponentLoader(importer: () => Promise<ComponentModule
 }
 
 const importers: Readonly<Record<string, () => Promise<ComponentModule>>> = Object.freeze({
+        // 为 assistant 伪造一个不会渲染出来的加载器，防止抛错
+    assistant: () => Promise.resolve({ default: {} }),
     dice: () => import('../apps/dice/ui/DiceApp.vue'),
     'agent-api': () => import('../apps/agent-api/ui/AgentApiApp.vue'),
     'fourth-wall': () => import('../apps/fourth-wall/ui/FourthWallApp.vue'),
