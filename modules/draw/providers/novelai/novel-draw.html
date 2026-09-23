@@ -815,7 +815,8 @@ select.input { cursor: pointer; }
                         <button id="nd_params_rename" class="btn btn-icon" title="重命名"><i class="fa-solid fa-pen"></i></button>
                         <button id="nd_params_save" class="btn btn-primary" title="保存"><i class="fa-solid fa-floppy-disk"></i></button>
                         <button id="nd_params_cloud" class="btn btn-icon" title="云端预设" style="color:#d4a574;"><i class="fa-solid fa-cloud-arrow-down"></i></button>
-                        <button id="nd_params_export" class="btn btn-icon" title="导出当前预设"><i class="fa-solid fa-share-from-square"></i></button>
+                        <button id="nd_params_export" class="btn btn-icon" title="导出所有预设（智绘姬）"><i class="fa-solid fa-share-from-square"></i></button>
+                        <label class="btn btn-icon" title="导入智绘姬格式预设" style="cursor:pointer;"><i class="fa-solid fa-file-import"></i><input type="file" id="nd_params_import" accept=".json" style="display:none;"></label>
                         <button id="nd_params_del" class="btn btn-danger btn-icon" title="删除"><i class="fa-solid fa-trash"></i></button>
                     </div>
                     <div id="nd_params_status" class="status-text inline-status"></div>
@@ -3290,7 +3291,25 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_params_cloud').addEventListener('click', () => {
         postToParent({ type: 'OPEN_CLOUD_PRESETS' });
     });
-    
+        $('nd_params_export').addEventListener('click', () => {
+        postToParent({ type: 'EXPORT_CURRENT_PRESET', presetId: state.selectedParamsPresetId });
+    });
+
+    // ▼ 添加这段导入事件 ▼
+    $('nd_params_import').addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            postToParent({ type: 'IMPORT_CHATU8_PRESETS', payload: data });
+        } catch (err) {
+            alert('读取文件失败，可能不是合法的 JSON: ' + err.message);
+        }
+        e.target.value = ''; // 清空选择，允许重复选同一个文件
+    });
+    // ▲ 添加结束 ▲
+
     $('nd_params_export').addEventListener('click', () => {
         postToParent({ type: 'EXPORT_CURRENT_PRESET', presetId: state.selectedParamsPresetId });
     });
