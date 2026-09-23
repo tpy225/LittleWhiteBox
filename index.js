@@ -1154,29 +1154,43 @@ jQuery(async () => {
 });
 
 export { executeSlashCommand };
-// 在 index.js 底部添加
-import { registerSlashCommand } from '../../../slash-commands.js';
+// 注册快捷命令打开小白助手
+try {
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'xiaobaix',
+        callback: async () => {
+            if (!window.isXiaobaixEnabled) {
+                toastr.warning('LittleWhiteBox 扩展未启用');
+                return '';
+            }
+            // 如果没初始化就先初始化
+            if (!window.xiaobaixAssistant?.open) {
+                if (typeof initAssistant === 'function') {
+                    await initAssistant();
+                }
+            }
+            // 打开助手面板
+            if (window.xiaobaixAssistant?.open) {
+                window.xiaobaixAssistant.open();
+            } else {
+                toastr.warning('小白助手初始化失败');
+            }
+            return '';
+        },
+        helpString: '打开小白助手面板'
+    }));
 
-if (typeof registerSlashCommand === 'function') {
-    registerSlashCommand('xiaobaix-assistant', async () => {
-        if (!window.isXiaobaixEnabled) {
-            toastr.warning('LittleWhiteBox 扩展未启用');
-            return;
-        }
-        if (!window.xiaobaixAssistant?.open) {
-            await initAssistant();
-        }
-        if (window.xiaobaixAssistant?.open) {
-            window.xiaobaixAssistant.open();
-        } else {
-            toastr.warning('小白助手初始化失败');
-        }
-    }, [], '打开小白助手面板', true, true);
-
-    // 顺便注册一个中文别名，更方便打字
-    registerSlashCommand('助手', async () => {
-        const cmd = window.slashCommands?.['xiaobaix-assistant'];
-        if (cmd) await cmd.callback();
-    }, [], '打开小白助手面板 (快捷别名)', true, true);
+    // 注册一个中文命令别名
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: '助手',
+        callback: async () => {
+            if (SlashCommandParser.commands['xiaobaix']) {
+                await SlashCommandParser.commands['xiaobaix'].callback({}, '');
+            }
+            return '';
+        },
+        helpString: '打开小白助手面板 (快捷别名)'
+    }));
+} catch (e) {
+    console.error('注册小白助手斜杠命令失败:', e);
 }
-
