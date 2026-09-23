@@ -7,7 +7,7 @@ const SELECTORS = {
   chat: '#chat',
   messages: '.mes',
   mesButtons: '.mes_block .mes_buttons',
-  buttons: '.memory-button, .dynamic-prompt-analysis-btn, .mes_history_preview',
+  buttons: '.memory-button, .dynamic-prompt-analysis-btn, .mes_history_preview, .xiaobaix-story-summary-btn, .xiaobaix-story-outline-btn, .xiaobaix-variables-btn',
   collapse: '.xiaobaix-collapse-btn',
 };
 
@@ -122,12 +122,11 @@ const processOneMessage = (message) => {
   const pos = getXBtnPosition();
   if (pos === 'edit-right' && !findInsertPoint(message)) { processed.add(message); return; }
 
-     let targetBtns = Array.from(mesButtons.querySelectorAll(SELECTORS.buttons));
-     // 剔除剧情总结按钮，让它不被折叠！
-     targetBtns = targetBtns.filter(btn => !btn.classList.contains('xiaobaix-story-summary-btn'));
+  let targetBtns = Array.from(mesButtons.querySelectorAll(SELECTORS.buttons));
+  // 【修改点1】：扫描时剔除剧情总结按钮，不放入折叠盒
+  targetBtns = targetBtns.filter(btn => !btn.classList.contains('xiaobaix-story-summary-btn'));
 
-     if (!targetBtns.length) { processed.add(message); return; }
-
+  if (!targetBtns.length) { processed.add(message); return; }
 
   const collapseBtn = ensureCollapseForMessage(message, pos);
   if (!collapseBtn) { processed.add(message); return; }
@@ -216,25 +215,15 @@ const processButtonCollapse = () => {
 const registerButtonToSubContainer = (messageId, buttonEl) => {
   if (!buttonEl) return false;
 
-  // 拦截：如果是剧情总结按钮，直接拒绝折叠！
-  if (buttonEl.classList?.contains('xiaobaix-story-summary-btn')) return false;
+  // 【修改点2】：当外部尝试主动将按钮注册到折叠盒时，如果是剧情总结按钮，直接拒绝
+  if (buttonEl.classList && buttonEl.classList.contains('xiaobaix-story-summary-btn')) {
+    return false;
+  }
 
   const message = document.querySelector(`${SELECTORS.chat} ${SELECTORS.messages}[mesid="${messageId}"]`);
   if (!message) return false;
 
   processOneMessage(message);
-
-  const pos = getXBtnPosition();
-  const collapseBtn = message.querySelector(SELECTORS.collapse) || ensureCollapseForMessage(message, pos);
-  if (!collapseBtn) return false;
-
-  const sub = collapseBtn.querySelector('.xiaobaix-sub-container');
-  sub.appendChild(buttonEl);
-  buttonEl.style.pointerEvents = 'auto';
-  buttonEl.style.opacity = '1';
-  return true;
-};
-
 
   const pos = getXBtnPosition();
   const collapseBtn = message.querySelector(SELECTORS.collapse) || ensureCollapseForMessage(message, pos);
