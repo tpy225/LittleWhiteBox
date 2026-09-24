@@ -85,6 +85,7 @@ export function createSubmitScenePlanTool(options = {}) {
     const insertPointCount = normalizeLimit(options.insertPointCount);
     const profile = normalizeScenePlannerProfile(options.profile);
     const maxPlanItems = maxImages || maxPlanImages;
+
     const charactersSchema = {
         type: 'array',
         ...(maxCharactersPerImage ? { maxItems: maxCharactersPerImage } : {}),
@@ -96,15 +97,15 @@ export function createSubmitScenePlanTool(options = {}) {
             properties: getScenePlanCharacterProperties(profile),
         },
     };
+
+    // 修复重点：补齐 imagesSchema 对象的声明包装
     const imagesSchema = {
         type: 'array',
-        minItems: maxImages || 1,
         ...(maxPlanItems ? { maxItems: maxPlanItems } : {}),
-        description: '图片任务，按阅读顺序排列。数量约束见消息末尾。',
         items: {
             type: 'object',
             additionalProperties: false,
-            required: ['index', 'insert_after', 'scene', 'characters'],
+            required: ['index', 'insert_after', 'scene', 'title', 'characters', 'title'],
             properties: {
                 index: { type: 'integer', minimum: 1, description: '本图序号，从 1 起。' },
                 insert_after: {
@@ -115,6 +116,10 @@ export function createSubmitScenePlanTool(options = {}) {
                 },
                 scene: stringSchema(
                     '画面整体：人数与关系、构图与视角、背景、光影、氛围，逗号分隔的英文 tag。角色个体的外貌与动作不写在这里。拼在正向提示词最前。',
+                    { minLength: 1 },
+                ),
+                title: stringSchema(
+                    '本次绘画的主题标题，简体中文，6～14 字，趣味地概括这张图画的是什么场面。只输出标题文字本身，不加标点。',
                     { minLength: 1 },
                 ),
                 characters: charactersSchema,
