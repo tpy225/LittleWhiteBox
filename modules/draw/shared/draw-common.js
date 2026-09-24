@@ -270,7 +270,7 @@ export function ensureDrawImageStyles() {
 .xb-nd-edit-group{margin-bottom:8px}
 .xb-nd-edit-group:last-child{margin-bottom:0}
 .xb-nd-edit-group-label{font-size:10px;color:rgba(255,255,255,0.58);margin-bottom:4px}
-.xb-nd-edit-input{width:100%;min-height:60px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-size:12px;padding:8px;resize:vertical;font-family:monospace}
+.xb-nd-edit-input{width:100%;min-height:60px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#722F37;font-size:12px;padding:8px;resize:vertical;font-family:monospace}
 .xb-nd-failed-icon{color:rgba(248,113,113,0.9);font-size:24px;margin-bottom:8px}
 .xb-nd-failed-title{color:rgba(255,255,255,0.7);font-size:13px;margin-bottom:4px}
 .xb-nd-failed-desc{color:rgba(255,255,255,0.4);font-size:11px;margin-bottom:12px}
@@ -285,7 +285,7 @@ export function ensureDrawImageStyles() {
     document.head.appendChild(style);
 }
 
-export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state = ImageState.PREVIEW, historyCount = 1, currentIndex = 0 }) {
+export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state = ImageState.PREVIEW, historyCount = 1, currentIndex = 0, title = '' }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
     const isPreview = state === ImageState.PREVIEW;
@@ -297,6 +297,7 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
     const border = isPreview ? 'border:1px dashed rgba(255,152,0,0.35);' : '';
     const lazyAttr = String(url || '').startsWith('data:') ? '' : 'loading="lazy"';
     const displayVersion = historyCount - currentIndex;
+    const displayTitle = String(title || tags || '').trim().slice(0, 20);
     const navPill = `<div class="xb-nd-nav-pill" data-total="${historyCount}" data-current="${currentIndex}">
         <button class="xb-nd-nav-arrow" data-action="nav-prev" title="上一版本" ${currentIndex >= historyCount - 1 ? 'disabled' : ''}>‹</button>
         <span class="xb-nd-nav-text">${displayVersion} / ${historyCount}</span>
@@ -306,28 +307,23 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
     const menuHtml = `<div class="xb-nd-menu-wrap${menuBusy}">
         <button class="xb-nd-menu-trigger" data-action="toggle-menu" title="操作">⋮</button>
         <div class="xb-nd-dropdown">
-            ${isPreview ? '<button data-action="save-image" title="保存到服务器">⬇</button>' : ''}
-            <button data-action="refresh-image" title="重新生成">⟳</button>
-            <button data-action="edit-tags" title="编辑TAG">✐️</button>
-            <button data-action="delete-image" title="删除">✕</button>
+            <button data-action="save-image" title="保存">💾</button>
+            <button data-action="delete-image" title="删除">🗑️</button>
         </div>
     </div>`;
 
-    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;${border}border-radius:14px;padding:4px;">
-${indicator}
-<div class="xb-nd-img-wrap" data-total="${historyCount}">
-    <img src="${escapeHtml(url)}" style="max-width:100%;width:auto;height:auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);${isBusy ? 'opacity:0.5;' : ''}" data-action="open-gallery" ${lazyAttr}>
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;${border}border-radius:14px;padding:2px;">
+  <details class="xb-nd-details" style="border-radius:10px;overflow:hidden;">
+    <summary class="xb-nd-summary" style="list-style:none;cursor:pointer;padding:4px 8px;background:#e1ebed;border-radius:10px;display:flex;align-items:center;gap:10px;font-size:13px;color:#9fbec4;user-select:none;">
+      <span>．·°∴ ☆．．·° ${escapeHtml(displayTitle)} °·．．☆ ∴°·．</span>
+</summary>
+<div class="xb-nd-img-wrap" style="position:relative;overflow:hidden;border-radius:10px;touch-action:pan-y pinch-zoom;">
+    <img src="${escapeHtml(url)}" alt="Generated image" ${lazyAttr} style="width:auto;height:auto;max-width:100%;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);display:block;user-select:none;-webkit-user-drag:none;transition:transform 0.25s ease,opacity 0.2s ease;" data-slot-id="${slotId}" data-img-id="${imgId}" data-mesid="${messageId}"/>
+    ${indicator}
     ${navPill}
+    ${menuHtml}
 </div>
-${menuHtml}
-<div class="xb-nd-edit" style="display:none;position:absolute;bottom:8px;left:8px;right:8px;background:rgba(0,0,0,0.9);border-radius:10px;padding:10px;text-align:left;z-index:15;">
-    <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;">编辑 TAG（场景描述）</div>
-    <textarea class="xb-nd-edit-input">${escapedTags}</textarea>
-    <div style="display:flex;gap:6px;margin-top:8px;">
-        <button data-action="save-tags" style="flex:1;padding:6px 12px;background:rgba(212,165,116,0.3);border:1px solid rgba(212,165,116,0.5);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">保存 TAG</button>
-        <button data-action="cancel-edit" style="padding:6px 12px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">取消</button>
-    </div>
-</div>
+</details>
 </div>`;
 }
 
@@ -537,21 +533,24 @@ async function resolveRenderPreviewForSlot(message, messageId, slotId) {
 function buildFailedPlaceholderHtml({ slotId, messageId, tags, positive, errorType, errorMessage }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
-    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border:1px dashed rgba(248,113,113,0.5);border-radius:14px;padding:20px;background:rgba(248,113,113,0.05);">
-<div class="xb-nd-failed-icon">⚠️</div>
-<div class="xb-nd-failed-title">${escapeHtml(errorType || '生成失败')}</div>
-<div class="xb-nd-failed-desc">${escapeHtml(errorMessage || '点击重试')}</div>
-<div class="xb-nd-failed-btns">
-    <button class="xb-nd-retry-btn" data-action="retry-image">⟳ 重新生成</button>
-    <button class="xb-nd-edit-btn" data-action="edit-tags">✐ 编辑TAG</button>
-    <button class="xb-nd-remove-btn" data-action="remove-placeholder">✕ 移除</button>
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border:1px dashed #722F37;border-radius:14px;padding:2px 8px;background:#F8E8E8;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+<div style="display:flex;align-items:center;gap:18px;">
+<div class="xb-nd-failed-icon" style="font-size:20px;margin-bottom:0;padding-left:8px;">⚠️</div>
+<div class="xb-nd-failed-title" style="font-size:13px;color:#722F37;margin-bottom:0;white-space:nowrap;font-weight:500;">${escapeHtml(errorType || '生成失败')}</div>
 </div>
-<div class="xb-nd-edit" style="display:none;margin-top:12px;text-align:left;">
-    <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;">编辑 TAG（场景描述）</div>
-    <textarea class="xb-nd-edit-input">${escapedTags}</textarea>
+<div class="xb-nd-failed-btns" style="display:flex;gap:6px;flex-wrap:wrap;">
+    <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:4px 8px;background:transparent;border:none;color:#722F37;font-size:25px;cursor:pointer;opacity:0.85;" title="重新生成">⟳</button>
+    <button class="xb-nd-edit-btn" data-action="edit-tags" style="padding:4px 8px;background:transparent;border:none;color:#722F37;font-size:18px;cursor:pointer;opacity:0.85;" title="编辑 TAG">✎</button>
+    <button class="xb-nd-remove-btn" data-action="remove-placeholder" style="padding:4px 8px;background:transparent;border:none;color:#722F37;font-size:18px;cursor:pointer;opacity:0.85;" title="移除">✕</button>
+</div>
+</div>
+<div class="xb-nd-edit" style="display:none;margin-top:12px;text-align:left;background:#FAF0F2;padding:8px;border-radius:8px;">
+    <div style="font-size:11px;color:#722F37;margin-bottom:6px;">编辑 TAG（场景描述）</div>
+    <textarea class="xb-nd-edit-input" style="color:#722F37;background:#FDF8F9;border:1px solid #D4A5A5;padding:6px 8px;border-radius:6px;font-size:12px;width:100%;min-height:60px;resize:vertical;outline:none;">${escapedTags}</textarea>
     <div style="display:flex;gap:6px;margin-top:8px;">
-        <button data-action="save-tags-retry" style="flex:1;padding:6px 12px;background:rgba(212,165,116,0.3);border:1px solid rgba(212,165,116,0.5);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">保存并重试</button>
-        <button data-action="cancel-edit" style="padding:6px 12px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">取消</button>
+        <button data-action="save-tags-retry" style="flex:1;padding:6px 12px;background:#722F37;border:1px solid #722F37;border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">保存并重试</button>
+        <button data-action="cancel-edit" style="padding:6px 12px;background:transparent;border:1px solid #722F37;border-radius:6px;color:#722F37;font-size:12px;cursor:pointer;">取消</button>
     </div>
 </div>
 </div>`;
@@ -657,17 +656,18 @@ async function renderPreviewsForMessageNow(messageId, {
                 });
             } else if (displayData.hasData && displayData.preview) {
                 const url = getPreviewDisplayUrl(displayData.preview);
-                replacementHtml = buildImageHtml({
-                    slotId,
-                    imgId: displayData.preview.imgId,
-                    url,
-                    tags: displayData.preview.tags || '',
-                    positive: displayData.preview.positive || '',
-                    messageId,
-                    state: displayData.preview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW,
-                    historyCount: displayData.historyCount,
-                    currentIndex: displayData.currentIndex ?? 0,
-                });
+replacementHtml = buildImageHtml({
+    slotId,
+    imgId: displayData.preview.imgId,
+    url,
+    tags: displayData.preview.tags || '',
+    positive: displayData.preview.positive || '',
+    title: displayData.preview.title || '',
+    messageId,
+    state: displayData.preview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW,
+    historyCount: displayData.historyCount,
+    currentIndex: displayData.currentIndex ?? 0,
+});
                 void warmSlotPreviewNeighbors(slotId, displayData.currentIndex ?? 0).catch(() => {});
             } else {
                 replacementHtml = buildFailedPlaceholderHtml({
