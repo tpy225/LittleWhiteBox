@@ -638,6 +638,83 @@ select.input { cursor: pointer; }
     color: var(--text-secondary); font-family: monospace; font-size: 11px; line-height: 1.45;
     white-space: pre-wrap; word-break: break-word;
 }
+
+/* ── 预设缩略图（头像式上传方框，3:4 竖图） ── */
+.nd-thumb-box {
+    position: relative;
+    width: 96px;
+    height: 128px;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: var(--bg-input);
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s;
+}
+.nd-thumb-box:hover,
+.nd-thumb-box:focus-visible { border-color: var(--border-focus); outline: none; }
+.nd-thumb-box.has-image { border-style: solid; }
+.nd-thumb-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+}
+.nd-thumb-box.has-image img { display: block; }
+.nd-thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.3;
+}
+.nd-thumb-placeholder i { font-size: 22px; opacity: 0.6; }
+.nd-thumb-box.has-image .nd-thumb-placeholder { display: none; }
+.nd-thumb-mask {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 4px 0;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 10px;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+.nd-thumb-box.has-image:hover .nd-thumb-mask,
+.nd-thumb-box.has-image:focus-visible .nd-thumb-mask { opacity: 1; }
+.nd-thumb-clear {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+.nd-thumb-box.has-image .nd-thumb-clear { display: flex; }
+.nd-thumb-clear:hover { background: var(--danger); }
 </style>
 </head>
 
@@ -833,6 +910,21 @@ select.input { cursor: pointer; }
                         <label class="form-label">负向固定</label>
                         <textarea id="nd_negative" class="input" rows="3" placeholder="lowres, bad anatomy..."></textarea>
                         <p class="form-hint">鬼图、畸形、风格污染相关的排除词也建议固定在这里。</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">预设缩略图</label>
+                        <div id="nd_thumbnail_box" class="nd-thumb-box" role="button" tabindex="0" title="点击上传或更换缩略图">
+                            <img id="nd_thumbnail_preview" alt="">
+                            <span class="nd-thumb-placeholder" id="nd_thumbnail_placeholder">
+                                <i class="fa-regular fa-image"></i>
+                                <span>上传缩略图</span>
+                            </span>
+                            <span class="nd-thumb-mask"><i class="fa-solid fa-arrows-rotate"></i> 点击更换</span>
+                            <button type="button" id="nd_thumbnail_clear" class="nd-thumb-clear" title="移除缩略图"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <input type="file" id="nd_thumbnail_file" accept="image/*" hidden>
+                        <input type="hidden" id="nd_thumbnail">
+                        <p class="form-hint">点击方框选择本地图片；悬浮窗 / 楼层按钮的画师串卡片会显示这张缩略图。</p>
                     </div>
                 </div>
                 
@@ -2718,12 +2810,28 @@ function applyStateToUI() {
     }
 }
 
+function updateThumbnailPreview(src) {
+    const box = $('nd_thumbnail_box');
+    const img = $('nd_thumbnail_preview');
+    if (!box || !img) return;
+    const url = String(src || '').trim();
+    if (url) {
+        img.src = url;
+        box.classList.add('has-image');
+    } else {
+        img.removeAttribute('src');
+        box.classList.remove('has-image');
+    }
+}
+
 function applyParamsPreset() {
     const p = state.paramsPresets.find(x => x.id === state.selectedParamsPresetId) || state.paramsPresets[0];
     if (!p) return;
 
     $('nd_positive').value = p.positivePrefix || '';
     $('nd_negative').value = p.negativePrefix || '';
+    $('nd_thumbnail').value = p.thumbnail || '';
+    updateThumbnailPreview(p.thumbnail || '');
     $('nd_max_images').value = p.maxImages || 0;
     $('nd_max_chars').value = p.maxCharactersPerImage || 0;
     
@@ -2907,6 +3015,7 @@ function collectParamsPreset() {
 
     p.positivePrefix = $('nd_positive').value;
     p.negativePrefix = $('nd_negative').value;
+    p.thumbnail = ($('nd_thumbnail').value || '').trim();
     p.maxImages = Math.max(0, Number($('nd_max_images').value) || 0);
     const model = $('nd_model_sel').value === 'custom' ? $('nd_model').value : $('nd_model_sel').value;
     const characterLimit = getModelCapability(model).maxCharactersPerImage || 10;
@@ -3258,11 +3367,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════════
     // 参数预设管理
     // ═══════════════════════════════════════════════════════════════════════
-    $('nd_params_preset').addEventListener('change', () => { 
-        state.selectedParamsPresetId = $('nd_params_preset').value; 
-        applyParamsPreset(); 
+    $('nd_params_preset').addEventListener('change', () => {
+        state.selectedParamsPresetId = $('nd_params_preset').value;
+        applyParamsPreset();
     });
-    
+
+    // 预设缩略图：头像式方框，点击上传/更换，× 移除；本地图片转 dataURL
+    const thumbBox = $('nd_thumbnail_box');
+    const thumbFile = $('nd_thumbnail_file');
+    thumbBox?.addEventListener('click', () => thumbFile?.click());
+    thumbBox?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            thumbFile?.click();
+        }
+    });
+    $('nd_thumbnail_clear')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        $('nd_thumbnail').value = '';
+        updateThumbnailPreview('');
+    });
+    thumbFile?.addEventListener('change', e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            $('nd_thumbnail').value = String(reader.result || '');
+            updateThumbnailPreview(reader.result);
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    });
+
     $('nd_params_save').addEventListener('click', () => {
         setSavingState($('nd_params_save'));
         collectParamsPreset();
