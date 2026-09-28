@@ -96,6 +96,34 @@ test('shared and NovelAI provider saves preserve the other owner without revivin
     assert.equal(sharedSave.characterTags[0].name, '最新角色');
 });
 
+test('vibe library survives provider and shared save merges', () => {
+    const vibeLibrary = {
+        singles: [{ id: 'vibe-1', name: '参考图', image: 'data:image/jpeg;base64,AAA', encodings: {} }],
+        groups: [{ id: 'vibegroup-1', name: '组合', members: [{ id: 'vibe-1', enabled: true, strength: 0.6 }] }],
+    };
+    const root = {
+        configVersion: 7,
+        apiKey: 'key',
+        vibeLibrary,
+        characterTags: [],
+    };
+
+    const providerSave = mergeNovelDrawProviderSettingsIntoStorageRoot(root, {
+        configVersion: 7,
+        apiKey: 'key',
+        paramsPresets: [{ id: 'p1' }],
+        vibeLibrary,
+    });
+    assert.deepEqual(providerSave.vibeLibrary, vibeLibrary);
+
+    // 共享设置保存时不能顺手把 provider 的 vibe 库抹掉
+    const sharedSave = mergeSharedDrawSettingsIntoStorageRoot(providerSave, {
+        ...providerSave,
+        characterTags: [{ id: 'c1', name: '角色' }],
+    });
+    assert.deepEqual(sharedSave.vibeLibrary, vibeLibrary);
+});
+
 test('shared character settings preserve explicit disabled state and default older records to enabled', () => {
     const normalized = normalizeSharedDrawSettings({
         characterTags: [
