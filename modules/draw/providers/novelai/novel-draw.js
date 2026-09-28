@@ -4408,10 +4408,19 @@ async function handleFrameMessage(event) {
         case 'OPEN_CLOUD_PRESETS': {
             openCloudPresetsModal(async (presetData) => {
                 const { preset: newPreset, warnings: importWarnings } = parsePresetData(presetData, generateSlotId);
+                let overwritten = false;
                 const ok = await updateSettingsPersistent((settings) => {
-                    settings.paramsPresets.push(newPreset);
+                    // 同名预设直接覆盖（保留原 id），不产生重复项
+                    const existingIdx = settings.paramsPresets.findIndex(p => p.name === newPreset.name);
+                    if (existingIdx >= 0) {
+                        newPreset.id = settings.paramsPresets[existingIdx].id;
+                        settings.paramsPresets[existingIdx] = newPreset;
+                        overwritten = true;
+                    } else {
+                        settings.paramsPresets.push(newPreset);
+                    }
                     settings.selectedParamsPresetId = newPreset.id;
-                }, `已导入: ${newPreset.name}`, { target: 'params' });
+                }, overwritten ? `已覆盖同名预设: ${newPreset.name}` : `已导入: ${newPreset.name}`, { target: 'params' });
                 if (ok) {
                     await notifySettingsUpdated();
                     sendInitData();
@@ -4429,8 +4438,10 @@ async function handleFrameMessage(event) {
             }
 
             // 提取数据并保存到小白X设置中
+            const importedImages = (dataObj.images && typeof dataObj.images === 'object') ? dataObj.images : {};
             updateSettingsPersistent(async (settings) => {
                 let importedCount = 0;
+                let overwrittenCount = 0;
 
                 // 遍历 chatu8 的 presets 对象
                 for (const [presetName, presetData] of Object.entries(dataObj.presets)) {
@@ -4442,6 +4453,18 @@ async function handleFrameMessage(event) {
                         name: presetName,
                         positivePrefix: presetData.fixedPrompt || '',
                         negativePrefix: presetData.negativePrompt || '',
+                        // 缩略图优先取内嵌 thumbnail（旧版小白X 文件），
+                        // 否则按智绘姬格式用 previewImageId 到顶层 images 取回 dataURL
+                        thumbnail: (() => {
+                            if (typeof presetData.thumbnail === 'string' && presetData.thumbnail) {
+                                return presetData.thumbnail;
+                            }
+                            const refId = presetData.previewImageId;
+                            if (refId && typeof importedImages[refId] === 'string') {
+                                return importedImages[refId];
+                            }
+                            return '';
+                        })(),
                         maxImages: 0,
                         maxCharactersPerImage: 0,
                         // 补齐其余默认参数
@@ -4467,15 +4490,27 @@ async function handleFrameMessage(event) {
                             decrisper: false
                         }
                     };
-                    settings.paramsPresets.push(newPreset);
-                    importedCount++;
+                    // 同名预设直接覆盖（保留原 id，避免重复导入产生重复项）
+                    const existingIdx = settings.paramsPresets.findIndex(p => p.name === presetName);
+                    if (existingIdx >= 0) {
+                        newPreset.id = settings.paramsPresets[existingIdx].id;
+                        settings.paramsPresets[existingIdx] = newPreset;
+                        overwrittenCount++;
+                    } else {
+                        settings.paramsPresets.push(newPreset);
+                        importedCount++;
+                    }
                     // 如果是最后导入的一个，就让界面选中它
                     settings.selectedParamsPresetId = newPreset.id;
                 }
 
                 // 弹出界面提示
-                if (importedCount > 0) {
-                    showToast(`成功导入 ${importedCount} 个预设！`, 'success', 3000);
+                const total = importedCount + overwrittenCount;
+                if (total > 0) {
+                    const parts = [];
+                    if (importedCount) parts.push(`新增 ${importedCount} 个`);
+                    if (overwrittenCount) parts.push(`覆盖同名 ${overwrittenCount} 个`);
+                    showToast(`成功导入 ${total} 个预设（${parts.join('，')}）`, 'success', 3000);
                 } else {
                     showToast(`文件中没有找到预设！`, 'warning', 3000);
                 }
@@ -4500,15 +4535,26 @@ async function handleFrameMessage(event) {
                 break;
             }
 
-            const chatu8Format = { presets: {} };
-            s.paramsPresets.forEach(p => {
+            // 智绘姬原生格式：图片放顶层 images（dataURL），预设用 previewImageId 引用。
+            // 智绘姬导入时会自动转存图片并重写 id，卡片即可显示预览；
+            // 图片只存一份（不内嵌 thumbnail），避免文件体积翻倍。
+            const chatu8Format = { presets: {}, images: {} };
+            s.paramsPresets.forEach((p, i) => {
                 const name = p.name || '未命名';
-                chatu8Format.presets[name] = {
+                const preset = {
                     fixedPrompt: p.positivePrefix || "",
                     fixedPrompt_end: "",
-                    negativePrompt: p.negativePrefix || ""
+                    negativePrompt: p.negativePrompt || ""
                 };
+                if (p.thumbnail) {
+                    const imageId = `lwb-thumb-${i + 1}`;
+                    chatu8Format.images[imageId] = p.thumbnail;
+                    preset.previewImageId = imageId;
+                }
+                chatu8Format.presets[name] = preset;
             });
+            // 没有任何缩略图时不输出空 images，保持与智绘姬导出文件结构一致
+            if (!Object.keys(chatu8Format.images).length) delete chatu8Format.images;
 
             const blob = new Blob([JSON.stringify(chatu8Format, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);

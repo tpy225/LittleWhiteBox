@@ -462,10 +462,11 @@ const STYLES = `
     min-height: 0;
     margin-top: 10px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+    /* 固定 4 列：菜单宽 260px，内容约 240px，每列约 54px（原卡片一半） */
+    grid-template-columns: repeat(4, 1fr);
     grid-auto-rows: max-content;
     align-items: start;
-    gap: 8px;
+    gap: 6px;
     align-content: start;
     overflow-y: auto;
     overflow-x: hidden;
@@ -496,7 +497,7 @@ const STYLES = `
    否则该 WebView 会把高度算成 0，导致卡片被压成细线、全部挤在一起不滚动 */
 .nd-preset-thumb {
     width: 100%;
-    height: 150px;
+    height: 75px;
     object-fit: cover;
     background: rgba(255, 255, 255, 0.05);
     display: block;
@@ -506,22 +507,25 @@ const STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 28px;
-    line-height: 1;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    line-height: 1.2;
+    text-align: center;
+    padding: 2px;
+    box-sizing: border-box;
 }
 
 .nd-preset-check {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 2px;
+    right: 2px;
     z-index: 2;
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: var(--nd-success);
     color: #0b1712;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     display: none;
     align-items: center;
@@ -531,10 +535,10 @@ const STYLES = `
 .nd-preset-card.active .nd-preset-check { display: flex; }
 
 .nd-preset-name {
-    font-size: 11px;
-    line-height: 1.3;
+    font-size: 10px;
+    line-height: 1.25;
     color: var(--nd-text-secondary);
-    padding: 5px 7px;
+    padding: 3px 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -656,8 +660,6 @@ function renderPresetGrid(gridEl) {
     const settings = getSettings();
     const presets = settings.paramsPresets || [];
     const currentId = settings.selectedParamsPresetId;
-    // 运行时印记：打开弹窗时若浏览器控制台出现此行，说明新加载的模块确实生效
-    console.log('[ND-float] renderPresetGrid v4 (no-resize, inline-150px)', presets.length);
     gridEl.replaceChildren();
 
     if (!presets.length) {
@@ -674,10 +676,10 @@ function renderPresetGrid(gridEl) {
         // 内联 align-self 防止 grid 把卡片在纵向拉伸/压缩
         card.style.alignSelf = 'start';
 
-        // 空缩略图占位：内联固定高度（不依赖 stylesheet，杜绝被外部样式压成 0）
+        // 空缩略图占位：内联固定高度（不依赖 stylesheet，杜绝被外部样式压成 0），纯文字
         const makeEmpty = () => {
-            const empty = createEl('div', 'nd-preset-thumb empty', '🖼');
-            empty.style.cssText = 'width:100%;height:150px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.3);font-size:28px;line-height:1;box-sizing:border-box;';
+            const empty = createEl('div', 'nd-preset-thumb empty', '无预览');
+            empty.style.cssText = 'width:100%;height:75px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.35);font-size:10px;line-height:1.2;text-align:center;padding:2px;box-sizing:border-box;';
             return empty;
         };
 
@@ -688,7 +690,7 @@ function renderPresetGrid(gridEl) {
             img.loading = 'lazy';
             img.decoding = 'async';
             // 内联固定尺寸：最高优先级，避免任何外部/残留 CSS 把高度算成 0
-            img.style.cssText = 'width:100%;height:150px;object-fit:cover;display:block;background:rgba(255,255,255,0.05);box-sizing:border-box;';
+            img.style.cssText = 'width:100%;height:75px;object-fit:cover;display:block;background:rgba(255,255,0.05);box-sizing:border-box;';
             img.src = p.thumbnail;
             img.addEventListener('error', () => img.replaceWith(makeEmpty()), { once: true });
             card.appendChild(img);
