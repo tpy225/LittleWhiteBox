@@ -720,20 +720,20 @@ select.input { cursor: pointer; }
 .nd-vibe-group-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
     margin-top: 10px;
     flex-wrap: wrap;
 }
 .nd-vibe-group-bar select {
-    flex: 1;
-    min-width: 130px;
-    font-size: 12px;
-    padding: 6px 8px;
+    flex: 1 1 auto;
+    min-width: 72px;
+    font-size: 11px;
+    padding: 5px 6px;
 }
 .nd-vibe-group-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--bg-input);
     color: var(--text);
@@ -742,7 +742,7 @@ select.input { cursor: pointer; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: 13px;
     padding: 0;
 }
 .nd-vibe-group-btn:hover:not(:disabled) { border-color: var(--border-focus, #7c6ff0); }
@@ -776,9 +776,10 @@ select.input { cursor: pointer; }
 .nd-vibe-upload-tile:hover { border-color: var(--border-focus, #7c6ff0); color: var(--text); }
 .nd-vibe-upload-tile i { font-size: 16px; }
 
-/* 标题旁的 ⓘ 用法说明：hover 或点击聚焦时展开 */
+/* 标题旁的 ⓘ 用法说明：hover 或点击聚焦时展开；弹层以整个标题为定位锚点，左缘与标题对齐 */
+.nd-vibe-title { position: relative; }
 .nd-info-tip {
-    position: relative;
+    position: static;
     display: inline-flex;
     align-items: center;
     margin-left: 6px;
@@ -794,14 +795,15 @@ select.input { cursor: pointer; }
 .nd-info-tip-body {
     display: none;
     position: absolute;
-    top: calc(100% + 6px);
+    top: calc(100% + 2px);
     left: 0;
     z-index: 60;
     width: 280px;
+    max-width: calc(100vw - 48px);
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid var(--border);
-    background: var(--bg-input);
+    background: var(--bg-secondary);
     box-shadow: 0 6px 20px rgba(0,0,0,0.35);
     color: var(--text);
     font-size: 12px;
@@ -1147,7 +1149,7 @@ select.input { cursor: pointer; }
                 </div>
 
                 <div class="card">
-                    <div class="card-title">✨ Vibe 氛围转移<span class="nd-info-tip" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="nd-info-tip-body">上传参考图把画风 / 构图 / 色彩迁移到生成结果。两种用法：① 直接勾选 → 点最上面卡片的「保存」，勾选随该画师串预设切换；② 勾选后用 💾 存成 Vibe 组，下拉选组再保存画师串预设，之后改组（💾覆盖）所有引用它的预设一起更新。</span></span><span id="nd_vibe_model_hint" class="form-hint" style="display:inline;margin-left:8px;"></span></div>
+                    <div class="card-title nd-vibe-title">✨ Vibe 氛围转移<span class="nd-info-tip" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="nd-info-tip-body">上传参考图把画风 / 构图 / 色彩迁移到生成结果。两种用法：① 直接勾选 → 点最上面卡片的「保存」，勾选随该画师串预设切换；② 勾选后用 💾 存成 Vibe 组，下拉选组再保存画师串预设，之后改组（💾覆盖）所有引用它的预设一起更新。</span></span><span id="nd_vibe_model_hint" class="form-hint" style="display:inline;margin-left:8px;"></span></div>
 
                     <!-- Vibe 组保存栏：下拉选组即套用勾选/强度；＋另存新组，✏重命名，💾覆盖保存当前组，🗑删组 -->
                     <div class="nd-vibe-group-bar">
