@@ -33,6 +33,8 @@ const NOVEL_DRAW_PROVIDER_SETTING_KEYS = new Set([
     'promptPresets',
     'selectedPromptPresetId',
     '_promptTemplateVersion',
+    // 全局 Vibe 库（原圖 + 各模型編碼，花點數的資產），隨 provider 配置一起持久化
+    'vibeLibrary',
 ]);
 
 let settingsCache = null;
