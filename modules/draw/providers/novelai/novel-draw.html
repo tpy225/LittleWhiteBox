@@ -720,20 +720,21 @@ select.input { cursor: pointer; }
 .nd-vibe-group-bar {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
     margin-top: 10px;
     flex-wrap: wrap;
 }
 .nd-vibe-group-bar select {
-    flex: 1 1 auto;
-    min-width: 72px;
-    font-size: 11px;
-    padding: 5px 6px;
+    /* 下拉独占一行；按钮组自然落到第二行 */
+    flex: 0 0 100%;
+    min-width: 0;
+    font-size: 12px;
+    padding: 6px 8px;
 }
 .nd-vibe-group-btn {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--bg-input);
     color: var(--text);
@@ -742,7 +743,7 @@ select.input { cursor: pointer; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 14px;
     padding: 0;
 }
 .nd-vibe-group-btn:hover:not(:disabled) { border-color: var(--border-focus, #7c6ff0); }
@@ -805,16 +806,19 @@ select.input { cursor: pointer; }
     border: 1px solid var(--border);
     background: var(--bg-secondary);
     box-shadow: 0 6px 20px rgba(0,0,0,0.35);
-    color: var(--text);
+    color: var(--text-secondary);
     font-size: 12px;
     font-weight: normal;
     line-height: 1.7;
     text-align: left;
     white-space: normal;
+    flex-direction: column;
+    gap: 6px;
 }
+.nd-info-tip-body b { color: var(--text-primary); font-weight: 600; }
 .nd-info-tip:hover .nd-info-tip-body,
 .nd-info-tip:focus .nd-info-tip-body,
-.nd-info-tip:focus-within .nd-info-tip-body { display: block; }
+.nd-info-tip:focus-within .nd-info-tip-body { display: flex; }
 .nd-vibe-item {
     display: flex;
     gap: 10px;
@@ -1149,7 +1153,7 @@ select.input { cursor: pointer; }
                 </div>
 
                 <div class="card">
-                    <div class="card-title nd-vibe-title">✨ Vibe 氛围转移<span class="nd-info-tip" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="nd-info-tip-body">上传参考图把画风 / 构图 / 色彩迁移到生成结果。两种用法：① 直接勾选 → 点最上面卡片的「保存」，勾选随该画师串预设切换；② 勾选后用 💾 存成 Vibe 组，下拉选组再保存画师串预设，之后改组（💾覆盖）所有引用它的预设一起更新。</span></span><span id="nd_vibe_model_hint" class="form-hint" style="display:inline;margin-left:8px;"></span></div>
+                    <div class="card-title nd-vibe-title">✨ Vibe 氛围转移<span class="nd-info-tip" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="nd-info-tip-body"><span class="nd-info-tip-lead">上传参考图把画风 / 构图 / 色彩迁移到生成结果。两种用法：</span><span class="nd-info-tip-item"><b>① 散装：</b>直接勾选 → 点最上面卡片的「保存」，勾选随该画师串预设切换。</span><span class="nd-info-tip-item"><b>② Vibe 组：</b>勾选后用 💾 存成 Vibe 组，下拉选组再保存画师串预设；之后改组（💾覆盖），所有引用它的预设一起更新。</span></span></span><span id="nd_vibe_model_hint" class="form-hint" style="display:inline;margin-left:8px;"></span></div>
 
                     <!-- Vibe 组保存栏：下拉选组即套用勾选/强度；＋另存新组，✏重命名，💾覆盖保存当前组，🗑删组 -->
                     <div class="nd-vibe-group-bar">
@@ -3346,7 +3350,7 @@ function renderGroupBar() {
 function renderVibeAll() {
     const modelKey = getVibeModelKeyLocal(currentFormModel());
     const hint = $('nd_vibe_model_hint');
-    if (hint) hint.textContent = modelKey ? '' : '（当前模型不支持 Vibe，仅 V4 / V4.5）';
+    if (hint) hint.textContent = modelKey ? '' : '（当前模型不支持 Vibe）';
     renderVibeList(modelKey);
     renderGroupBar();
 }
