@@ -256,11 +256,11 @@ function validateGenerationRecipe(provider, value, imageCount) {
         recipe = assertExactKeys(value, [
             'apiBaseUrl', 'apiKey', 'insecureTLS', 'timeout', 'requestDelay', 'overrideSize',
             'baseHref', 'resolveForBackend', 'params', 'positivePrefix', 'negativePrefix',
-            'knownCharacters', 'autoLearnEnabled', 'autoLearnMode', 'seeds',
+            'knownCharacters', 'autoLearnEnabled', 'autoLearnMode', 'continuityEnabled', 'seeds',
         ], path, [
             'apiBaseUrl', 'apiKey', 'insecureTLS', 'timeout', 'requestDelay', 'overrideSize',
             'resolveForBackend', 'params', 'positivePrefix', 'negativePrefix', 'knownCharacters',
-            'autoLearnEnabled', 'autoLearnMode', 'seeds',
+            'autoLearnEnabled', 'autoLearnMode', 'continuityEnabled', 'seeds',
         ]);
         validateCommonRecipe(recipe, path);
         // 空值是 NovelAI 官方图片域名的现行设置语义；compiler 会在服务端解析为官方端点。
@@ -281,6 +281,7 @@ function validateGenerationRecipe(provider, value, imageCount) {
         if (!['new_only', 'auto_update'].includes(recipe.autoLearnMode)) {
             throw invalid(`${path}.autoLearnMode must be new_only or auto_update`);
         }
+        requireBoolean(recipe.continuityEnabled, `${path}.continuityEnabled`);
         if (!Array.isArray(recipe.seeds) || recipe.seeds.length !== imageCount) {
             throw invalid(`${path}.seeds must match maxPlanImages`);
         }

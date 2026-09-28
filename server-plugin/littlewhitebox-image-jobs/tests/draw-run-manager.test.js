@@ -130,6 +130,7 @@ test('NovelAI Draw Run accepts the empty API base used for the official image en
             knownCharacters: [],
             autoLearnEnabled: false,
             autoLearnMode: 'new_only',
+            continuityEnabled: false,
             seeds: [1],
         },
     });
@@ -169,6 +170,7 @@ test('NovelAI V5 character limits are enforced at the Draw Run envelope boundary
             knownCharacters: [],
             autoLearnEnabled: false,
             autoLearnMode: 'new_only',
+            continuityEnabled: false,
             seeds: [1],
         },
     });

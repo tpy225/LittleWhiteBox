@@ -177,6 +177,7 @@ async function buildScenePlannerRequest(options = {}) {
         messageText,
         sceneSource: providedSceneSource,
         presentCharacters = [],
+        continuityText = '',
         useWorldInfo = false,
         customPrompts = null,
         promptDefaults = EMPTY_PROMPT_CONFIG,
@@ -213,7 +214,7 @@ async function buildScenePlannerRequest(options = {}) {
     );
     const promptConfig = getEffectivePromptConfig(customPrompts, promptDefaults);
     const runtime = await resolveExpansionRuntime(options.expansionOptions);
-    const slots = createPromptSlots(['worldInfo', 'characterInfo', 'lastMessage']);
+    const slots = createPromptSlots(['worldInfo', 'characterInfo', 'continuity', 'lastMessage']);
 
     try {
         // Every dynamic value is expanded exactly once, then spliced literally into the
@@ -237,6 +238,10 @@ async function buildScenePlannerRequest(options = {}) {
             buildCharacterInfoForLLM(presentCharacters),
             runtime,
         );
+        const continuityBlock = String(continuityText || '').trim();
+        const expandedContinuity = continuityBlock
+            ? await expandScenePromptText(continuityBlock, runtime)
+            : '';
         const tagGuide = typeof modelGuide === 'string'
             ? modelGuide
             : getEffectiveTagGuide(promptConfig.tagGuideContent);
@@ -250,6 +255,7 @@ async function buildScenePlannerRequest(options = {}) {
         const userTaskTemplate = buildScenePlannerUserTask({
             worldInfoSlot: slots.worldInfo,
             characterInfoSlot: slots.characterInfo,
+            continuitySlot: slots.continuity,
             lastMessageSlot: slots.lastMessage,
             limitsLine: buildSessionLimitsLine(
                 effectiveMaxImages,
@@ -262,6 +268,7 @@ async function buildScenePlannerRequest(options = {}) {
         const slotValues = {
             [slots.worldInfo]: expandedWorldInfo,
             [slots.characterInfo]: expandedCharacterInfo,
+            [slots.continuity]: expandedContinuity,
             [slots.lastMessage]: expandedMessageText,
         };
         const systemPrompt = (await expandScenePromptText(systemTemplate, runtime)).trim();

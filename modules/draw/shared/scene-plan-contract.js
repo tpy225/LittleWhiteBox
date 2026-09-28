@@ -325,7 +325,7 @@ function normalizeImages(images, options = {}) {
         return {
             index: imageIndex + 1,
             scene: requireString(image.scene, `${path}.scene`),
-            title: optionalString(image.title, 'title', `${path}.title`),  
+            title: optionalString(image, 'title', path),  
             chars,
             placement: {
                 mode: 'source',

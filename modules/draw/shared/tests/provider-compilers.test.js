@@ -165,6 +165,7 @@ test('NovelAI compiler emits deterministic V5 stream requests without browser gl
         knownCharacters: KNOWN_CHARACTERS,
         autoLearnEnabled: true,
         autoLearnMode: 'auto_update',
+        continuityEnabled: true,
         seeds: [987654321, 123456789],
     });
 
@@ -180,6 +181,7 @@ test('NovelAI compiler emits deterministic V5 stream requests without browser gl
     assert.match(item.request.payload.parameters.negative_prompt, /bad/);
     assert.deepEqual(compiled.artifacts[0].providerMetadata.autoLearnCharacters, SCENE_PLAN[0].chars);
     assert.equal(compiled.artifacts[0].providerMetadata.autoLearnMode, 'auto_update');
+    assert.deepEqual(compiled.artifacts[0].providerMetadata.continuityCharacters, SCENE_PLAN[0].chars);
 });
 
 test('NovelAI compiler keeps the released V4.5 JSON payload contract', () => {
@@ -206,6 +208,7 @@ test('NovelAI compiler keeps the released V4.5 JSON payload contract', () => {
         knownCharacters: KNOWN_CHARACTERS,
         autoLearnEnabled: false,
         autoLearnMode: 'new_only',
+        continuityEnabled: false,
         seeds: [123456789],
     });
 
@@ -219,6 +222,7 @@ test('NovelAI compiler keeps the released V4.5 JSON payload contract', () => {
     assert.match(item.request.payload.parameters.characterPrompts[0].prompt, /ali \(original\)/);
     assert.match(item.request.payload.parameters.negative_prompt, /bad quality/);
     assert.deepEqual(compiled.artifacts[0].providerMetadata.autoLearnCharacters, []);
+    assert.deepEqual(compiled.artifacts[0].providerMetadata.continuityCharacters, []);
 });
 
 test('NovelAI single-request compiler resolves transport and payload from the same merged params', () => {
@@ -254,6 +258,7 @@ test('NovelAI compiler preserves relative URLs for browser-direct delivery', () 
         requestDelay: { min: 15000, max: 30000 },
         autoLearnEnabled: false,
         autoLearnMode: 'new_only',
+        continuityEnabled: false,
         params: {
             model: 'nai-diffusion-4-5-full',
             width: 832,

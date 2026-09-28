@@ -40,6 +40,11 @@ import {
     buildKnownCharacterPrompt,
     joinTags,
 } from '../../shared/character-prompts.js';
+import {
+    buildContinuityBlockForRequest,
+    recordPlanContinuity,
+} from '../../shared/character-continuity.js';
+import { isGenericCharacterName } from '../../shared/generic-char-name.js';
 import { resolveAutoLearnCharacter } from './novel-character-learning.js';
 import {
     NovelImageResponseError,
@@ -355,6 +360,7 @@ const DEFAULT_SETTINGS = {
     characterTags: [],
     autoLearnCharacters: false,
     autoLearnMode: 'new_only',
+    continuityEnabled: true,
     overrideSize: 'default',
     showFloorButton: true,
     showFloatingButton: false,
@@ -1073,6 +1079,7 @@ function normalizeSettings(saved = {}) {
         characterTags: Array.isArray(source.characterTags) ? source.characterTags : [],
         autoLearnCharacters: source.autoLearnCharacters === true,
         autoLearnMode: source.autoLearnMode,
+        continuityEnabled: source.continuityEnabled !== false,
         overrideSize: String(source.overrideSize || 'default'),
         showFloorButton: source.showFloorButton !== false,
         showFloatingButton: source.showFloatingButton === true,
@@ -1119,6 +1126,7 @@ function normalizeSettings(saved = {}) {
     }));
 
     merged.autoLearnCharacters = !!merged.autoLearnCharacters;
+    merged.continuityEnabled = merged.continuityEnabled !== false;
     merged.danbooruLocalDB = !!merged.danbooruLocalDB;
     merged.autoLearnMode = ['new_only', 'auto_update'].includes(merged.autoLearnMode)
         ? merged.autoLearnMode : 'new_only';
@@ -1552,33 +1560,8 @@ function detectPresentCharacters(messageText, characterTags) {
 
 // ── 角色自动学习 ─────────────────────────────────────────────
 
-/** 通用/匿名角色名过滤：预编译为单一正则，避免每次调用迭代 30+ 个 pattern */
-const GENERIC_NAME_REGEX = new RegExp([
-    // 中文通用/匿名
-    '(?:^未知)', '(?:^路人)', '(?:^路边)', '(?:^陌生)', '(?:^无名)', '(?:^某[个位])',
-    '(?:^女[人性孩][A-Za-z0-9]?$)', '(?:^男[人性孩][A-Za-z0-9]?$)',
-    '(?:^少[女男年][A-Za-z0-9]?$)', '(?:^大[叔妈姐哥][A-Za-z0-9]?$)',
-    '(?:^老[人头大妇][A-Za-z0-9]?$)',
-    '(?:^[女男人]$)',
-    '(?:^角色[0-9A-Za-z]*$)', '(?:^人物[0-9A-Za-z]*$)',
-    '(?:^配角)', '(?:^(?:NPC|mob))',
-    '(?:^[男女][0-9]+$)',
-    // 中文关系/职业称呼
-    '(?:^[哥姐弟妹]$)',
-    '(?:^(?:哥哥|姐姐|弟弟|妹妹|老师|学长|学姐|前辈|老板|店员|医生|护士|主人|奴隶|仆人)$)',
-    // 日语称呼
-    '(?:^(?:お[兄姉]ちゃん|先輩|先生|マスター|お嬢様|ご主人様)$)',
-    // 英文通用
-    '(?:^(?:faceless|unnamed|unknown|random|stranger|passerby|bystander))',
-    '(?:^(?:girl|boy|woman|man|person|male|female)\\s*[A-Za-z0-9]?$)',
-    // 英文关系/职业称呼
-    '(?:^(?:teacher|master|boss|doctor|nurse|brother|sister|senpai|sensei)$)',
-].join('|'), 'i');
-
-function isGenericCharName(name) {
-    if (!name || name.trim().length <= 1) return true;
-    return GENERIC_NAME_REGEX.test(name.trim());
-}
+// 通用/匿名角色名过滤与「上镜锚点」共用同一份 shared 判定，避免两套口径漂移。
+const isGenericCharName = isGenericCharacterName;
 
 function autoLearnFromTasks(tasks, settings) {
     const result = { newChars: [], updatedChars: [] };
@@ -1885,6 +1868,7 @@ export function createNovelGenerationRecipe({
         autoLearnMode: ['new_only', 'auto_update'].includes(settings.autoLearnMode)
             ? settings.autoLearnMode
             : 'new_only',
+        continuityEnabled: settings.continuityEnabled !== false,
         seeds: Array.from(
             { length: Math.max(0, Math.floor(Number(itemCount) || 0)) },
             () => createNovelRequestSeed(params),
@@ -3201,29 +3185,44 @@ async function maybeAutoLearnFromTasks(tasks = [], settings = {}) {
 // 后台 Planner 的角色事实随 handoff 进入短生命周期 journal。接管转 active 前
 // 在浏览器侧复用原有学习逻辑；该逻辑只新增角色/补空字段，重复执行保持幂等。
 export async function applyNovelDrawRunAutoLearn(record = {}) {
-    const metadata = (Array.isArray(record.items) ? record.items : [])
+    const items = Array.isArray(record.items) ? record.items : [];
+    const charsFrom = (item, key) => JSON.parse(JSON.stringify(
+        Array.isArray(item.previewMetadata?.providerMetadata?.[key])
+            ? item.previewMetadata.providerMetadata[key]
+            : [],
+    ));
+    const autoLearnMeta = items
         .map(item => item.previewMetadata?.providerMetadata)
         .find(value => Array.isArray(value?.autoLearnCharacters)
             && value.autoLearnCharacters.length > 0);
-    if (!metadata) return;
-    const tasks = (Array.isArray(record.items) ? record.items : []).map(item => ({
-        chars: JSON.parse(JSON.stringify(
-            Array.isArray(item.previewMetadata?.providerMetadata?.autoLearnCharacters)
-                ? item.previewMetadata.providerMetadata.autoLearnCharacters
-                : [],
-        )),
-    })).filter(task => task.chars.length > 0);
-    if (tasks.length === 0) return;
+    const autoLearnTasks = items
+        .map(item => ({ chars: charsFrom(item, 'autoLearnCharacters') }))
+        .filter(task => task.chars.length > 0);
+    const continuityTasks = items
+        .map(item => ({ chars: charsFrom(item, 'continuityCharacters') }))
+        .filter(task => task.chars.length > 0);
+    if (!autoLearnMeta && continuityTasks.length === 0) return;
     try {
         await loadSettings();
         await loadSharedDrawSettings();
-        await maybeAutoLearnFromTasks(tasks, {
-            ...getRuntimeSettings(),
-            autoLearnCharacters: true,
-            autoLearnMode: metadata.autoLearnMode,
-        });
+        const runtimeSettings = getRuntimeSettings();
+        if (autoLearnMeta && autoLearnTasks.length > 0) {
+            await maybeAutoLearnFromTasks(autoLearnTasks, {
+                ...runtimeSettings,
+                autoLearnCharacters: true,
+                autoLearnMode: autoLearnMeta.autoLearnMode,
+            });
+        }
+        // 上镜锚点回写：后台 node 侧读不到 chatMetadata，只能在接管回到浏览器后补写。
+        if (runtimeSettings.continuityEnabled !== false && continuityTasks.length > 0) {
+            const knownNames = (runtimeSettings.characterTags || [])
+                .filter(character => isCharacterEnabled(character))
+                .map(character => character.name)
+                .filter(Boolean);
+            await recordPlanContinuity(continuityTasks, { knownNames });
+        }
     } catch (error) {
-        // 自动学习是已有的 best-effort 辅助行为，不能阻断已付费图片的接管。
+        // 自动学习/锚点回写都是已有的 best-effort 辅助行为，不能阻断已付费图片的接管。
         console.warn('[NovelDraw] 后台规划角色自动学习失败:', error);
     }
 }
@@ -3243,6 +3242,7 @@ async function buildNovelScenePlannerOptions({
     signal,
     useWorldbook = true,
     onStateChange,
+    continuityText = '',
 }) {
     let worldbookEntries = null;
     const customPrompts = getActivePromptPreset(settings) || DEFAULT_PROMPT_CONFIG;
@@ -3262,6 +3262,7 @@ async function buildNovelScenePlannerOptions({
     return {
         sceneSource,
         presentCharacters,
+        continuityText,
         useWorldInfo: useWorldbook && settings.useWorldInfo,
         customPrompts,
         promptDefaults: DEFAULT_PROMPT_CONFIG,
@@ -3313,6 +3314,12 @@ async function generateImagesFromText(options = {}) {
         if (!sceneSource.content) throw new NovelDrawError('正文内容为空（可能被过滤规则清空）', ErrorType.PARSE);
 
         const presentCharacters = detectPresentCharacters(sceneSource.content, settings.characterTags || []);
+        const continuityText = settings.continuityEnabled === false
+            ? ''
+            : await buildContinuityBlockForRequest({
+                presentCharacters,
+                bodyText: sceneSource.content,
+            });
         job.phase = 'llm';
         options.onStateChange?.('llm', toScenePlannerProgress());
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
@@ -3327,6 +3334,7 @@ async function generateImagesFromText(options = {}) {
                 signal,
                 useWorldbook: !!options.useWorldbook,
                 onStateChange: options.onStateChange,
+                continuityText,
             });
         } catch (e) {
             console.error('[NovelDraw] 文本配图场景分析失败:', e);
@@ -3336,6 +3344,11 @@ async function generateImagesFromText(options = {}) {
 
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
         await maybeAutoLearnFromTasks(tasks, settings);
+        if (settings.continuityEnabled !== false) {
+            await recordPlanContinuity(tasks, {
+                knownNames: presentCharacters.map(character => character.name),
+            });
+        }
 
         const images = new Array(tasks.length);
         let successCount = 0;
@@ -3485,6 +3498,14 @@ async function generateAndInsertImages({
 
         const presentCharacters = detectPresentCharacters(sceneSource.content, settings.characterTags || []);
 
+        // 上镜锚点：读取本聊天中这些角色上一次实际入画的外貌/着装 tag，跨楼层延续。
+        const continuityText = settings.continuityEnabled === false
+            ? ''
+            : await buildContinuityBlockForRequest({
+                presentCharacters,
+                bodyText: sceneSource.content,
+            });
+
         if (isNovelImageBackendJobEnabled(settings)) {
             job.phase = 'submitting';
             // Vibe 编码在浏览器侧完成（/ai/encode-vibe 直连），编码结果随 recipe 一起提交给后端
@@ -3505,6 +3526,7 @@ async function generateAndInsertImages({
                             preset,
                             signal,
                             onStateChange,
+                            continuityText,
                         }),
                         maxPlanImages,
                     });
@@ -3538,6 +3560,7 @@ async function generateAndInsertImages({
                 preset,
                 signal,
                 onStateChange,
+                continuityText,
             }));
         } catch (e) {
             console.error('[NovelDraw] 场景分析原始错误:', e);
@@ -3549,6 +3572,11 @@ async function generateAndInsertImages({
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
 
         await maybeAutoLearnFromTasks(tasks, settings);
+        if (settings.continuityEnabled !== false) {
+            await recordPlanContinuity(tasks, {
+                knownNames: presentCharacters.map(character => character.name),
+            });
+        }
 
         const initialChatId = ctx.chatId;
         const galleryMeta = {
@@ -4365,6 +4393,7 @@ async function sendInitData() {
             characterTags: settings.characterTags,
             autoLearnCharacters: !!settings.autoLearnCharacters,
             autoLearnMode: settings.autoLearnMode || 'new_only',
+            continuityEnabled: settings.continuityEnabled !== false,
             danbooruLocalDB: !!settings.danbooruLocalDB,
             overrideSize: settings.overrideSize,
             showFloorButton: settings.showFloorButton !== false,
@@ -5072,6 +5101,15 @@ async function handleFrameMessage(event) {
                 settings.autoLearnMode = ['new_only', 'auto_update'].includes(data.autoLearnMode)
                     ? data.autoLearnMode : 'new_only';
             }, nextAutoLearnCharacters ? '自动学习已开启' : '自动学习已关闭');
+            sendInitData();
+            break;
+        }
+
+        case 'SAVE_CONTINUITY': {
+            const enabled = !!data.enabled;
+            await updateSettingsPersistent((settings) => {
+                settings.continuityEnabled = enabled;
+            }, enabled ? '上镜锚点已开启' : '上镜锚点已关闭');
             sendInitData();
             break;
         }

@@ -404,6 +404,7 @@ test('NovelAI, SD, and Comfy each submit one Tool call and receive the same imag
         assert.deepEqual(tasks, [{
             index: 1,
             scene: 'solo, opening door, indoor',
+            title: '',
             chars: [{
                 name: '阿璃',
                 danbooru: '',

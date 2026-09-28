@@ -312,7 +312,7 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
         </div>
     </div>`;
 
-    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;${border}border-radius:14px;padding:2px;">
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;${border}border-radius:14px;padding:2px;">
   <details class="xb-nd-details" style="border-radius:10px;overflow:hidden;">
     <summary class="xb-nd-summary" style="list-style:none;cursor:pointer;padding:4px 8px;background:#e1ebed;border-radius:10px;display:flex;align-items:center;gap:10px;font-size:13px;color:#9fbec4;user-select:none;">
       <span>．·°∴ ☆．．·° ${escapeHtml(displayTitle)} °·．．☆ ∴°·．</span>

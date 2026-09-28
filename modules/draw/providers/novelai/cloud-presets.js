@@ -282,6 +282,33 @@ function collectVibeGroupExport(preset, vibeLibrary) {
     return { name: String(group.name || '').slice(0, 60) || 'Vibe 组', members };
 }
 
+// 供非 envelope 场景复用（如智绘姬互通文件挂 lwb 扩展键）：
+// 组优先内联整组，否则散装内联被勾选项；无 Vibe 返回 null
+export function collectPresetVibeExport(preset, vibeLibrary) {
+    const group = collectVibeGroupExport(preset, vibeLibrary);
+    if (group) return { group };
+    const references = collectVibeReferences(preset, vibeLibrary);
+    return references.length ? { references } : null;
+}
+
+// collectPresetVibeExport 的逆向：把 vibe 片段解析成入库所需三件套
+export function parsePresetVibeFragment(rawVibe, generateVibeId) {
+    const emptyVibe = { groupId: '', selections: [] };
+    if (!rawVibe || typeof rawVibe !== 'object') {
+        return { vibe: emptyVibe, vibeImports: [], vibeGroup: null };
+    }
+    if (rawVibe.group && typeof rawVibe.group === 'object') {
+        const result = normalizeVibeGroup(rawVibe.group, generateVibeId);
+        return {
+            vibe: { groupId: result.vibeGroup.id, selections: [] },
+            vibeImports: result.vibeImports,
+            vibeGroup: result.vibeGroup,
+        };
+    }
+    const result = normalizeVibeReferences(rawVibe, generateVibeId);
+    return { vibe: { groupId: '', selections: result.selections }, vibeImports: result.vibeImports, vibeGroup: null };
+}
+
 function buildSharedSingle(item) {
     return {
         id: item.id,
@@ -341,9 +368,10 @@ export function parsePresetData(data, generateId, generateVibeId = generateId) {
     };
 }
 
-export function exportPreset(preset, vibeLibrary = null) {
-    const author = prompt("请输入你的作者名:", "") || "";
-    const description = prompt("简介 (画风介绍):", "") || "";
+export function exportPreset(preset, vibeLibrary = null, { interactive = true } = {}) {
+    // 云端分享才需要询问作者名/简介；本地完整备份直接跳过 prompt
+    const author = interactive ? (prompt("请输入你的作者名:", "") || "") : "";
+    const description = interactive ? (prompt("简介 (画风介绍):", "") || "") : "";
     // 组模式内联整个组（名+成员勾选+原图编码）；散装模式只内联被勾选的 single
     const vibeGroupExport = collectVibeGroupExport(preset, vibeLibrary);
     const vibeReferences = vibeGroupExport ? [] : collectVibeReferences(preset, vibeLibrary);
@@ -996,12 +1024,13 @@ export function closeModal() {
 }
 
 export function downloadPresetAsFile(preset, vibeLibrary = null) {
-    const data = exportPreset(preset, vibeLibrary);
+    const data = exportPreset(preset, vibeLibrary, { interactive: false });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${preset.name || 'preset'}.json`;
+    const safeName = String(preset.name || 'preset').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+    a.download = `lwb-preset-${safeName}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

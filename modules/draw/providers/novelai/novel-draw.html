@@ -1074,8 +1074,8 @@ select.input { cursor: pointer; }
                         <button id="nd_params_rename" class="btn btn-icon" title="重命名"><i class="fa-solid fa-pen"></i></button>
                         <button id="nd_params_save" class="btn btn-primary" title="保存"><i class="fa-solid fa-floppy-disk"></i></button>
                         <button id="nd_params_cloud" class="btn btn-icon" title="云端预设" style="color:#d4a574;"><i class="fa-solid fa-cloud-arrow-down"></i></button>
-                        <button id="nd_params_export" class="btn btn-icon" title="导出所有预设（智绘姬）"><i class="fa-solid fa-share-from-square"></i></button>
-                        <label class="btn btn-icon" title="导入智绘姬格式预设" style="cursor:pointer;"><i class="fa-solid fa-file-import"></i><input type="file" id="nd_params_import" accept=".json" style="display:none;"></label>
+                        <button id="nd_params_export" class="btn btn-icon" title="导出所有预设（智绘姬互通，含模型参数与 Vibe）"><i class="fa-solid fa-share-from-square"></i></button>
+                        <label class="btn btn-icon" title="导入预设文件（自动恢复模型参数与 Vibe）" style="cursor:pointer;"><i class="fa-solid fa-file-import"></i><input type="file" id="nd_params_import" accept=".json" style="display:none;"></label>
                         <button id="nd_params_del" class="btn btn-danger btn-icon" title="删除"><i class="fa-solid fa-trash"></i></button>
                     </div>
                     <div id="nd_params_status" class="status-text inline-status"></div>
@@ -1403,6 +1403,16 @@ select.input { cursor: pointer; }
                                     </label>
                                 </div>
                                 <p class="form-hint" style="margin-left:44px;margin-top:4px;">生成图片时自动记住 LLM 识别的新角色</p>
+                            </div>
+                            <div class="auto-learn-section" style="margin-bottom:12px;">
+                                <div class="auto-learn-toggle-row">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="nd_continuity">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span>上镜锚点（跨楼层服装/外貌延续）</span>
+                                </div>
+                                <p class="form-hint" style="margin-left:44px;margin-top:4px;">记住每个角色最近一次入画时的着装英文标签，下一楼规划时默认沿用，减少凭空换装；正文明确写换装时才更新</p>
                             </div>
                             <div class="auto-learn-section">
                                 <div class="auto-learn-toggle-row">
@@ -1745,6 +1755,7 @@ let state = {
     characterTags: [],
     autoLearnCharacters: false,
     autoLearnMode: 'new_only',
+    continuityEnabled: true,
     danbooruLocalDB: false,
     showFloorButton: true,
     showFloatingButton: false,
@@ -3000,6 +3011,7 @@ function applyStateToUI() {
         $('nd_auto_learn').checked = !!state.autoLearnCharacters;
         $('nd_auto_learn_update').checked = (state.autoLearnMode || 'new_only') === 'auto_update';
         $('nd_auto_learn_sub').classList.toggle('hidden', !state.autoLearnCharacters);
+        $('nd_continuity').checked = state.continuityEnabled !== false;
         $('nd_danbooru_local').checked = !!state.danbooruLocalDB;
         $('nd_danbooru_local_sub').classList.toggle('hidden', !state.danbooruLocalDB);
         $('nd_danbooru_local_status').textContent = state.danbooruLocalDB ? '已加载' : '未加载';
@@ -4342,11 +4354,11 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_params_cloud').addEventListener('click', () => {
         postToParent({ type: 'OPEN_CLOUD_PRESETS' });
     });
-        $('nd_params_export').addEventListener('click', () => {
+    $('nd_params_export').addEventListener('click', () => {
         postToParent({ type: 'EXPORT_CURRENT_PRESET', presetId: state.selectedParamsPresetId });
     });
 
-    // ▼ 添加这段导入事件 ▼
+    // 智绘姬互通格式导入（不含 Vibe）
     $('nd_params_import').addEventListener('change', async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -4359,12 +4371,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         e.target.value = ''; // 清空选择，允许重复选同一个文件
     });
-    // ▲ 添加结束 ▲
 
-    $('nd_params_export').addEventListener('click', () => {
-        postToParent({ type: 'EXPORT_CURRENT_PRESET', presetId: state.selectedParamsPresetId });
-    });
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // 角色标签
     // ═══════════════════════════════════════════════════════════════════════
@@ -4416,6 +4424,11 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_auto_learn_update').addEventListener('change', () => {
         const mode = $('nd_auto_learn_update').checked ? 'auto_update' : 'new_only';
         postToParent({ type: 'SAVE_AUTO_LEARN', autoLearnCharacters: $('nd_auto_learn').checked, autoLearnMode: mode });
+    });
+    $('nd_continuity').addEventListener('change', () => {
+        const enabled = $('nd_continuity').checked;
+        state.continuityEnabled = enabled; // 乐观更新
+        postToParent({ type: 'SAVE_CONTINUITY', enabled });
     });
 
     $('nd_danbooru_local').addEventListener('change', () => {
