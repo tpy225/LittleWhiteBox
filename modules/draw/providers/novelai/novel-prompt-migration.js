@@ -1,6 +1,10 @@
 import { NOVEL_PROMPT_GUIDES } from './novel-model-capabilities.js';
 import { promptTemplateFingerprint } from '../../shared/prompt-template-migration.js';
-import { installScenePlannerPresets } from '../../shared/scene-planner-presets.js';
+import {
+    createScenePlannerProPreset,
+    installScenePlannerPresets,
+    SCENE_PLANNER_PRESET_NAMES,
+} from '../../shared/scene-planner-presets.js';
 
 // Upgrade boundary for prompt formats that have actually shipped.
 // - upstream config v7 / prompt template v4: YAML-era preset fields.
@@ -195,6 +199,33 @@ function migrateLegacyNovelPromptPresets(
     };
 }
 
+/**
+ * Append the optional enhanced preset exactly once. A dedicated marker (not the preset
+ * name list) survives deletion: users who remove it never get a copy back. The active
+ * selection is deliberately left untouched.
+ */
+function ensureOptionalProPreset(settings, currentDefaults) {
+    const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+    if (Number(source._proPresetVersion) >= 1) {
+        return { settings: source, added: false };
+    }
+    if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
+        throw new Error('提示词模板尚未加载：sceneRulesPro');
+    }
+    const existing = Array.isArray(source.promptPresets) ? source.promptPresets : [];
+    if (existing.some(preset => preset?.name === SCENE_PLANNER_PRESET_NAMES.pro)) {
+        return { settings: { ...source, _proPresetVersion: 1 }, added: false };
+    }
+    return {
+        settings: {
+            ...source,
+            promptPresets: [...existing, createScenePlannerProPreset(currentDefaults)],
+            _proPresetVersion: 1,
+        },
+        added: true,
+    };
+}
+
 export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetVersion) {
     const source = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
     const result = migrateLegacyNovelPromptPresets(source.promptPresets, {
@@ -205,12 +236,14 @@ export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetV
         ...source,
         promptPresets: result.presets,
     }, currentDefaults, targetVersion, { installVersion: 13 });
+    const pro = ensureOptionalProPreset(installation.settings, currentDefaults);
     return {
         ...result,
-        settings: installation.settings,
-        presets: installation.settings.promptPresets,
-        templateVersion: installation.settings._promptTemplateVersion,
-        migrated: result.migrated || installation.changed,
+        settings: pro.settings,
+        presets: pro.settings.promptPresets,
+        templateVersion: pro.settings._promptTemplateVersion,
+        proAdded: pro.added,
+        migrated: result.migrated || installation.changed || pro.added,
         installed: installation.installed,
     };
 }
