@@ -97,6 +97,7 @@ function buildDisplayMetadata(artifact = {}) {
     const promptData = artifact.promptData || {};
     const metadata = {
         tags: String(artifact.tags || artifact.task?.scene || ''),
+        title: String(artifact.task?.title || artifact.title || ''),
         positive: String(promptData.positive || promptData.scene || ''),
         characterPrompts: cloneJson(promptData.characterPrompts || []),
         negativePrompt: String(promptData.negative || promptData.negativePrompt || ''),
