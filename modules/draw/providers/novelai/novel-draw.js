@@ -120,6 +120,8 @@ import {
     stopSharedDrawPreviewRuntime,
     renderAllDrawPreviews,
     renderPreviewsForMessage as renderSharedPreviewsForMessage,
+    syncImageTitleElements,
+    syncCollapseTitleWidths,
     buildDrawSlotSelector,
     toScenePlannerProgress,
     isMessageBeingEdited,
@@ -513,6 +515,7 @@ function insertPreviewBatchIntoRenderedMessage({ messageId, patches }) {
         }
     });
 
+    if (inserted) syncCollapseTitleWidths(mesTextEl);
     return inserted;
 }
 
@@ -937,6 +940,7 @@ function getRuntimeSettings() {
         worldbooks: sharedSettings.worldbooks,
         danbooruLocalDB: sharedSettings.danbooruLocalDB,
         messageFilterRules: sharedSettings.messageFilterRules,
+        imageTitleMode: sharedSettings.imageTitleMode,
     };
 }
 
@@ -2016,6 +2020,7 @@ async function navigateToImage(container, targetIndex) {
     container.dataset.imgId = targetPreview.imgId;
     container.dataset.tags = escapeHtml(targetPreview.tags || '');
     container.dataset.positive = escapeHtml(targetPreview.positive || '');
+    syncImageTitleElements(container, targetPreview.title || '');
     container.dataset.currentIndex = targetIndex;
 
     setImageState(container, targetPreview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW);
@@ -2398,6 +2403,8 @@ async function deleteCurrentImage(container) {
     if (!confirm('确定删除这张图片吗？')) return;
 
     try {
+        const deletingPreview = await getPreview(imgId).catch(() => null);
+        const deletedTitle = deletingPreview?.title || '';
         await deletePreview(imgId);
         const previews = await getPreviewsBySlot(slotId);
         const successPreviews = previews.filter(hasPreviewImage);
@@ -2409,6 +2416,7 @@ async function deleteCurrentImage(container) {
             container.dataset.imgId = latest.imgId;
             container.dataset.tags = escapeHtml(latest.tags || '');
             container.dataset.positive = escapeHtml(latest.positive || '');
+            syncImageTitleElements(container, latest.title || '');
             container.dataset.currentIndex = '0';
             container.dataset.historyCount = String(successPreviews.length);
             setImageState(container, latest.savedUrl ? ImageState.SAVED : ImageState.PREVIEW);
@@ -2422,6 +2430,7 @@ async function deleteCurrentImage(container) {
                 slotId,
                 messageId,
                 tags,
+                title: deletedTitle,
                 positive,
                 errorType: '图片已删除',
                 errorMessage: '点击重试可重新生成'
@@ -2693,6 +2702,7 @@ async function generateImagesFromText(options = {}) {
                 scene,
                 characterPrompts,
                 tagsForStore: task.scene || '',
+                titleForStore: task.title || '',
                 negativePrompt,
                 request: {
                     scene,
@@ -2719,6 +2729,7 @@ async function generateImagesFromText(options = {}) {
                     messageId,
                     base64,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     characterPrompts: item.characterPrompts,
                     negativePrompt: item.negativePrompt,
@@ -2730,6 +2741,7 @@ async function generateImagesFromText(options = {}) {
                     imgId,
                     placement: item.task.placement,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     negativePrompt: item.negativePrompt,
                     displayUrl: getPreviewDisplayUrl({ imgId, base64 }),
@@ -2746,6 +2758,7 @@ async function generateImagesFromText(options = {}) {
                     slotId: item.slotId,
                     messageId,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     errorType: errorType.code,
                     errorMessage: errorType.desc,
@@ -2756,6 +2769,7 @@ async function generateImagesFromText(options = {}) {
                     slotId: item.slotId,
                     placement: item.task.placement,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     negativePrompt: item.negativePrompt,
                     success: false,
