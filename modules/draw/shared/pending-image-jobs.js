@@ -167,6 +167,7 @@ function normalizeItem(source) {
         imgId,
         previewMetadata: {
             tags: normalizeText(metadata.tags),
+            title: normalizeText(metadata.title),
             positive: normalizeText(metadata.positive),
             characterPrompts: metadata.characterPrompts ?? null,
             negativePrompt: metadata.negativePrompt ?? null,

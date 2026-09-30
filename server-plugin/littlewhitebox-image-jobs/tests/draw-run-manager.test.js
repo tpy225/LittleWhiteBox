@@ -94,7 +94,7 @@ function createRuntime(overrides = {}) {
     return {
         ...drawRuntime,
         async executePreparedScenePlanner() {
-            return [{ scene: 'portrait', chars: [], placement: { insertAfter: 1 } }];
+            return [{ scene: 'portrait', title: '雨中相拥', chars: [], placement: { insertAfter: 1 } }];
         },
         compileDrawRunImages(_provider, scenePlan) {
             return {
@@ -216,7 +216,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
 test('one backend runtime forwards changing browser planning schemas and executes the same images', async (t) => {
     const { createSubmitScenePlanTool } = await import('../../../modules/draw/shared/scene-plan-tool.js');
     const images = [{
-        insert_after: 1, scene: 'rain',
+        insert_after: 1, scene: 'rain', title: '雨中拥抱',
         characterPrompts: [{ prompt: 'must not override the parsed characters' }],
         negative: 'must not override the recipe',
         characters: [{ name: '旅人', type: '女孩', appear: 'black hair', uc: null, nickname: 'ignored' }],
@@ -272,7 +272,7 @@ test('one backend runtime forwards changing browser planning schemas and execute
 });
 
 test('backend dispatches repaired complete plans and keeps incomplete or invalid plans out of image jobs', async (t) => {
-    const valid = JSON.stringify({ images: [{ insert_after: 1, scene: 'rain', characters: [] }] });
+    const valid = JSON.stringify({ images: [{ insert_after: 1, scene: 'rain', title: '雨中拥抱', characters: [] }] });
     const cases = [
         [valid.slice(0, -1), 'missing_root_closer'],
         [valid + '}]', 'trailing_closers'],
@@ -325,7 +325,7 @@ test('backend dispatches a decorated tagged plan once and retains ambiguous-call
     const agentCore = require('../draw-runs/vendor/agent-core-node.cjs');
     t.mock.method(console, 'log', () => {});
     const payload = JSON.stringify({ name: 'submit_scene_plan', arguments: {
-        images: [{ insert_after: 1, scene: 'book cover, title: SUMMER', characters: [] }],
+        images: [{ insert_after: 1, scene: 'book cover, title: SUMMER', title: '夏日书封', characters: [] }],
     } });
     const cases = [
         { body: `\`\`\`json\n${payload}\n\`\`\`\n</unexpected>[完成]<status value="[done]"/> "完成"` },
@@ -444,7 +444,7 @@ test('a permissive supplied schema cannot bypass image placement validation or i
                             calls += 1;
                             return { toolCalls: [{ name: 'submit_scene_plan', arguments: JSON.stringify({
                                 planning_notes: { custom: fullModelNote },
-                                images: [{ index: 1, insert_after: 42, scene: 'rain', characters: [] }],
+                                images: [{ index: 1, insert_after: 42, scene: 'rain', title: '无效插图点', characters: [] }],
                             }) }] };
                         },
                     };
@@ -480,7 +480,7 @@ test('Draw Run delivers unordered and shared placements as distinct images witho
                         calls += 1;
                         return { toolCalls: [{ name: 'submit_scene_plan', arguments: JSON.stringify({
                             images: [2, 1, 2].map((point, index) => ({
-                                insert_after: point, scene: `image-${index}`, characters: [],
+                                insert_after: point, scene: `image-${index}`, title: `插图${index}`, characters: [],
                             })),
                         }) }] };
                     },
@@ -552,6 +552,7 @@ test('Draw Run dispatch is idempotent and hands off a deterministic child manife
         insertOffset: 6,
         displayMetadata: {
             tags: 'portrait',
+            title: '雨中相拥',
             positive: 'portrait',
             characterPrompts: [],
             negativePrompt: 'bad',

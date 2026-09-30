@@ -1,0 +1,388 @@
+# SillyTavern Macros Documentation
+
+### {{//::comment<string>}}
+- **Description**: Comment macro that produces an empty string. Can be used for writing into prompt definitions, without being passed to the context.
+- **Returns**: <empty string>
+- **Aliases**: {{comment}}
+
+### {{addglobalvar::name<string>::value<string|number>}}
+- **Description**: Adds a value to an existing global variable (numeric or string append). If the variable does not exist, it will be created.
+- **Returns**: <empty string>
+
+### {{addvar::name<string>::value<string|number>}}
+- **Description**: Adds a value to an existing local variable (numeric or string append). If the variable does not exist, it will be created.
+- **Returns**: <empty string>
+
+### {{allChatRange}}
+- **Description**: Range of all message IDs in the chat (e.g. "0-10"). Empty string if the chat is empty.
+- **Returns**: Range string from 0 to last message ID, or empty string.
+
+### {{authorsNote}}
+- **Description**: 作者注释的内容
+
+### {{banned::word<string>}}
+- **Description**: Bans a word for Text Completion backend. (Strips quotes surrounding the banned word, if present)
+- **Returns**: <empty string>
+
+### {{char}}
+- **Description**: The character's name.
+- **Returns**: Character name.
+
+### {{charAuthorsNote}}
+- **Description**: 角色作者注释的内容
+
+### {{charAvatarPath}}
+- **Description**: N/A
+
+### {{charCreatorNotes}}
+- **Description**: Creator notes from the character card.
+- **Returns**: Creator notes.
+- **Aliases**: {{creatorNotes}}
+
+### {{charDepthPrompt}}
+- **Description**: The character's @ Depth Note.
+- **Returns**: Character @ Depth Note.
+
+### {{charDescription}}
+- **Description**: The character's description.
+- **Returns**: Character description.
+- **Aliases**: {{description}}
+
+### {{charFirstMessage::index?<integer>}}
+- **Description**: The character's first message / greeting. Optionally specify an index to access alternate greetings.
+- **Returns**: Character greeting at the given index, or empty string if out of bounds.
+- **Aliases**: {{greeting}}
+
+### {{charInstruction}}
+- **Description**: The character's Post-History Instructions override.
+- **Returns**: Character Post-History Instructions override.
+
+### {{charPersonality}}
+- **Description**: The character's personality.
+- **Returns**: Character personality.
+- **Aliases**: {{personality}}
+
+### {{charPrompt}}
+- **Description**: The character's Main Prompt override.
+- **Returns**: Character Main Prompt override.
+
+### {{charScenario}}
+- **Description**: The character's scenario.
+- **Returns**: Character scenario.
+- **Aliases**: {{scenario}}
+
+### {{charVersion}}
+- **Description**: The character's version number.
+- **Returns**: Character version number.
+- **Aliases**: {{version}}, {{char_version}}
+
+### {{chatStart}}
+- **Description**: Chat start marker used in text completion prompts.
+
+### {{currentSwipeId}}
+- **Description**: 1-based index of the current swipe.
+- **Returns**: 1-based index of the current swipe.
+
+### {{date}}
+- **Description**: Current local date as a string in the local short format.
+- **Returns**: Current local date in local short format.
+
+### {{datetimeformat::format<string>}}
+- **Description**: Formats the current date/time using the given moment.js format string.
+- **Returns**: Formatted date/time string.
+
+### {{decglobalvar::name<string>}}
+- **Description**: Decrements a global variable by 1 and returns the new value. If the variable does not exist, it will be created.
+- **Returns**: The new value of the global variable.
+
+### {{decvar::name<string>}}
+- **Description**: Decrements a local variable by 1 and returns the new value. If the variable does not exist, it will be created.
+- **Returns**: The new value of the local variable.
+
+### {{defaultAuthorsNote}}
+- **Description**: 默认作者注释的内容
+
+### {{defaultSystemPrompt}}
+- **Description**: Default system prompt.
+- **Aliases**: {{instructSystem}}, {{instructSystemPrompt}}
+
+### {{deleteglobalvar::name<string>}}
+- **Description**: Deletes a global variable.
+- **Returns**: <empty string>
+- **Aliases**: {{flushglobalvar}}
+
+### {{deletevar::name<string>}}
+- **Description**: Deletes a local variable.
+- **Returns**: <empty string>
+- **Aliases**: {{flushvar}}
+
+### {{else}}
+- **Description**: Marks the else branch inside a scoped {{if}} block. Only works inside {{if}}...{{/if}}. If used outside, returns an invisible marker.
+- **Returns**: Invisible marker (consumed by the enclosing {{if}} macro).
+
+### {{exampleSeparator}}
+- **Description**: Separator used between example chat blocks in text completion prompts.
+- **Aliases**: {{chatSeparator}}
+
+### {{firstDisplayedMessageId}}
+- **Description**: Index of the first displayed message in the chat.
+- **Returns**: Index of the first displayed message in the chat.
+
+### {{firstIncludedMessageId}}
+- **Description**: Index of the first message included in the current context.
+- **Returns**: Index of the first message included in the context.
+
+### {{getglobalvar::name<string>}}
+- **Description**: Gets the value of a global variable.
+- **Returns**: The value of the global variable.
+
+### {{getvar::name<string>}}
+- **Description**: Gets the value of a local variable.
+- **Returns**: The value of the local variable.
+
+### {{group}}
+- **Description**: Comma-separated list of group member names (including muted) or the character name in solo chats.
+- **Returns**: List of group member names.
+- **Aliases**: {{charIfNotGroup}}
+
+### {{groupNotMuted}}
+- **Description**: Comma-separated list of group member names excluding muted members.
+- **Returns**: List of group member names excluding muted members.
+
+### {{hasExtension::extensionName<string>}}
+- **Description**: Checks if a specific extension is enabled. If the extension does not exist, returns false.
+- **Returns**: true if the extension is enabled, false otherwise.
+
+### {{hasglobalvar::name<string>}}
+- **Description**: Checks if a global variable exists.
+- **Returns**: "true" if the variable exists, "false" otherwise.
+- **Aliases**: {{globalvarexists}}
+
+### {{hasvar::name<string>}}
+- **Description**: Checks if a local variable exists.
+- **Returns**: "true" if the variable exists, "false" otherwise.
+- **Aliases**: {{varexists}}
+
+### {{idleDuration}}
+- **Description**: Human-readable duration since the last user message.
+- **Returns**: Human-readable duration since the last user message.
+- **Aliases**: {{idle_duration}}
+
+### {{if::condition<string>::content<string>}}
+- **Description**: Conditional macro. Returns the content if the condition is truthy, otherwise returns nothing (or the else branch if present). Prefix the condition with ! to invert. If the condition is a registered macro name (without braces), it will be resolved first. Variable shorthands (.varname for local, $varname for global) are also supported.
+- **Returns**: The content if condition is truthy, else branch or empty string otherwise.
+
+### {{incglobalvar::name<string>}}
+- **Description**: Increments a global variable by 1 and returns the new value. If the variable does not exist, it will be created.
+- **Returns**: The new value of the global variable.
+
+### {{incvar::name<string>}}
+- **Description**: Increments a local variable by 1 and returns the new value. If the variable does not exist, it will be created.
+- **Returns**: The new value of the local variable.
+
+### {{input}}
+- **Description**: Current text from the send textarea.
+- **Returns**: Current text from the send textarea.
+
+### {{instructAssistantPrefix}}
+- **Description**: Instruct output / assistant prefix sequence.
+- **Aliases**: {{instructOutput}}
+
+### {{instructAssistantSuffix}}
+- **Description**: Instruct output / assistant suffix sequence.
+- **Aliases**: {{instructSeparator}}
+
+### {{instructFirstAssistantPrefix}}
+- **Description**: Instruct first assistant / output prefix sequence
+- **Aliases**: {{instructFirstOutputPrefix}}
+
+### {{instructFirstUserPrefix}}
+- **Description**: Instruct first user / input prefix sequence.
+- **Aliases**: {{instructFirstInput}}
+
+### {{instructLastAssistantPrefix}}
+- **Description**: Instruct last assistant / output prefix sequence.
+- **Aliases**: {{instructLastOutputPrefix}}
+
+### {{instructLastUserPrefix}}
+- **Description**: Instruct last user / input prefix sequence.
+- **Aliases**: {{instructLastInput}}
+
+### {{instructStop}}
+- **Description**: Instruct stop sequence.
+
+### {{instructStoryStringPrefix}}
+- **Description**: Instruct story string prefix.
+
+### {{instructStoryStringSuffix}}
+- **Description**: Instruct story string suffix.
+
+### {{instructSystemInstructionPrefix}}
+- **Description**: Instruct system instruction prefix sequence.
+
+### {{instructSystemPrefix}}
+- **Description**: Instruct system prefix sequence.
+
+### {{instructSystemSuffix}}
+- **Description**: Instruct system suffix sequence.
+
+### {{instructUserFiller}}
+- **Description**: Instruct user alignment filler.
+
+### {{instructUserPrefix}}
+- **Description**: Instruct input / user prefix sequence.
+- **Aliases**: {{instructInput}}
+
+### {{instructUserSuffix}}
+- **Description**: Instruct input / user suffix sequence.
+
+### {{isMobile}}
+- **Description**: "true" if currently running in a mobile environment, "false" otherwise.
+- **Returns**: Whether the environment is mobile.
+
+### {{isodate}}
+- **Description**: Current date in YYYY-MM-DD format.
+- **Returns**: Current date in YYYY-MM-DD format.
+
+### {{isotime}}
+- **Description**: Current time in HH:mm format.
+- **Returns**: Current time in HH:mm format.
+
+### {{lastCharMessage}}
+- **Description**: Last character/bot message in the chat.
+- **Returns**: Last character/bot message in the chat.
+
+### {{lastGenerationType}}
+- **Description**: Type of the last queued generation request (e.g. "normal", "impersonate", "regenerate", "quiet", "swipe", "continue"). Empty if none yet or chat was switched.
+- **Returns**: Type of the last queued generation request.
+
+### {{lastMessage}}
+- **Description**: Last message in the chat.
+- **Returns**: Last message in the chat.
+
+### {{lastMessageId}}
+- **Description**: Index of the last message in the chat.
+- **Returns**: Index of the last message in the chat.
+
+### {{lastSwipeId}}
+- **Description**: 1-based index of the last swipe for the last message.
+- **Returns**: 1-based index of the last swipe.
+
+### {{lastUserMessage}}
+- **Description**: Last user message in the chat.
+- **Returns**: Last user message in the chat.
+
+### {{maxContext}}
+- **Description**: Maximum context token limit.
+- **Returns**: Maximum context token limit.
+- **Aliases**: {{maxContextTokens}}
+
+### {{maxPrompt}}
+- **Description**: Maximum prompt context size.
+- **Returns**: Maximum prompt context size.
+- **Aliases**: {{maxPromptTokens}}
+
+### {{maxResponse}}
+- **Description**: Maximum response token limit.
+- **Returns**: Maximum response token limit.
+- **Aliases**: {{maxResponseTokens}}
+
+### {{mesExamples}}
+- **Description**: The character's dialogue examples, formatted for instruct mode when enabled.
+- **Returns**: Formatted dialogue examples.
+
+### {{mesExamplesRaw}}
+- **Description**: Unformatted dialogue examples from the character card.
+- **Returns**: Unformatted dialogue examples.
+
+### {{model}}
+- **Description**: Model name for the currently selected API (Chat Completion or Chat Completion).
+- **Returns**: Model name.
+
+### {{newline::count?<integer>}}
+- **Description**: Inserts one or more newlines. One newline by default, more if the count argument is specified.
+- **Returns**: One or more \n.
+
+### {{noop}}
+- **Description**: Does nothing and produces an empty string.
+- **Returns**: <empty string>
+
+### {{notChar}}
+- **Description**: Comma-separated list of all participants except the current speaker.
+- **Returns**: List of all participants except the current speaker.
+
+### {{original}}
+- **Description**: Original message content for {{original}} substitution in in character prompt overrides.
+- **Returns**: Original message content.
+
+### {{outlet::key<string>}}
+- **Description**: Returns the world info outlet prompt for a given outlet key.
+- **Returns**: World info outlet prompt.
+
+### {{persona}}
+- **Description**: Your current Persona description.
+- **Returns**: Persona description.
+
+### {{pick}}
+- **Description**: Picks a random item from a list, but keeps the choice stable for a given chat and macro position. Can be rerolled via /reroll-pick slash command.
+- **Returns**: Stable randomly selected item from the list.
+
+### {{random}}
+- **Description**: Picks a random item from a list. Will be re-rolled every time macros are resolved.
+- **Returns**: Randomly selected item from the list.
+
+### {{reasoningPrefix}}
+- **Description**: 在推理模块前使用的前缀字符串
+
+### {{reasoningSeparator}}
+- **Description**: 思维内容与回应之间的分隔符
+
+### {{reasoningSuffix}}
+- **Description**: 推理块之后使用的后缀字符串
+
+### {{reverse::value<string>}}
+- **Description**: Reverses the characters of the argument provided.
+- **Returns**: Reversed string.
+
+### {{roll::formula<string>}}
+- **Description**: Rolls dice using droll syntax (e.g. {{roll 1d20}}).
+- **Returns**: Dice roll result.
+
+### {{setglobalvar::name<string>::value<string|number>}}
+- **Description**: Sets a global variable to the given value.
+- **Returns**: <empty string>
+
+### {{setvar::name<string>::value<string|number>}}
+- **Description**: Sets a local variable to the given value.
+- **Returns**: <empty string>
+
+### {{space::count?<integer>}}
+- **Description**: Returns one or more spaces. One space by default, more if the count argument is specified.
+- **Returns**: One or more spaces.
+
+### {{systemPrompt}}
+- **Description**: Active system prompt text (optionally overridden by character prompt)
+
+### {{time::offset?<string>}}
+- **Description**: Current local time, or UTC offset when called as {{time::UTC±(offset)}}
+- **Returns**: A time string in the format HH:mm.
+
+### {{timeDiff::left<string>::right<string>}}
+- **Description**: Human-readable difference between two times. Order of times does not matter, it will return the absolute difference.
+- **Returns**: Human-readable difference between two times.
+
+### {{trim::content?<string>}}
+- **Description**: Trims whitespace. Non-scoped: trims newlines around the macro (post-processing). Scoped: returns the content (auto-trimmed by the engine).
+- **Returns**: <empty string>
+
+### {{user}}
+- **Description**: Your current Persona username.
+- **Returns**: Persona username.
+
+### {{userAvatarPath}}
+- **Description**: N/A
+
+### {{weekday}}
+- **Description**: Current weekday name.
+- **Returns**: Current weekday name.
+

@@ -22,6 +22,7 @@ function buildParameters(overrides = {}) {
             index: 1,
             insert_after: 1,
             scene: 'sfw, yuri, duo, rain, backlighting',
+            title: '雨中相拥',
             characters: [{
                 name: '小璃',
                 danbooru: 'ali_(original)',
@@ -71,6 +72,7 @@ test('scene plan contract normalizes aliases, known character fields, placement,
         index: 2,
         insert_after: 2,
         scene: 'sfw, scenery, rain',
+        title: '雨中街角',
         characters: [],
     });
     const parsed = parseSubmittedScenePlan(buildResult(parameters), {
@@ -109,6 +111,7 @@ test('unordered and shared illustration points preserve each image and its inten
     const parameters = buildParameters({ images: [2, 1, 2].map((point, index) => ({
         insert_after: point,
         scene: `scene-${index}`,
+        title: `标题${index}`,
         characters: [],
     })) });
     const { tasks } = parseSubmittedScenePlan(buildResult(parameters), { sceneSource, maxImages: 3 });
@@ -129,7 +132,7 @@ test('scene plan tool schema applies exact image count and character cap', () =>
     assert.equal(tool.function.parameters.additionalProperties, false);
     assert.equal(schema.minItems, 3);
     assert.equal(schema.maxItems, 3);
-    assert.deepEqual(schema.items.required, ['index', 'insert_after', 'scene', 'characters']);
+    assert.deepEqual(schema.items.required, ['index', 'insert_after', 'scene', 'title', 'characters']);
     assert.equal(schema.items.additionalProperties, false);
     assert.equal(schema.items.properties.characters.maxItems, 2);
     assert.deepEqual(schema.items.properties.characters.items.required, ['name', 'action']);
@@ -241,7 +244,7 @@ test('optional text null means omitted but unrelated JSON types still fail', () 
 
 test('image indices come from array order without changing scenes or placement', () => {
     const baseline = buildParameters();
-    baseline.images.push({ index: 2, insert_after: 2, scene: 'rainy street', characters: [] });
+    baseline.images.push({ index: 2, insert_after: 2, scene: 'rainy street', title: '雨后长街', characters: [] });
     const options = { ...parseOptions, maxImages: 2 };
     const expected = parseSubmittedScenePlan(buildResult(baseline), options);
     for (const indices of [[undefined, undefined], [1, 1], [3, 9], [2, 1], [0, -1], [null, 'second'], [{}, []]]) {
@@ -450,6 +453,11 @@ test('scene plan contract retains required content, placement, count, and coordi
         }, 'images[0].scene'],
         [() => {
             const value = buildParameters();
+            delete value.images[0].title;
+            return value;
+        }, 'images[0].title'],
+        [() => {
+            const value = buildParameters();
             value.images[0].insert_after = 99;
             return value;
         }, 'images[0].insert_after', 'INSERT_POINT_INVALID'],
@@ -486,6 +494,11 @@ test('scene plan contract retains required content, placement, count, and coordi
                 value.images[0].scene = invalidText;
                 return value;
             }, 'images[0].scene'],
+            [() => {
+                const value = buildParameters();
+                value.images[0].title = invalidText;
+                return value;
+            }, 'images[0].title'],
             [() => {
                 const value = buildParameters();
                 value.images[0].characters[0].name = invalidText;

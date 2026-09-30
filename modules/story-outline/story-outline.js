@@ -1447,13 +1447,14 @@ function addBtnToMsg(mesId) {
     const msg = document.querySelector(`#chat .mes[mesid="${mesId}"]`);
     if (!msg || msg.querySelector('.xiaobaix-story-outline-btn')) return;
     const btn = document.createElement('div');
-    btn.className = 'mes_btn xiaobaix-story-outline-btn';
+    // 使用 mes_button 并挂到 .mes_block .mes_buttons，与剧情总结按钮一致，跟随在原生菜单按钮后面
+    btn.className = 'mes_button xiaobaix-story-outline-btn';
     btn.title = '小白板';
     btn.dataset.mesid = mesId;
     btn.innerHTML = '<i class="fa-regular fa-map"></i>';
     btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); if (!getSettings().storyOutline?.enabled) return; showOverlay(); loadAndSend(); });
     if (window.registerButtonToSubContainer?.(mesId, btn)) return;
-    msg.querySelector('.flex-container.flex1.alignitemscenter')?.appendChild(btn);
+    msg.querySelector('.mes_block .mes_buttons')?.appendChild(btn);
 }
 
 function initBtns() {

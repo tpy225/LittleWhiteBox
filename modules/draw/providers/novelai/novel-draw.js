@@ -30,6 +30,7 @@ import {
     getSharedDrawSettings,
     updateSharedDrawSettingsPersistent,
     normalizeSharedCacheDays,
+    normalizeImageTitleMode,
     mergeNovelDrawProviderSettingsIntoStorageRoot,
 } from '../../shared/draw-settings.js';
 import { getLastDrawAgentDiagnostic } from '../../shared/draw-agent.js';
@@ -141,7 +142,10 @@ import {
     stopSharedDrawPreviewRuntime,
     renderAllDrawPreviews,
     renderPreviewsForMessage as renderSharedPreviewsForMessage,
+    syncImageTitleElements,
+    syncCollapseTitleWidths,
     buildPendingImageHtml,
+    RELOAD_ICON_SVG,
     buildDrawSlotSelector,
     toScenePlannerProgress,
     isAnyMessageBeingEdited,
@@ -409,12 +413,9 @@ function ensureStyles() {
     style.id = 'xiaobaix-novel-draw-style';
     style.textContent = `
 .xb-nd-img{margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border-radius:14px;padding:4px}
-.xb-nd-img[data-state="preview"]{border:1px dashed rgba(255,152,0,0.35)}
-.xb-nd-img[data-state="failed"]{border:1px dashed rgba(248,113,113,0.5);background:rgba(248,113,113,0.05);padding:20px}
-.xb-nd-img[data-state="pending"]{border:1px dashed rgba(212,165,116,0.4);background:rgba(212,165,116,0.06);padding:18px;color:inherit}
 .xb-nd-img.busy img{opacity:0.5}
 .xb-nd-img-wrap{position:relative;overflow:hidden;border-radius:10px;touch-action:pan-y pinch-zoom}
-.xb-nd-img img{width:auto;height:auto;max-width:100%;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);display:block;user-select:none;-webkit-user-drag:none;transition:transform 0.25s ease,opacity 0.2s ease}
+.xb-nd-img img{width:auto;height:auto;max-width:100%;margin:0 auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);display:block;user-select:none;-webkit-user-drag:none;transition:transform 0.25s ease,opacity 0.2s ease}
 .xb-nd-img img.sliding-left{animation:ndSlideOutLeft 0.25s ease forwards;will-change:transform,opacity}
 .xb-nd-img img.sliding-right{animation:ndSlideOutRight 0.25s ease forwards;will-change:transform,opacity}
 .xb-nd-img img.sliding-in-left{animation:ndSlideInLeft 0.25s ease forwards;will-change:transform,opacity}
@@ -430,6 +431,16 @@ function ensureStyles() {
 .xb-nd-nav-arrow:disabled{opacity:0.3;cursor:not-allowed}
 .xb-nd-nav-text{min-width:36px;text-align:center;font-variant-numeric:tabular-nums;padding:0 2px}
 @media(hover:none),(pointer:coarse){.xb-nd-nav-pill{opacity:0.78;padding:5px 8px}}
+.xb-nd-title-bar{position:absolute;top:0;left:0;right:0;z-index:6;pointer-events:none;display:flex;align-items:center;min-height:22px;padding:3px 44px 3px 10px;background:rgba(0,0,0,0.55);font-size:13px;line-height:1.4;letter-spacing:0.02em;color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,0.6);opacity:0;transition:opacity 0.2s ease}
+.xb-nd-img-wrap:hover .xb-nd-title-bar,.xb-nd-img-wrap.title-show .xb-nd-title-bar{opacity:1}
+/* details 收縮到內容寬並置中；摺疊標題列寬度吃 JS 量得的圖片實寬（--xb-img-w），
+   變量未就緒時 auto 回退為貼文字的初始膠囊。 */
+.xb-nd-details{width:fit-content;max-width:100%;margin:0 auto;border-radius:10px;overflow:hidden}
+.xb-nd-summary{list-style:none;cursor:pointer;width:var(--xb-img-w,auto);max-width:100%;box-sizing:border-box;padding:4px 8px;background:#12151c;border:1px solid #fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1.3;color:#fff;text-shadow:none;user-select:none}
+.xb-nd-summary::-webkit-details-marker{display:none}
+.xb-nd-summary span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:none}
+/* 摺疊時懸浮的編輯彈窗必須隨之隱藏（JS 會把內聯 display 重置為 none，這條兜底防閃現） */
+.xb-nd-details:not([open]) ~ .xb-nd-edit{display:none!important}
 .xb-nd-menu-wrap{position:absolute;top:8px;right:8px;z-index:10}
 .xb-nd-menu-wrap.busy{pointer-events:none;opacity:0.3}
 .xb-nd-menu-trigger{width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.75);color:rgba(255,255,255,0.85);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;opacity:0.85}
@@ -605,6 +616,7 @@ function insertPreviewBatchIntoRenderedMessage({ messageId, patches }) {
         }
     });
 
+    if (inserted) syncCollapseTitleWidths(mesTextEl);
     return inserted;
 }
 
@@ -1091,6 +1103,7 @@ function normalizeSettings(saved = {}) {
             ? null
             : String(source.selectedPromptPresetId),
         _promptTemplateVersion: Number(source._promptTemplateVersion) || 0,
+        _proPresetVersion: Number(source._proPresetVersion) || 0,
         worldbooks: {
             enabled: rawWorldbooks.enabled === true,
             uploadedBooks: Array.isArray(rawWorldbooks.uploadedBooks) ? rawWorldbooks.uploadedBooks : [],
@@ -1187,6 +1200,9 @@ async function loadSettings() {
         if (saved && promptUpgrade.installed) {
             showToast(SCENE_PLANNER_PRESET_INSTALL_NOTICE, 'info', 8000);
         }
+        if (promptUpgrade.proAdded) {
+            showToast('提示词预设列表已新增「进阶-构图强化」，可在提示词设置中切换；当前预设保持不变', 'info', 8000);
+        }
         if (promptUpgrade.upstreamPresetCount > 0) {
             const customNotice = promptUpgrade.customPresetCount > 0
                 ? `；其中 ${promptUpgrade.customPresetCount} 个自定义预设的旧规则已保留，请在提示词设置中检查`
@@ -1233,6 +1249,7 @@ function getRuntimeSettings() {
         worldbooks: sharedSettings.worldbooks,
         danbooruLocalDB: sharedSettings.danbooruLocalDB,
         messageFilterRules: sharedSettings.messageFilterRules,
+        imageTitleMode: sharedSettings.imageTitleMode,
     };
 }
 
@@ -2222,7 +2239,7 @@ async function generateNovelImage({ scene, characterPrompts, negativePrompt, par
 // 图片渲染
 // ═══════════════════════════════════════════════════════════════════════════
 
-function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state = ImageState.PREVIEW, historyCount = 1, currentIndex = 0 }) {
+function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state = ImageState.PREVIEW, historyCount = 1, currentIndex = 0, title = '' }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
     const isPreview = state === ImageState.PREVIEW;
@@ -2232,9 +2249,11 @@ function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state =
     if (state === ImageState.SAVING) indicator = '<div class="xb-nd-indicator">💾 保存中...</div>';
     else if (state === ImageState.REFRESHING) indicator = '<div class="xb-nd-indicator"><i class="fa-solid fa-rotate" aria-hidden="true"></i> 生成中...</div>';
 
-    const border = isPreview ? 'border:1px dashed rgba(255,152,0,0.35);' : '';
     const lazyAttr = url.startsWith('data:') ? '' : 'loading="lazy"';
     const displayVersion = historyCount - currentIndex;
+    // 标题只取 AI 生成的 title；缺省（旧数据/模型漏填）时宁可不显示，也不拿 TAG 充数。
+    const rawTitle = String(title || '').trim();
+    const titleMode = normalizeImageTitleMode(getSharedDrawSettings().imageTitleMode);
 
     const navPill = `<div class="xb-nd-nav-pill" data-total="${historyCount}" data-current="${currentIndex}">
         <button class="xb-nd-nav-arrow" data-action="nav-prev" title="上一版本" ${currentIndex >= historyCount - 1 ? 'disabled' : ''}>‹</button>
@@ -2246,19 +2265,28 @@ function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state =
         <button class="xb-nd-menu-trigger" data-action="toggle-menu" title="操作">⋮</button>
         <div class="xb-nd-dropdown">
             ${isPreview ? '<button data-action="save-image" title="保存到服务器">⬇</button>' : ''}
-            <button data-action="refresh-image" title="重新生成">⟳</button>
+            <button data-action="refresh-image" title="重新生成">${RELOAD_ICON_SVG}</button>
             <button data-action="edit-tags" title="编辑TAG">✐️</button>
             <button data-action="delete-image" title="删除">✕</button>
         </div>
     </div>`;
 
-    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;${border}border-radius:14px;padding:4px;">
-${indicator}
-<div class="xb-nd-img-wrap" data-total="${historyCount}">
-    <img src="${escapeHtml(url)}" style="max-width:100%;width:auto;height:auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);${isBusy ? 'opacity:0.5;' : ''}" data-action="open-gallery" ${lazyAttr}>
+    const imageWrap = `<div class="xb-nd-img-wrap" data-total="${historyCount}">
+    <img src="${escapeHtml(url)}" style="max-width:100%;width:auto;height:auto;margin:0 auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);${isBusy ? 'opacity:0.5;' : ''}" data-action="open-gallery" ${lazyAttr}>
+    ${titleMode === 'overlay' && rawTitle ? `<div class="xb-nd-title-bar" title="${escapeHtml(rawTitle)}">${escapeHtml(rawTitle)}</div>` : ''}
     ${navPill}
-</div>
-${menuHtml}
+    ${menuHtml}
+</div>`;
+    const imageFrame = (titleMode === 'collapse' && rawTitle)
+        ? `<details class="xb-nd-details" open>
+    <summary class="xb-nd-summary"><span>．·°∴ ☆．．·° ${escapeHtml(rawTitle.slice(0, 20))} °·．．☆ ∴°·．</span></summary>
+    ${imageWrap}
+</details>`
+        : imageWrap;
+
+    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;border-radius:14px;padding:4px;">
+${indicator}
+${imageFrame}
 <div class="xb-nd-edit" style="display:none;position:absolute;bottom:8px;left:8px;right:8px;background:rgba(0,0,0,0.9);border-radius:10px;padding:10px;text-align:left;z-index:15;">
     <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;">编辑 TAG（场景描述）</div>
     <textarea class="xb-nd-edit-input">${escapedTags}</textarea>
@@ -2273,18 +2301,21 @@ ${menuHtml}
 function buildFailedPlaceholderHtml({ slotId, messageId, tags, positive, errorType, errorMessage }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
-    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border:1px dashed rgba(248,113,113,0.5);border-radius:14px;padding:20px;background:rgba(248,113,113,0.05);">
-<div class="xb-nd-failed-icon">⚠️</div>
-<div class="xb-nd-failed-title">${escapeHtml(errorType || '生成失败')}</div>
-<div class="xb-nd-failed-desc">${escapeHtml(errorMessage || '点击重试')}</div>
-<div class="xb-nd-failed-btns">
-    <button class="xb-nd-retry-btn" data-action="retry-image">⟳ 重新生成</button>
-    <button class="xb-nd-edit-btn" data-action="edit-tags">✐ 编辑TAG</button>
-    <button class="xb-nd-remove-btn" data-action="remove-placeholder">✕ 移除</button>
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:#C0392B;border:1px solid rgba(255,255,255,0.85);border-radius:10px;padding:4px 8px;color:#fff;font-size:13px;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+<div style="display:flex;align-items:center;gap:8px;min-width:0;">
+<span style="font-size:14px;flex:none;">⚠️</span>
+<span class="xb-nd-failed-title" style="font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(errorType || '生成失败')}</span>
 </div>
-<div class="xb-nd-edit" style="display:none;margin-top:12px;text-align:left;">
+<div class="xb-nd-failed-btns" style="display:flex;gap:4px;flex:none;">
+    <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;opacity:0.9;display:flex;align-items:center;" title="重新生成">${RELOAD_ICON_SVG}</button>
+    <button class="xb-nd-edit-btn" data-action="edit-tags" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="编辑 TAG">✎</button>
+    <button class="xb-nd-remove-btn" data-action="remove-placeholder" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="移除">✕</button>
+</div>
+</div>
+<div class="xb-nd-edit" style="display:none;margin-top:8px;text-align:left;background:#141418;padding:8px;border-radius:8px;">
     <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;">编辑 TAG（场景描述）</div>
-    <textarea class="xb-nd-edit-input">${escapedTags}</textarea>
+    <textarea class="xb-nd-edit-input" style="color:#fff;background:#1d1d22;border:1px solid rgba(255,255,255,0.2);padding:6px 8px;border-radius:6px;font-size:12px;width:100%;min-height:60px;resize:vertical;outline:none;">${escapedTags}</textarea>
     <div style="display:flex;gap:6px;margin-top:8px;">
         <button data-action="save-tags-retry" style="flex:1;padding:6px 12px;background:rgba(212,165,116,0.3);border:1px solid rgba(212,165,116,0.5);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">保存并重试</button>
         <button data-action="cancel-edit" style="padding:6px 12px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">取消</button>
@@ -2304,7 +2335,6 @@ function setImageState(container, state) {
         menuWrap.style.pointerEvents = isBusy ? 'none' : '';
         menuWrap.style.opacity = isBusy ? '0.3' : '';
     }
-    container.style.border = state === ImageState.PREVIEW ? '1px dashed rgba(255,152,0,0.35)' : 'none';
 
     const dropdown = container.querySelector('.xb-nd-dropdown');
     if (dropdown) {
@@ -2355,6 +2385,7 @@ async function navigateToImage(container, targetIndex) {
     container.dataset.imgId = targetPreview.imgId;
     container.dataset.tags = escapeHtml(targetPreview.tags || '');
     container.dataset.positive = escapeHtml(targetPreview.positive || '');
+    syncImageTitleElements(container, targetPreview.title || '');
     container.dataset.currentIndex = targetIndex;
 
     setImageState(container, targetPreview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW);
@@ -2736,6 +2767,7 @@ async function saveEditedTags(container) {
             base64: originalPreview.base64,
             tags: newSceneTags,
             positive: newPositive,
+            title: originalPreview.title || '',
             savedUrl: originalPreview.savedUrl,
             characterPrompts: newCharPrompts || originalPreview.characterPrompts,
             negativePrompt: originalPreview.negativePrompt,
@@ -2783,6 +2815,7 @@ async function refreshSingleImage(container) {
 
         let characterPrompts = null;
         let negativePrompt = preset.negativePrefix || '';
+        let preservedTitle = '';
 
         if (currentImgId) {
             const existingPreview = await getPreview(currentImgId);
@@ -2794,6 +2827,7 @@ async function refreshSingleImage(container) {
             if (existingPreview?.negativePrompt) {
                 negativePrompt = existingPreview.negativePrompt;
             }
+            preservedTitle = existingPreview?.title || '';
         }
 
         if (!characterPrompts) {
@@ -2825,6 +2859,7 @@ async function refreshSingleImage(container) {
             base64,
             tags,
             positive: scene,
+            title: preservedTitle,
             characterPrompts,
             negativePrompt,
         });
@@ -2997,6 +3032,7 @@ async function retryFailedImage(container) {
         });
 
         const newImgId = generateImgId();
+        const preservedTitle = latestFailed?.title || '';
         await storePreview({
             ...galleryMeta,
             imgId: newImgId,
@@ -3005,6 +3041,7 @@ async function retryFailedImage(container) {
             base64,
             tags: tags || '',
             positive: scene,
+            title: preservedTitle,
             characterPrompts,
             negativePrompt,
         });
@@ -3024,6 +3061,7 @@ async function retryFailedImage(container) {
             imgId: newImgId,
             url: getPreviewDisplayUrl({ imgId: newImgId, base64 }),
             tags: tags || '',
+            title: preservedTitle,
             positive: scene,
             messageId,
             state: ImageState.PREVIEW,
@@ -3043,6 +3081,7 @@ async function retryFailedImage(container) {
             slotId,
             messageId,
             tags: tags || '',
+            title: latestFailed?.title || '',
             positive: container.dataset.positive || '',
             errorType: errorType.code,
             errorMessage: errorType.desc
@@ -3374,6 +3413,7 @@ async function generateImagesFromText(options = {}) {
                 scene,
                 characterPrompts,
                 tagsForStore: task.scene || '',
+                titleForStore: task.title || '',
                 negativePrompt,
                 request: {
                     scene,
@@ -3400,6 +3440,7 @@ async function generateImagesFromText(options = {}) {
                     messageId,
                     base64,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     characterPrompts: item.characterPrompts,
                     negativePrompt: item.negativePrompt,
@@ -3411,6 +3452,7 @@ async function generateImagesFromText(options = {}) {
                     imgId,
                     placement: item.task.placement,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     negativePrompt: item.negativePrompt,
                     displayUrl: getPreviewDisplayUrl({ imgId, base64 }),
@@ -3427,6 +3469,7 @@ async function generateImagesFromText(options = {}) {
                     slotId: item.slotId,
                     messageId,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     errorType: errorType.code,
                     errorMessage: errorType.desc,
@@ -3741,6 +3784,7 @@ async function generateAndInsertImages({
                 scene,
                 characterPrompts,
                 tagsForStore: task.scene,
+                titleForStore: task.title || '',
                 negativePrompt,
                 request: {
                     scene,
@@ -3766,6 +3810,7 @@ async function generateAndInsertImages({
                 imgId: item.imgId,
                 previewMetadata: {
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     characterPrompts: item.characterPrompts,
                     negativePrompt: item.negativePrompt,
@@ -3858,6 +3903,7 @@ async function generateAndInsertImages({
                     slotId: item.slotId,
                     messageId: target?.messageId ?? messageId,
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     errorType: errorType.code,
                     errorMessage: errorType.desc,
@@ -3956,6 +4002,7 @@ async function generateAndInsertImages({
                         messageId: target?.messageId ?? messageId,
                         base64,
                         tags: item.tagsForStore,
+                        title: item.titleForStore,
                         positive: item.scene,
                         characterPrompts: item.characterPrompts,
                         negativePrompt: item.negativePrompt,
@@ -3972,6 +4019,7 @@ async function generateAndInsertImages({
                     imgId,
                     url: getPreviewDisplayUrl({ imgId, base64 }),
                     tags: item.tagsForStore,
+                    title: item.titleForStore,
                     positive: item.scene,
                     messageId: targetMessageId,
                     state: ImageState.PREVIEW,
@@ -4099,6 +4147,12 @@ async function generateAndInsertImages({
             }
         } else if (shouldUpdateDom) {
             console.log('[NovelDraw] 已跳过最终 full rerender，仅后台保存正文与局部 DOM patch');
+            try {
+                const { processMessageById } = await import('../../../iframe-renderer.js');
+                processMessageById(messageId, true);
+            } catch (error) {
+                console.warn('[NovelDraw] iframe 渲染补触发失败:', error);
+            }
         }
 
         const resultColor = successCount === tasks.length ? '#3ecf8e' : '#f0b429';
@@ -4386,6 +4440,7 @@ async function sendInitData() {
             timeout: settings.timeout,
             requestDelay: settings.requestDelay,
             cacheDays: getSharedDrawSettings().cacheDays,
+            imageTitleMode: getSharedDrawSettings().imageTitleMode,
             selectedParamsPresetId: settings.selectedParamsPresetId,
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
@@ -4568,6 +4623,20 @@ async function handleFrameMessage(event) {
             }, '已保存', { notify: false, silent: false });
             postStatus(ok ? 'success' : 'error', ok ? '已保存' : '保存失败', 'gallery');
             if (ok) sendInitData();
+            break;
+        }
+
+        case 'SAVE_IMAGE_TITLE_MODE': {
+            const nextMode = normalizeImageTitleMode(data.imageTitleMode, getSharedDrawSettings().imageTitleMode);
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.imageTitleMode = nextMode;
+            }, '已保存', { notify: false, silent: false });
+            if (ok) {
+                // 立即重渲染当前聊天里已存在的图片卡片，让模式切换即时生效。
+                // force 是纯外观刷新：只换有缓存的卡片样式，生成中/取不到缓存的原卡保留，
+                // 绝不能在切换模式时把眼前的图片误贴成「缓存丢失」。
+                renderAllDrawPreviews?.({ force: true });
+            }
             break;
         }
 
@@ -4777,13 +4846,23 @@ async function handleFrameMessage(event) {
 
             // 提取数据并保存到小白X设置中
             const importedImages = (dataObj.images && typeof dataObj.images === 'object') ? dataObj.images : {};
+            // 提前统计新增 / 覆盖数量，用于顶部卡片绿色状态文案
+            const importEntries = Object.entries(dataObj.presets)
+                .filter(([, presetData]) => presetData && typeof presetData === 'object');
+            if (!importEntries.length) {
+                postStatus('error', '文件中没有找到可导入的预设', 'params');
+                break;
+            }
+            const existingPresetNames = new Set((getSettings().paramsPresets || []).map(p => p.name));
+            let importNewCount = 0;
+            let importOverwriteCount = 0;
+            for (const [presetName] of importEntries) {
+                if (existingPresetNames.has(presetName)) importOverwriteCount++;
+                else importNewCount++;
+            }
             updateSettingsPersistent(async (settings) => {
-                let importedCount = 0;
-                let overwrittenCount = 0;
-
                 // 遍历 chatu8 的 presets 对象
-                for (const [presetName, presetData] of Object.entries(dataObj.presets)) {
-                    if (typeof presetData !== 'object') continue;
+                for (const [presetName, presetData] of importEntries) {
 
                     // 构建一个小白X能看懂的新预设
                     const newPreset = {
@@ -4833,31 +4912,18 @@ async function handleFrameMessage(event) {
                     if (existingIdx >= 0) {
                         newPreset.id = settings.paramsPresets[existingIdx].id;
                         settings.paramsPresets[existingIdx] = newPreset;
-                        overwrittenCount++;
                     } else {
                         settings.paramsPresets.push(newPreset);
-                        importedCount++;
                     }
                     // 如果是最后导入的一个，就让界面选中它
                     settings.selectedParamsPresetId = newPreset.id;
-                }
-
-                // 弹出界面提示
-                const total = importedCount + overwrittenCount;
-                if (total > 0) {
-                    const parts = [];
-                    if (importedCount) parts.push(`新增 ${importedCount} 个`);
-                    if (overwrittenCount) parts.push(`覆盖同名 ${overwrittenCount} 个`);
-                    showToast(`成功导入 ${total} 个预设（${parts.join('，')}）`, 'success', 3000);
-                } else {
-                    showToast(`文件中没有找到预设！`, 'warning', 3000);
                 }
 
                 // 刷新 UI 的下拉菜单
                 const { refreshPresetSelect } = await import('./floating-panel.js');
                 refreshPresetSelect?.(settings, 'params');
 
-            }, `导入智绘姬预设`, { target: 'params' }).then((ok) => {
+            }, `导入${importNewCount}个新预设，覆盖同名${importOverwriteCount}个预设`, { target: 'params' }).then((ok) => {
                 if (ok) {
                     notifySettingsUpdated();
                     sendInitData();
@@ -4882,7 +4948,7 @@ async function handleFrameMessage(event) {
                 const preset = {
                     fixedPrompt: p.positivePrefix || "",
                     fixedPrompt_end: "",
-                    negativePrompt: p.negativePrompt || ""
+                    negativePrompt: p.negativePrefix || ""
                 };
                 if (p.thumbnail) {
                     const imageId = `lwb-thumb-${i + 1}`;

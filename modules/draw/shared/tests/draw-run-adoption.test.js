@@ -42,6 +42,7 @@ function fixture(sourceText = SOURCE) {
                 insertOffset: 6,
                 displayMetadata: {
                     tags: 'scene',
+                    title: '雨中相拥',
                     providerMetadata: {
                         autoLearnCharacters: [{ name: 'Alice', type: 'girl', appear: 'blue hair' }],
                     },
@@ -164,6 +165,7 @@ test('a dispatched child persists its slots before becoming an active image jour
         result.record.items[0].previewMetadata.providerMetadata.autoLearnCharacters[0].name,
         'Alice',
     );
+    assert.equal(result.record.items[0].previewMetadata.title, '雨中相拥');
     assert.equal(renderedAfterSave, true);
 });
 

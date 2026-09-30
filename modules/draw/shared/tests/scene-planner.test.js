@@ -221,7 +221,7 @@ test('scene planner accepts the requested images at one point without another mo
                     toolCalls: [{
                         name: 'submit_scene_plan',
                         arguments: JSON.stringify({
-                            images: [1, 2, 3].map(index => ({ index, insert_after: 1, scene: 'short scene', characters: [] })),
+                            images: [1, 2, 3].map(index => ({ index, insert_after: 1, scene: 'short scene', title: `短句插图${index}`, characters: [] })),
                         }),
                     }],
                 },
@@ -380,6 +380,7 @@ test('NovelAI, SD, and Comfy each submit one Tool call and receive the same imag
                                     index: 1,
                                     insert_after: 1,
                                     scene: 'solo, opening door, indoor',
+                                    title: '小璃开门',
                                     characters: [{
                                         name: '小璃',
                                         danbooru: '',
@@ -404,7 +405,7 @@ test('NovelAI, SD, and Comfy each submit one Tool call and receive the same imag
         assert.deepEqual(tasks, [{
             index: 1,
             scene: 'solo, opening door, indoor',
-            title: '',
+            title: '小璃开门',
             chars: [{
                 name: '阿璃',
                 danbooru: '',
@@ -452,6 +453,7 @@ test('scene placement stays anchored to the unexpanded snapshot while the model 
                                 index: 1,
                                 insert_after: 1,
                                 scene: 'opening door, indoor',
+                                title: '夜色开门',
                                 characters: [],
                             }],
                         }),
@@ -483,6 +485,7 @@ test('scene planner rejects illustration point numbers that do not exist in this
                             index: 1,
                             insert_after: 42,
                             scene: 'opening door, indoor',
+                            title: '无效插图点',
                             characters: [],
                         }],
                     }),
@@ -546,7 +549,7 @@ test('prepared scene planner input is serializable and executes without browser 
                     toolCalls: [{
                         name: 'submit_scene_plan',
                         arguments: JSON.stringify({
-                            images: [{ index: 1, insert_after: 1, scene: 'opening door, indoor', characters: [] }],
+                            images: [{ index: 1, insert_after: 1, scene: 'opening door, indoor', title: '预备开门', characters: [] }],
                         }),
                     }],
                 },

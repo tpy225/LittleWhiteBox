@@ -104,6 +104,7 @@ function buildValidScenePlanResult() {
                     index: 1,
                     insert_after: 1,
                     scene: 'opening door, indoor',
+                    title: '开门瞬间',
                     characters: [],
                 }],
             }),
@@ -444,6 +445,7 @@ test('scene planner accepts the reported decorated two-image plan in one request
     assert.equal(calls, 1);
     assert.deepEqual(tasks.map(task => task.placement.insertAfter), [52, 73]);
     assert.deepEqual(tasks.map(task => task.scene), expected.map(image => image.scene));
+    assert.deepEqual(tasks.map(task => task.title), expected.map(image => image.title));
     assert.deepEqual(tasks.map(task => task.chars[0].action), expected.map(image => image.characters[0].action));
     assert.equal(getLastDrawAgentDiagnostic().correctionCount, 0);
     assert.deepEqual(getLastDrawAgentDiagnostic().validationFailures, []);

@@ -33,7 +33,7 @@ test('missing character type remains drawable without creating an invented libra
     for (const type of [undefined, null, '', '   ', 'man', '成年男性']) {
         const { tasks } = parseSubmittedScenePlan({
             toolCalls: [{ name: 'submit_scene_plan', arguments: JSON.stringify({
-                images: [{ insert_after: 1, scene: 'rain', characters: [{
+                images: [{ insert_after: 1, scene: 'rain', title: '雨中老人', characters: [{
                     name: '亚瑟', appear: 'old man, grey beard',
                     ...(type === undefined ? {} : { type }),
                 }] }],

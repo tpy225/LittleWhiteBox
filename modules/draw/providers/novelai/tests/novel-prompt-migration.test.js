@@ -10,6 +10,7 @@ const CURRENT = Object.freeze({
     topSystem: 'current model-independent system',
     topSystemPov: 'current model-independent pov system',
     sceneRules: 'current model-independent scene rules',
+    sceneRulesPro: 'current enhanced composition rules',
 });
 const TARGET = PROMPT_TEMPLATE_VERSION;
 
@@ -41,22 +42,28 @@ for (const version of [6, 7]) {
             }
         }
         const added = result.presets.slice(fixture.promptPresets.length);
-        assert.equal(added.length, 2);
+        assert.equal(added.length, 3);
         assert.deepEqual(added.map(preset => preset.name), Object.values(SCENE_PLANNER_PRESET_NAMES));
         assert.equal(added[0].topSystem, CURRENT.topSystem);
         assert.equal(added[1].topSystem, CURRENT.topSystemPov);
+        assert.equal(added[2].topSystem, CURRENT.topSystem);
+        assert.equal(added[0].sceneRules, CURRENT.sceneRules);
+        assert.equal(added[1].sceneRules, CURRENT.sceneRules);
+        assert.equal(added[2].sceneRules, CURRENT.sceneRulesPro);
         for (const preset of added) {
-            assert.equal(preset.sceneRules, CURRENT.sceneRules);
             assert.deepEqual(preset.modelGuideOverrides, {});
         }
-        // The selected (edited) legacy POV default hands the selection to its new counterpart.
+        // The selected (edited) legacy POV default hands the selection to its new counterpart,
+        // not to the optional pro preset.
         assert.equal(result.settings.selectedPromptPresetId, added[1].id);
+        assert.equal(result.proAdded, true);
         // Deleted/renamed new presets stay deleted/renamed after a save and reload.
         const persisted = JSON.parse(JSON.stringify(result.settings));
         persisted.promptPresets = persisted.promptPresets.filter(preset => preset.id !== added[1].id);
         persisted.promptPresets.find(preset => preset.id === added[0].id).name = '自定义的新预设';
         const repeated = migrateLegacyNovelPromptSettings(persisted, CURRENT, TARGET);
         assert.equal(repeated.migrated, false);
+        assert.equal(repeated.proAdded, false);
         assert.deepEqual(repeated.settings, persisted);
     });
 }
@@ -72,10 +79,11 @@ for (const version of [8, 9, 10, 11, 12]) {
             _promptTemplateVersion: version, promptPresets: presets, selectedPromptPresetId: 'edited',
         }, CURRENT, TARGET);
         assert.deepEqual(result.presets.slice(0, 2), presets);
-        assert.equal(result.presets.length, 4);
+        assert.equal(result.presets.length, 5);
         // A selected custom preset also hands over: its rules predate the tool contract.
         assert.equal(result.settings.selectedPromptPresetId, result.presets[2].id);
         assert.equal(result.presets[2].name, SCENE_PLANNER_PRESET_NAMES.normal);
+        assert.equal(result.presets[4].name, SCENE_PLANNER_PRESET_NAMES.pro);
     });
 }
 
@@ -95,11 +103,54 @@ test('drops retired fields at the format boundary and preserves both model guide
     });
 });
 
-test('new NovelAI installations receive only the two current presets', () => {
+test('new NovelAI installations receive the current presets with the standard default selected', () => {
     const result = migrateLegacyNovelPromptSettings(null, CURRENT, TARGET);
-    assert.equal(result.presets.length, 2);
+    assert.equal(result.presets.length, 3);
+    assert.deepEqual(result.presets.map(preset => preset.name), Object.values(SCENE_PLANNER_PRESET_NAMES));
     assert.equal(result.settings.selectedPromptPresetId, result.presets[0].id);
     assert.equal(result.settings._promptTemplateVersion, TARGET);
+});
+
+test('appends the optional pro preset once without switching a custom selection', () => {
+    const selected = 'user-preset';
+    const presets = [{ id: selected, name: '我的规则', topSystem: 'sys', sceneRules: 'rules' }];
+    const result = migrateLegacyNovelPromptSettings({
+        _promptTemplateVersion: 14, promptPresets: presets, selectedPromptPresetId: selected,
+    }, CURRENT, TARGET);
+    assert.equal(result.proAdded, true);
+    assert.equal(result.settings.selectedPromptPresetId, selected);
+    assert.equal(result.presets.length, 2);
+    const pro = result.presets[1];
+    assert.equal(pro.name, SCENE_PLANNER_PRESET_NAMES.pro);
+    assert.equal(pro.topSystem, CURRENT.topSystem);
+    assert.equal(pro.sceneRules, CURRENT.sceneRulesPro);
+    assert.deepEqual(pro.modelGuideOverrides, {});
+});
+
+test('a deleted pro preset never returns after save and reload', () => {
+    const first = migrateLegacyNovelPromptSettings({
+        _promptTemplateVersion: 14, promptPresets: [],
+    }, CURRENT, TARGET);
+    const persisted = JSON.parse(JSON.stringify(first.settings));
+    persisted.promptPresets = persisted.promptPresets.filter(
+        preset => preset.name !== SCENE_PLANNER_PRESET_NAMES.pro,
+    );
+    const repeated = migrateLegacyNovelPromptSettings(persisted, CURRENT, TARGET);
+    assert.equal(repeated.proAdded, false);
+    assert.equal(repeated.migrated, false);
+    assert.deepEqual(repeated.settings, persisted);
+    assert.equal(repeated.presets.some(preset => preset.name === SCENE_PLANNER_PRESET_NAMES.pro), false);
+});
+
+test('throws when the enhanced rules have not been loaded', () => {
+    assert.throws(
+        () => migrateLegacyNovelPromptSettings(
+            { _promptTemplateVersion: 14, promptPresets: [] },
+            { ...CURRENT, sceneRulesPro: ' ' },
+            TARGET,
+        ),
+        /sceneRulesPro/,
+    );
 });
 
 test('requires an explicit target version', () => {

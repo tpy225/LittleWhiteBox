@@ -32,10 +32,33 @@ function resolvePlacementOffset(sourceText, placement, sourceHash) {
     return offset;
 }
 
+// 判断插入点之后的下一行是否以标签（<…>）开头。
+// CommonMark 第 7 类 HTML 区块（任意自定义标签）无法中断一个正在进行的段落：
+// markdown-it 会把 `占位符\n</content>` 整体并进 <p>，浏览器解析时又因 <p> 开着而
+// 忽略 `</content>` 结束标签，后续 <abstract> 等标签全部被吞进 <content>。
+// 在占位符与标签行之间留出空行，段落先收尾，标签才能按区块边界正确解析。
+function followingLineStartsWithTag(source, offset) {
+    if (offset >= source.length) return false;
+    let cursor = offset;
+    if (source[cursor] === '\r') cursor += 1;
+    if (source[cursor] === '\n') cursor += 1;
+    if (source[cursor] === '\r') cursor += 1;
+    // 已经有空行分隔，不需要再补。
+    if (source[cursor] === '\n') return false;
+    // HTML 区块开头允许至多 3 个空白字符的缩进。
+    let indent = 0;
+    while ((source[cursor] === ' ' || source[cursor] === '\t') && indent < 3) {
+        cursor += 1;
+        indent += 1;
+    }
+    return source[cursor] === '<';
+}
+
 function wrapBlockContent(source, offset, content) {
     let wrapped = content;
     if (offset > 0 && source[offset - 1] !== '\n') wrapped = `\n${wrapped}`;
     if (offset < source.length && source[offset] !== '\n') wrapped = `${wrapped}\n`;
+    if (followingLineStartsWithTag(source, offset)) wrapped = `${wrapped}\n`;
     return wrapped;
 }
 

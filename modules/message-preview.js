@@ -880,9 +880,10 @@ const addHistoryButtonsDebounced = debounce(() => {
   $("#chat .mes").each(function () {
     const id = parseInt($(this).attr("mesid")), isUser = $(this).attr("is_user") === "true";
     if (id <= 0 || isUser) return;
-    const btn = $(`<div class="mes_btn mes_history_preview" title="查看历史API请求"><i class="fa-regular fa-note-sticky"></i></div>`).on("click", (e) => { e.preventDefault(); e.stopPropagation(); showHistoryPreview(id); });
+    // 使用 mes_button 并挂到 .mes_block .mes_buttons，与剧情总结按钮一致，跟随在原生菜单按钮后面
+    const btn = $(`<div class="mes_button mes_history_preview" title="查看历史API请求"><i class="fa-regular fa-note-sticky"></i></div>`).on("click", (e) => { e.preventDefault(); e.stopPropagation(); showHistoryPreview(id); });
     if (window.registerButtonToSubContainer && window.registerButtonToSubContainer(id, btn[0])) return;
-    $(this).find(".flex-container.flex1.alignitemscenter").append(btn);
+    $(this).find(".mes_block .mes_buttons").append(btn);
   });
 }, C.DEBOUNCE);
 
@@ -892,7 +893,7 @@ function mountHistoryButton(message, messageId) {
   if (message.querySelector('.mes_history_preview')) return;
 
   const button = document.createElement('div');
-  button.className = 'mes_btn mes_history_preview';
+  button.className = 'mes_button mes_history_preview';
   button.title = '查看历史API请求';
   const icon = document.createElement('i');
   icon.className = 'fa-regular fa-note-sticky';
@@ -904,7 +905,7 @@ function mountHistoryButton(message, messageId) {
   });
 
   if (!window.registerButtonToSubContainer?.(messageId, button)) {
-    message.querySelector('.flex-container.flex1.alignitemscenter')?.appendChild(button);
+    message.querySelector('.mes_block .mes_buttons')?.appendChild(button);
   }
   return () => button.remove();
 }

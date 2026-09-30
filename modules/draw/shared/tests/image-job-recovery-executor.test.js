@@ -83,7 +83,7 @@ function plan() {
             index: 0,
             slotId: 'slot-a',
             imgId: 'img-a',
-            previewMetadata: { tags: 'scene', positive: 'scene' },
+            previewMetadata: { tags: 'scene', title: '雨中相拥', positive: 'scene' },
         }],
     };
 }
@@ -142,6 +142,7 @@ test('a new frontend instance reattaches a submitted job and ACK follows image p
         },
         async deliver(_record, item, payload) {
             order.push('store-image');
+            assert.equal(item.previewMetadata.title, '雨中相拥');
             gallery.set(item.imgId, payload.response.bytes);
             await Promise.resolve();
             order.push('store-selection');

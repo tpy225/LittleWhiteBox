@@ -89,6 +89,7 @@ import {
     createPlaceholder,
     renderPreviewsForMessage,
     buildImageHtml,
+    syncImageTitleElements,
     buildPendingImageHtml,
     insertPreviewIntoRenderedMessage,
     isAnyMessageBeingEdited,
@@ -97,6 +98,7 @@ import {
     DEFAULT_MESSAGE_FILTER_RULES,
     joinTags,
     ensureDrawImageStyles,
+    RELOAD_ICON_SVG,
     classifyError,
     ErrorType,
     syncDrawSavedFromPreview,
@@ -3070,7 +3072,6 @@ function setImageState(container, state) {
         menuWrap.style.pointerEvents = isBusy ? 'none' : '';
         menuWrap.style.opacity = isBusy ? '0.3' : '';
     }
-    container.style.border = state === ImageState.PREVIEW ? '1px dashed rgba(255,152,0,0.35)' : 'none';
     const dropdown = container.querySelector('.xb-nd-dropdown');
     if (dropdown) {
         const saveItem = dropdown.querySelector('[data-action="save-image"]');
@@ -3111,6 +3112,7 @@ function syncContainerToPreview(container, preview, historyCount = 1, currentInd
     container.dataset.imgId = preview.imgId;
     container.dataset.tags = String(preview.tags || '');
     container.dataset.positive = String(preview.positive || '');
+    syncImageTitleElements(container, preview.title || '');
     container.dataset.currentIndex = String(currentIndex);
     container.dataset.historyCount = String(historyCount);
     setImageState(container, preview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW);
@@ -3241,6 +3243,7 @@ function buildSharedGalleryCallbacks(slotId, messageId) {
                 slotId: sid,
                 messageId: msgId,
                 tags: lastImageInfo.tags || '',
+                title: lastImageInfo.title || '',
                 positive: lastImageInfo.positive || '',
                 errorType: 'deleted',
                 errorMessage: '图片已删除，点击重试可重新生成',
@@ -3268,18 +3271,21 @@ function renderExistingPanels() {
 function buildFailedPlaceholderHtml({ slotId, messageId, tags, positive, errorType, errorMessage }) {
     const escapedTags = escapeHtml(tags || '');
     const escapedPositive = escapeHtml(positive || '');
-    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border:1px dashed rgba(248,113,113,0.5);border-radius:14px;padding:20px;background:rgba(248,113,113,0.05);">
-<div class="xb-nd-failed-icon">⚠️</div>
-<div class="xb-nd-failed-title">${escapeHtml(errorType || '生成失败')}</div>
-<div class="xb-nd-failed-desc">${escapeHtml(errorMessage || '点击重试')}</div>
-<div class="xb-nd-failed-btns">
-    <button class="xb-nd-retry-btn" data-action="retry-image">⟳ 重新生成</button>
-    <button class="xb-nd-edit-btn" data-action="edit-tags">✐ 编辑TAG</button>
-    <button class="xb-nd-remove-btn" data-action="remove-placeholder">✕ 移除</button>
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:#C0392B;border:1px solid rgba(255,255,255,0.85);border-radius:10px;padding:4px 8px;color:#fff;font-size:13px;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+<div style="display:flex;align-items:center;gap:8px;min-width:0;">
+<span style="font-size:14px;flex:none;">⚠️</span>
+<span class="xb-nd-failed-title" style="font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(errorType || '生成失败')}</span>
 </div>
-<div class="xb-nd-edit" style="display:none;margin-top:12px;text-align:left;">
+<div class="xb-nd-failed-btns" style="display:flex;gap:4px;flex:none;">
+    <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;opacity:0.9;display:flex;align-items:center;" title="重新生成">${RELOAD_ICON_SVG}</button>
+    <button class="xb-nd-edit-btn" data-action="edit-tags" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="编辑 TAG">✎</button>
+    <button class="xb-nd-remove-btn" data-action="remove-placeholder" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="移除">✕</button>
+</div>
+</div>
+<div class="xb-nd-edit" style="display:none;margin-top:8px;text-align:left;background:#141418;padding:8px;border-radius:8px;">
     <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;">编辑 TAG（场景描述）</div>
-    <textarea class="xb-nd-edit-input">${escapeHtml(tags || '')}</textarea>
+    <textarea class="xb-nd-edit-input" style="color:#fff;background:#1d1d22;border:1px solid rgba(255,255,255,0.2);padding:6px 8px;border-radius:6px;font-size:12px;width:100%;min-height:60px;resize:vertical;outline:none;">${escapedTags}</textarea>
     <div style="display:flex;gap:6px;margin-top:8px;">
         <button data-action="save-tags-retry" style="flex:1;padding:6px 12px;background:rgba(212,165,116,0.3);border:1px solid rgba(212,165,116,0.5);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">保存并重试</button>
         <button data-action="cancel-edit" style="padding:6px 12px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;">取消</button>
@@ -3529,12 +3535,14 @@ async function refreshSingleImage(container) {
             params,
         });
         const imgId = generateImgId();
+        const preservedTitle = preview?.title || '';
         await storePreview({
             imgId,
             slotId,
             messageId,
             base64,
             tags: container.dataset.tags || prompt,
+            title: preservedTitle,
             positive: prompt,
             characterPrompts: preview?.characterPrompts || [],
             negativePrompt: promptData.negative || preview?.negativePrompt || params.negativePrefix || '',
@@ -3548,6 +3556,7 @@ async function refreshSingleImage(container) {
             imgId,
             url: getPreviewDisplayUrl({ imgId, base64 }),
             tags: container.dataset.tags || prompt,
+            title: preservedTitle,
             positive: prompt,
             messageId,
             historyCount: Math.max(1, successPreviews.length),
@@ -3591,12 +3600,14 @@ async function retryFailedImage(container) {
         });
 
         const imgId = generateImgId();
+        const preservedTitle = latestFailed?.title || '';
         await storePreview({
             imgId,
             slotId,
             messageId,
             base64,
             tags,
+            title: preservedTitle,
             positive,
             characterPrompts: latestFailed?.characterPrompts || [],
             negativePrompt: negative,
@@ -3611,6 +3622,7 @@ async function retryFailedImage(container) {
             imgId,
             url: getPreviewDisplayUrl({ imgId, base64 }),
             tags,
+            title: preservedTitle,
             positive,
             messageId,
             state: ImageState.PREVIEW,
@@ -3624,6 +3636,7 @@ async function retryFailedImage(container) {
             slotId,
             messageId,
             tags,
+            title: latestFailed?.title || '',
             positive: String(container.dataset.positive || ''),
             errorType: classified.code,
             errorMessage: classified.desc,
@@ -3860,6 +3873,7 @@ export async function generateImagesFromText(options = {}) {
         onStateChange: options.onStateChange,
         onItemReady: async ({ index, base64 }) => {
             const { task, slotId, imgId, promptData } = requests[index];
+            const titleForStore = task.title || '';
             await storePreview({
                 ...galleryMeta,
                 imgId,
@@ -3867,6 +3881,7 @@ export async function generateImagesFromText(options = {}) {
                 messageId,
                 base64,
                 tags: task.scene || options.promptOverride || '',
+                title: titleForStore,
                 positive: promptData.positive,
                 characterPrompts: promptData.characterPrompts,
                 negativePrompt: promptData.negative,
@@ -3878,6 +3893,7 @@ export async function generateImagesFromText(options = {}) {
                 imgId,
                 placement: task.placement,
                 tags: task.scene || options.promptOverride || '',
+                title: titleForStore,
                 positive: promptData.positive,
                 negativePrompt: promptData.negative,
                 displayUrl: getPreviewDisplayUrl({ imgId, base64 }),
@@ -3893,6 +3909,7 @@ export async function generateImagesFromText(options = {}) {
                 slotId,
                 messageId,
                 tags: task.scene || options.promptOverride || '',
+                title: task.title || '',
                 positive: promptData.positive,
                 errorType: errorType.code,
                 errorMessage: errorType.desc,
@@ -3903,6 +3920,7 @@ export async function generateImagesFromText(options = {}) {
                 slotId,
                 placement: task.placement,
                 tags: task.scene || options.promptOverride || '',
+                title: task.title || '',
                 positive: promptData.positive,
                 negativePrompt: promptData.negative,
                 success: false,
@@ -4125,6 +4143,7 @@ export async function generateAndInsertImages({
                 imgId: request.imgId,
                 previewMetadata: {
                     tags: request.task.scene || promptOverride,
+                    title: request.task.title || '',
                     positive: request.promptData.positive,
                     characterPrompts: request.promptData.characterPrompts,
                     negativePrompt: request.promptData.negative,
@@ -4219,6 +4238,7 @@ export async function generateAndInsertImages({
                     slotId: request.slotId,
                     messageId: target?.messageId ?? resolvedMessageId,
                     tags: request.task.scene || promptOverride,
+                    title: request.task.title || '',
                     positive: request.promptData.positive,
                     errorType: errorType.code,
                     errorMessage: errorType.desc,
@@ -4301,7 +4321,8 @@ export async function generateAndInsertImages({
                     persist: target => storePreview({
                         ...recoverablePlan.gallery,
                         imgId, slotId, messageId: target?.messageId ?? resolvedMessageId, base64,
-                        tags: task.scene || promptOverride, positive: promptData.positive,
+                        tags: task.scene || promptOverride, title: task.title || '',
+                        positive: promptData.positive,
                         characterPrompts: promptData.characterPrompts, negativePrompt: promptData.negative,
                     }),
                     rollbackPersisted: () => deletePreview(imgId),
@@ -4313,7 +4334,8 @@ export async function generateAndInsertImages({
                 results[index] = { slotId, imgId, success: true };
                 await renderSettledSlot(slotId, targetMessageId => buildImageHtml({
                         slotId, imgId, url: getPreviewDisplayUrl({ imgId, base64 }),
-                        tags: task.scene || promptOverride, positive: promptData.positive,
+                        tags: task.scene || promptOverride, title: task.title || '',
+                        positive: promptData.positive,
                         messageId: targetMessageId, state: ImageState.PREVIEW, historyCount: 1, currentIndex: 0,
                     }));
             },
@@ -4410,6 +4432,13 @@ export async function generateAndInsertImages({
                 await renderPreviewsForMessage(resolvedMessageId);
             } catch (error) {
                 console.warn('[SD Draw] 最终 DOM 同步失败:', error);
+            }
+        } else if (shouldUpdateDom) {
+            try {
+                const { processMessageById } = await import('../../../iframe-renderer.js');
+                processMessageById(resolvedMessageId, true);
+            } catch (error) {
+                console.warn('[SD Draw] iframe 渲染补触发失败:', error);
             }
         }
         onStateChange?.('success', { success: successCount, total: tasks.length });

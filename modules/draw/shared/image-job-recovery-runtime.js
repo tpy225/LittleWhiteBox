@@ -119,6 +119,7 @@ function previewOptions(record, item, target) {
         slotId: item.slotId,
         imgId: item.imgId,
         tags: item.previewMetadata?.tags || '',
+        title: item.previewMetadata?.title || '',
         positive: item.previewMetadata?.positive || '',
         characterPrompts: item.previewMetadata?.characterPrompts ?? null,
         negativePrompt: item.previewMetadata?.negativePrompt ?? null,

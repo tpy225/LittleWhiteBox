@@ -2,10 +2,20 @@
 const SERVER_FILE_KEY = 'settings';
 export const DEFAULT_SHARED_GALLERY_CACHE_DAYS = 3;
 
+// 图片标题显示模式：none 不显示 / overlay 图顶幼细悬浮条（默认）/ collapse 可点击折叠
+export const IMAGE_TITLE_MODES = Object.freeze(['none', 'overlay', 'collapse']);
+export const DEFAULT_IMAGE_TITLE_MODE = 'overlay';
+
+export function normalizeImageTitleMode(value, fallback = DEFAULT_IMAGE_TITLE_MODE) {
+    const mode = String(value || '').trim();
+    return IMAGE_TITLE_MODES.includes(mode) ? mode : fallback;
+}
+
 const DEFAULT_SHARED_DRAW_SETTINGS = {
     cacheDays: DEFAULT_SHARED_GALLERY_CACHE_DAYS,
     useWorldInfo: false,
     timeout: 120000,
+    imageTitleMode: DEFAULT_IMAGE_TITLE_MODE,
     characterTags: [],
     danbooruLocalDB: false,
     messageFilterRules: [],
@@ -34,6 +44,7 @@ const NOVEL_DRAW_PROVIDER_SETTING_KEYS = new Set([
     'promptPresets',
     'selectedPromptPresetId',
     '_promptTemplateVersion',
+    '_proPresetVersion',
     // 全局 Vibe 库（原圖 + 各模型編碼，花點數的資產），隨 provider 配置一起持久化
     'vibeLibrary',
 ]);
@@ -103,6 +114,7 @@ export function normalizeSharedDrawSettings(saved = {}) {
         timeout: Number.isFinite(timeout) && timeout > 0
             ? Math.min(600000, Math.max(10000, Math.floor(timeout)))
             : DEFAULT_SHARED_DRAW_SETTINGS.timeout,
+        imageTitleMode: normalizeImageTitleMode(source.imageTitleMode),
         characterTags,
         danbooruLocalDB: source.danbooruLocalDB === true,
         messageFilterRules,

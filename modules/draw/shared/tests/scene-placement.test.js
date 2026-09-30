@@ -97,6 +97,44 @@ test('scene source ignores punctuation that is not a safe illustration boundary'
     assert.equal(englishInserted, 'He left. \n[image:english]\nNext.');
 });
 
+// 占位符后面紧跟自定义标签行时，必须留出空行让 CommonMark 段落先收尾，
+// 否则标签会被并进 <p>，浏览器解析时结束标签被忽略、后续标签整体被吞。
+test('block insertion separates marker from a following custom-tag line', () => {
+    const beforeClose = '<content>\n正文最后一句。\n</content>';
+    const closePlacement = {
+        mode: 'source',
+        offset: beforeClose.indexOf('\n</content>'),
+        sourceHash: hashSceneSource(beforeClose),
+    };
+    assert.equal(
+        insertScenePlacements(beforeClose, [{ placement: closePlacement, content: '[image:a]' }], { block: true }),
+        '<content>\n正文最后一句。\n[image:a]\n\n</content>',
+    );
+
+    const adjacent = '正文。<check>x</check>';
+    const adjacentPlacement = {
+        mode: 'source',
+        offset: adjacent.indexOf('<check>'),
+        sourceHash: hashSceneSource(adjacent),
+    };
+    assert.equal(
+        insertScenePlacements(adjacent, [{ placement: adjacentPlacement, content: '[image:a]' }], { block: true }),
+        '正文。\n[image:a]\n\n<check>x</check>',
+    );
+
+    // 已经存在空行分隔时不重复追加。
+    const separated = '正文。\n\n<check>';
+    const separatedPlacement = {
+        mode: 'source',
+        offset: separated.indexOf('\n\n<check>'),
+        sourceHash: hashSceneSource(separated),
+    };
+    assert.equal(
+        insertScenePlacements(separated, [{ placement: separatedPlacement, content: '[image:a]' }], { block: true }),
+        '正文。\n[image:a]\n\n<check>',
+    );
+});
+
 test('scene source distinguishes user-authored illustration-point text from generated markers', () => {
     const source = createSceneSource('原文写着【插图点 1】，然后继续。');
     assert.equal(source.numberedContent, '原文写着【原文中的“插图点 1”字样】，然后继续。【插图点 1】');

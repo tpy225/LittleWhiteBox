@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    DEFAULT_IMAGE_TITLE_MODE,
+    IMAGE_TITLE_MODES,
     mergeNovelDrawProviderSettingsIntoStorageRoot,
     mergeSharedDrawSettingsIntoStorageRoot,
+    normalizeImageTitleMode,
     normalizeSharedDrawSettings,
 } from '../draw-settings.js';
 
@@ -122,6 +125,22 @@ test('vibe library survives provider and shared save merges', () => {
         characterTags: [{ id: 'c1', name: '角色' }],
     });
     assert.deepEqual(sharedSave.vibeLibrary, vibeLibrary);
+});
+
+test('image title mode defaults to the thin overlay bar and rejects unknown values', () => {
+    assert.deepEqual(IMAGE_TITLE_MODES, ['none', 'overlay', 'collapse']);
+    assert.equal(DEFAULT_IMAGE_TITLE_MODE, 'overlay');
+    for (const mode of IMAGE_TITLE_MODES) {
+        assert.equal(normalizeImageTitleMode(mode), mode);
+    }
+    assert.equal(normalizeSharedDrawSettings({}).imageTitleMode, 'overlay');
+    assert.equal(normalizeSharedDrawSettings({ imageTitleMode: 'collapse' }).imageTitleMode, 'collapse');
+    assert.equal(normalizeSharedDrawSettings({ imageTitleMode: 'none' }).imageTitleMode, 'none');
+    for (const invalid of ['', 'popup', true, 12, null, undefined, {}, []]) {
+        assert.equal(normalizeImageTitleMode(invalid), 'overlay');
+        assert.equal(normalizeSharedDrawSettings({ imageTitleMode: invalid }).imageTitleMode, 'overlay');
+    }
+    assert.equal(normalizeImageTitleMode('bogus', 'none'), 'none', 'explicit fallback is respected');
 });
 
 test('shared character settings preserve explicit disabled state and default older records to enabled', () => {

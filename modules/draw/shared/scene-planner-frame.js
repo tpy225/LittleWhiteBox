@@ -46,7 +46,7 @@ export function buildScenePlannerFrameText(profile) {
 - 锚点未覆盖的角色照常自由描述；正文事实与锚点冲突时，一律以正文为准。
 
 ## 你的输出去哪
-The app uses each image's scene and character fields, together with the character library and the user's generation settings, to build a request for ${imageModelName}. Field meanings and model-specific controls are described in submit_scene_plan.`;
+The app shows each image's title as the caption on the generated picture, and uses its scene and character fields, together with the character library and the user's generation settings, to build a request for ${imageModelName}. Field meanings and model-specific controls are described in submit_scene_plan.`;
 }
 
 export function buildScenePlannerSystemPrompt({ opening = '', guide = '', sceneRules = '', profile } = {}) {

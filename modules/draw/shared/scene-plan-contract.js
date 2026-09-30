@@ -2,7 +2,7 @@ import { repairScenePlanArguments } from './scene-plan-arguments.js';
 
 export const SUBMIT_SCENE_PLAN_TOOL_NAME = 'submit_scene_plan';
 
-const REQUIRED_IMAGE_FIELDS = Object.freeze(['insert_after', 'scene', 'characters']);
+const REQUIRED_IMAGE_FIELDS = Object.freeze(['insert_after', 'scene', 'title', 'characters']);
 // Unknown or interrupted provider finishes must not be promoted into a successful plan.
 const REPAIR_FINISH_REASONS = new Set(['', 'stop', 'completed', 'end_turn', 'tool_use', 'tool_calls', 'function_call']);
 
@@ -325,7 +325,7 @@ function normalizeImages(images, options = {}) {
         return {
             index: imageIndex + 1,
             scene: requireString(image.scene, `${path}.scene`),
-            title: optionalString(image, 'title', path),  
+            title: requireString(image.title, `${path}.title`),
             chars,
             placement: {
                 mode: 'source',

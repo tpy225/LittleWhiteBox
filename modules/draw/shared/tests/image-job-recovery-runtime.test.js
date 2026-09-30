@@ -99,6 +99,7 @@ for (const mode of ['complete', 'fail', 'discard']) {
             const marker = { version: 1, provider: 'sd-webui', sourceHash, targetHash: hashSceneSource(original), createdAt: 100 };
             const items = [0, 1].map(index => ({
                 index, ...deriveDrawRunItemIds(runId, index), insertOffset: sourceText.length,
+                displayMetadata: { tags: 'scene', title: '雨中相拥' },
             }));
             const run = {
                 id: runId, provider: marker.provider, state: 'dispatched', sourceHash,
@@ -151,7 +152,11 @@ for (const mode of ['complete', 'fail', 'discard']) {
             }
             if (mode === 'fail') {
                 assert.equal(host.previews.has(`failed-${items[0].imgId}`), true);
+                assert.equal(host.previews.get(`failed-${items[0].imgId}`).title, '雨中相拥');
                 assert.equal(host.previews.has(`failed-${items[1].imgId}`), !userDeletedSlot);
+                if (!userDeletedSlot) {
+                    assert.equal(host.previews.get(`failed-${items[1].imgId}`).title, '雨中相拥');
+                }
             }
             assert.equal(await api.getPendingImageJob(jobId), null);
             assert.equal(acknowledged, 1);

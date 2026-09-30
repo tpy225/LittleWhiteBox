@@ -154,6 +154,29 @@ test('journal keeps this batch items but drops unused source snapshots', async (
     await forgetPendingImageJob(jobId, record.leaseId);
 });
 
+test('journal normalizes item preview metadata and keeps the AI title', async () => {
+    const jobId = `normalized-metadata-${Date.now()}`;
+    const source = newRecord(jobId);
+    source.items[0].previewMetadata = {
+        tags: 'scene tags',
+        title: '泪光中的告白',
+        positive: 'scene prompt',
+        strayField: 'must be dropped',
+        characterPrompts: [{ name: 'Alice', prompt: 'girl' }],
+        negativePrompt: 'low quality',
+    };
+    const record = await recordPendingImageJob(source);
+    assert.deepEqual(record.items[0].previewMetadata, {
+        tags: 'scene tags',
+        title: '泪光中的告白',
+        positive: 'scene prompt',
+        characterPrompts: [{ name: 'Alice', prompt: 'girl' }],
+        negativePrompt: 'low quality',
+        providerMetadata: null,
+    });
+    await forgetPendingImageJob(jobId, record.leaseId);
+});
+
 test('claim changes ownership once and stale owners cannot mutate or delete the record', async () => {
     const jobId = `atomic-claim-${Date.now()}`;
     const original = await recordPendingImageJob(newRecord(jobId));

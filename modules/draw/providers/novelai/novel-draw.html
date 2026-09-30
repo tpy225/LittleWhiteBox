@@ -1050,6 +1050,15 @@ select.input { cursor: pointer; }
                             <input id="nd_delay" type="text" class="input" value="15000-30000">
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">图片标题</label>
+                        <select id="nd_image_title_mode" class="input">
+                            <option value="overlay">悬浮标题条（图顶幼细标题，不折叠）</option>
+                            <option value="collapse">可折叠标题（点击标题折叠图片）</option>
+                            <option value="none">不显示标题</option>
+                        </select>
+                        <p class="form-hint">标题由场景分析 AI 为每张图生成；所有绘图 Provider 共用此显示方式。</p>
+                    </div>
                     <div class="btn-group" style="margin-top: 16px;">
                         <button id="nd_save_api" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
                         <button id="nd_test_api" class="btn"><i class="fa-solid fa-plug"></i> 测试连接</button>
@@ -1765,6 +1774,7 @@ let state = {
     modelCapabilities: {},
     backendPluginStatus: null,
     messageFilterRules: [],
+    imageTitleMode: 'overlay',
 };
 
 let gallerySummary = {};
@@ -2989,6 +2999,9 @@ function applyStateToUI() {
         const dMax = state.requestDelay?.max > 0 ? state.requestDelay.max : DEFAULTS.requestDelay.max;
         $('nd_delay').value = `${dMin}-${dMax}`;
         $('nd_cache_days').value = state.cacheDays >= 1 ? state.cacheDays : DEFAULTS.cacheDays;
+        $('nd_image_title_mode').value = ['none', 'overlay', 'collapse'].includes(state.imageTitleMode)
+            ? state.imageTitleMode
+            : 'overlay';
         $('nd_cache_count').textContent = state.cacheStats?.count || 0;
         $('nd_cache_size').textContent = (state.cacheStats?.sizeMB || 0) + ' MB';
 
@@ -4230,6 +4243,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
+    $('nd_image_title_mode').addEventListener('change', () => {
+        const mode = $('nd_image_title_mode').value;
+        state.imageTitleMode = mode; // 乐观更新，INIT_DATA 回包再校正
+        postToParent({ type: 'SAVE_IMAGE_TITLE_MODE', imageTitleMode: mode });
+    });
+
     $('nd_test_api').addEventListener('click', () => postToParent({
         type: 'TEST_API',
         apiKey: $('nd_api_key').value.trim(),

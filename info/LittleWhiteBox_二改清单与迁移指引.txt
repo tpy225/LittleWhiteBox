@@ -1,0 +1,219 @@
+# LittleWhiteBox 二改清单与迁移指引（v2 更新版）
+
+> 生成日期：2026-09-30
+> 官方仓库：https://github.com/RT15548/LittleWhiteBox
+> 当前二改目录：`…/extensions/LittleWhiteBox_折疊標題`（manifest 标 v3.1.4，实际内容已与官方各版均不同）
+
+---
+
+## 0. 决策框架：三条路径 + 一个无争议的前置动作
+
+### 先说结论：现在（借用的电脑上）什么都不用决定，继续待在 3.1.4
+
+渲染 bug 靠 refresh 可恢复，不致命；升级/回退都等回家、有备份后再说。
+
+### 回家后第一步（三条路径共同的前置，无争议、优先做）
+
+**备份 + git 保全当前现状**——这是今天「文件被整体还原」事故的教训，与升不升级无关，详见第 3.2 节。现状一旦被 git 固定，以下每条路径以后都可逆、可反复尝试。
+
+### 三条路径
+
+| 路径 | 适合谁 | 成本/风险 |
+|---|---|---|
+| **A. 原地观望（推荐）**：留在 3.1.4，在独立文件夹试装 3.1.6 玩一两周，没问题再迁 | 不想当小白鼠、依赖二改的你 | 最低；试玩不影响现有环境 |
+| **B. 直接升 3.1.6**：按第 3 节迁移二改 | 用得上骰子/管理员等新功能、愿意跟进 | 中；官方称 3.1.5 修复了渲染协作，但场外有用户反馈更新后有其他 bug |
+| **C. 回 3.1.0**：把二改移植到 3.1.0 | 完全用不到 3.1.1–3.1.4 的新功能（scene-planner 等） | **最高**：二改锚点 scene-plan-tool.js / scene-planner-presets.js 在 3.1.0 不存在，无法直接移植，需重写；且 3.1.0 仍偶发同一渲染 bug |
+
+### 为什么社区「回 3.1.0」的潮流不适用于你
+
+- 据反馈，部分用户更新 3.1.5/3.1.6 后遇到其他 bug 而回退；但他们多为**无修改原版用户**，回退零成本。
+- 你的二改已深度绑定 3.1.4 结构（36 个文件 +1 新增），回退等于重写二改。
+- GitHub issues 全库仅 8 条（场外反馈无法在此核实）；其中 2026-09-19 的提交确认修复了你的渲染问题：
+
+  > fix(draw): 整条重写楼层 DOM 后通知其它渲染扩展（**修复插图后酒馆助手的 html 代码块退回源码**）
+
+### 版本与修复事实
+
+- 官方在 v3.1.5 修复了你追了一整天的 bug（v3.1.5 更新日志「画图」：「修复追加生图覆盖已有图片、图片位置变化及**与其他消息渲染器的协作问题**」）；机制=图片局部 DOM patch 冲掉了把 HTML 代码块渲染成页面的其它渲染器（酒馆助手等）成果。
+- 官方最新是 v3.1.6（更多画图重绘/位置修复、骰子续作、ST 1.14 兼容）。
+- 你的二改已通过文件对比完整捕获，见第 2 节清单与配套补丁文件。
+
+---
+
+## 1. 已确认的版本事实
+
+| 对象 | 版本 | 说明 |
+|---|---|---|
+| 当前二改目录 `LittleWhiteBox_折疊標題` | manifest v3.1.4 | 内容比官方 release 3.1.4 **和** tag v3.1.5 都大（多了你的二改） |
+| `LittleWhiteBox_折疊標題/LittleWhiteBox/` | **干净官方 release v3.1.4** | 带空壳 `.git`（无历史）；是本次对比的基线，可作为参考保留 |
+| `LittleWhiteBox_折疊標題/LittleWhiteBox3.1.0/` | 干净 v3.1.0 | 旧基线，仅供考古 |
+| 官方 GitHub tags | v3.1.0 → v3.1.5 → v3.1.6 | **没有 v3.1.4 的 tag**（3.1.4 只发了 release） |
+
+关键证据：
+- 当前目录比官方 v3.1.5 的 `draw-common.js`（905 行）还大（1018 行），`draw-preview-rendering.test.js` 440 行 vs 官方 274 行 → 差异是**真实二改**，不是版本漂移。
+- `iframe-renderer.js` 在你的版本与官方 3.1.4 中**完全一致** → 渲染 bug 是官方自带，不是你改出来的。
+
+---
+
+## 2. 完整二改清单（官方 release 3.1.4 → 当前版）
+
+统计口径：`diff -r` 逐文件，`+新增行 -删除行`。共 **36 个已存在文件被修改 + 1 个新增文件**。
+
+### 2.1 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `modules/draw/shared/prompts/scene-rules-pro.md` | 进阶构图规则（v15「进阶-构图强化」预设配套，本次会话新建） |
+
+### 2.2 源码文件（按改动规模排序）
+
+| 改动 | 文件 | 内容概要 |
+|---|---|---|
+| +173 -36 | `modules/draw/shared/draw-common.js` | 重新生成图标 RELOAD_ICON_SVG、下拉菜单/失败卡按钮（含早期二改） |
+| +110 -44 | `modules/draw/providers/novelai/novel-draw.js` | v15 预设 toast、_proPresetVersion 规范化、图标、渲染补触发 |
+| +43 -19 | `modules/draw/providers/comfyui/comfy-draw.js` | 图标、成功收尾 iframe 补触发 |
+| +43 -14 | `modules/draw/providers/sd-webui/sd-draw.js` | 同上 |
+| +38 -5 | `modules/draw/providers/novelai/novel-prompt-migration.js` | `ensureOptionalProPreset`（独立标记只追加一次） |
+| +23 -0 | `modules/draw/shared/scene-placement.js` | wrapBlockContent 占位符后补空行 |
+| +19 -0 | `modules/draw/providers/novelai/novel-draw.html` | 界面微调（早期二改，迁移时打开核对） |
+| +17 -5 | `modules/draw/providers/novelai/novel-prompts.js` | PROMPT_TEMPLATE_VERSION=15、sceneRulesPro、EXTRA_PROMPT_TEMPLATE_FILES |
+| +17 -0 | `modules/draw/shared/scene-planner-presets.js` | 新增「进阶-构图强化」pro 预设 |
+| +12 -0 | `modules/draw/shared/draw-settings.js` | 持久化白名单加 `_proPresetVersion` 等 |
+| +9 -2 | `modules/draw/shared/scene-plan-tool.js` | 标题句式多样性（禁每条「XX的XX」） |
+| +5 -1 | `modules/draw/shared/gallery-cache.js` | 小调整（早期二改） |
+| +5 -4 | `modules/message-preview.js` | 小调整（早期二改） |
+| +3 -2 | `modules/story-outline/story-outline.js` | 小调整（早期二改） |
+| +2 -2 | `modules/draw/shared/scene-plan-contract.js` | 小调整 |
+| +1 -1 | `modules/draw/shared/scene-planner-frame.js` | 小调整 |
+| +1 -0 | `modules/draw/shared/draw-run-adoption.js` | 新增 1 行 |
+| +1 -0 | `modules/draw/shared/image-job-recovery-runtime.js` | 新增 1 行 |
+| +1 -0 | `modules/draw/shared/pending-image-jobs.js` | `title: normalizeText(metadata.title)` |
+| +1 -0 | `server-plugin/.../draw-runs/draw-run-manager.js` | 新增 1 行 |
+| +1 -1 | `server-plugin/.../vendor/draw-run-runtime.cjs` | 1 行调整 |
+
+### 2.3 测试文件（不影响功能，迁移时可选）
+
+| 改动 | 文件 |
+|---|---|
+| +243 -3 | `modules/draw/shared/tests/draw-preview-rendering.test.js`（大段新增，早期二改） |
+| +57 -6 | `modules/draw/providers/novelai/tests/novel-prompt-migration.test.js` |
+| +38 -0 | `modules/draw/shared/tests/scene-placement.test.js` |
+| +19 -0 | `modules/draw/shared/tests/draw-settings.test.js` |
+| +15 -2 | `modules/draw/shared/tests/scene-plan-contract.test.js` |
+| +7 -6 | `server-plugin/.../tests/draw-run-manager.test.js` |
+| +6 -3 | `modules/draw/shared/tests/scene-planner.test.js` |
+| +5 -0 | `modules/draw/shared/tests/image-job-recovery-runtime.test.js` |
+| +2 -0 | `modules/draw/shared/tests/draw-agent.test.js` |
+| +2 -0 | `modules/draw/shared/tests/draw-run-adoption.test.js` |
+| +2 -0 | `modules/draw/shared/tests/pending-image-jobs.test.js` |
+| +2 -0 | `modules/draw/shared/tests/scene-plan-arguments.test.js` |
+| +2 -1 | `modules/draw/shared/tests/image-job-recovery-executor.test.js` |
+| +1 -1 | `modules/draw/providers/novelai/tests/novel-character-learning.test.js` |
+| +1 -1 | `modules/assistant/tests/fixtures/tagged-scene-plan-dsml-suffix.txt` |
+
+> 完整逐行内容在配套补丁：`LittleWhiteBox_二改完整补丁_vs_3.1.4.patch`（2535 行）。
+
+### 2.4 外观 CSS（本次会话确认）
+
+- 等待生成卡：移除虚线边框/半透明底色/多余 padding/圆角
+- 失败卡：红色横条 `#C0392B`、白字、圆角 10px、13px；图标 ⟳✎✕；编辑面板深色 `#141418`
+- 图片预览虚线边框：4 文件 7 处全移除
+- 具体落在哪个 CSS/样式定义：迁移时在新目录搜索 `dashed`、`#C0392B` 等关键字定位（补丁文件里可查到具体文件）
+
+---
+
+## 3. 回家后执行：迁移到 v3.1.6
+
+### 3.0 先备份（必做）
+
+- 复制整个 `LittleWhiteBox_折疊標題` 文件夹到安全位置（U盘/云盘）
+- 备份 SillyTavern 的 `chats/` 和设置
+- ⚠️ v3.1.5 有破坏性变更：经济系统改为全局账户，**旧聊天的余额/流水/存款/库存等经济记录不迁入、加载旧聊天时会清理**（学习记录与人物属性保留）。知情后再升。
+
+### 3.1 安装 git（若没有）
+
+```bash
+xcode-select --install      # macOS
+git --version               # 验证
+```
+
+### 3.2 推荐路线：git 三件套（最安全、可追溯）
+
+```bash
+mkdir -p ~/lwb && cd ~/lwb
+
+# 1) 克隆官方完整历史
+git clone https://github.com/RT15548/LittleWhiteBox.git official
+cd official
+
+# 2) 先在官方 v3.1.6 上建工作分支
+git checkout v3.1.6
+git checkout -b my-mod-316
+
+# 3) 把你的二改目录复制进来（只复制内容，排除下面这些）
+#    假设二改目录在 ~/lwb/my-current
+rsync -a --exclude=.git --exclude=node_modules --exclude=.DS_Store \
+  --exclude=LittleWhiteBox --exclude=LittleWhiteBox3.1.0 --exclude=info \
+  ~/lwb/my-current/ ./
+
+# 4) 先不要 commit，直接看与官方 3.1.6 的差异（这就是「要在新版上重做的二改」）
+git diff --stat
+```
+
+由于官方 3.1.5/3.1.6 也动过这些文件，**直接覆盖会把官方修复盖掉**（尤其 iframe 渲染协作修复）。所以接下来逐文件处理：
+
+```bash
+# 对每个有差异的文件，用三方对比，只挑出「你的新增」，保留官方新代码
+git diff <文件>          # 看差异
+# VS Code 用户：直接在编辑器里对冲突块逐块取舍（Accept Current/Incoming/Both）
+```
+
+取舍原则：
+- **渲染相关**（scene-placement.js 的补空行、三家 provider 的 processMessageById 补触发）→ **先不要移植**，3.1.5 官方已修，升级后先验证，没复现就不需要。
+- **v15 进阶预设**（scene-rules-pro.md + scene-planner-presets.js + migration + draw-settings 白名单 + novel-prompts）→ 需要移植，但 3.1.5「更新场景分析与绘图预设」可能改了预设结构，移植后跑一次生成验证。
+- **标题句式**（scene-plan-tool.js）→ 官方版该文件已变，把新的标题描述文案移植到新版对应字段即可。
+- **图标/外观**（draw-common.js 的 RELOAD_ICON_SVG、失败卡 CSS、去虚线边框）→ 3.1.6 官方新增了「图片卡片编辑提示词并重绘」，按钮结构有变化，按新版结构重新挂图标和样式，别整文件覆盖。
+- **早期小二改**（gallery-cache / message-preview / story-outline / pending-image-jobs 等各 1–5 行）→ 看 diff 内容，确认新版没有同等功能后再补。
+- **测试文件** → 可全部不移植，或源码移植完成后再对应更新。
+
+全部取舍完：
+
+```bash
+git add -A
+git commit -m "my-mod: 基于官方 v3.1.6 的二改（进阶预设/标题/图标外观）"
+```
+
+### 3.3 备选路线：不用命令行
+
+1. 从 https://github.com/RT15548/LittleWhiteBox/releases/tag/v3.1.6 下载官方包，解压成新扩展目录。
+2. 用 VS Code 打开两个文件夹，右键其中一个 → **Compare Folders**（或装 Compare Folders 扩展；Windows 可用 WinMerge，Mac 可用 Beyond Compare / meld）。
+3. 逐文件按上面的「取舍原则」把二改搬进新版。
+4. 搬完在 SillyTavern 里实测一轮带图 + 带分支选择器 HTML 的生成。
+
+### 3.4 后端插件（如使用后台离生线图）
+
+v3.1.5/3.1.6 的 server-plugin 有更新，需重新部署：
+
+1. 将新版 `server-plugin/littlewhitebox-image-jobs` 复制到 `SillyTavern/plugins/littlewhitebox-image-jobs/`
+2. 确认 `config.yaml` 中 `enableServerPlugins: true`
+3. 重启 SillyTavern（要求 Node.js 18+）
+
+---
+
+## 4. 升级后的验证清单
+
+1. 生成带图消息，图完成后 `分支选择器` 等 HTML **直接渲染成页面**（不 refresh 也正常）
+2. 重绘、追加图片、切换回复时图片位置正确（3.1.6 官方修复点）
+3. 「进阶-构图强化」预设存在且生成正常
+4. 标题不再每条「XX的XX」
+5. 失败卡外观/图标符合你的定制
+6. 旧聊天打开正常、经济数据变化在预期内
+
+---
+
+## 5. 需要带走的文件（当前都在 /tmp，重启会丢，先复制到 U盘/云盘！）
+
+1. `LittleWhiteBox_二改清单与迁移指引.md`（本文件）
+2. `LittleWhiteBox_二改完整补丁_vs_3.1.4.patch`（2535 行完整逐行差异）
+3. 最好直接带走**整个 `LittleWhiteBox_折疊標題` 文件夹**（最保险，含你的二改、官方 3.1.4 干净副本、3.1.0 副本）
+

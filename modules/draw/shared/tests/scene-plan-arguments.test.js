@@ -8,10 +8,12 @@ const parameters = {
     images: [{
         insert_after: 1,
         scene: 'portrait, sign "hello", literal { [ } ], slash \\, line\n二',
+        title: '举牌问候',
         characters: [{ name: '阿璃', action: 'holding "[{}]"', center: { x: 0.3, y: 0.7 } }],
     }, {
         insert_after: 1,
         scene: 'landscape, snow',
+        title: '雪中远景',
         characters: [],
     }],
 };
