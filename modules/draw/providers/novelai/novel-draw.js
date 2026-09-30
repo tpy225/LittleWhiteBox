@@ -792,6 +792,7 @@ function normalizeSettings(saved = {}) {
             ? null
             : String(source.selectedPromptPresetId),
         _promptTemplateVersion: Number(source._promptTemplateVersion) || 0,
+        _proPresetVersion: Number(source._proPresetVersion) || 0,
         worldbooks: {
             enabled: rawWorldbooks.enabled === true,
             uploadedBooks: Array.isArray(rawWorldbooks.uploadedBooks) ? rawWorldbooks.uploadedBooks : [],
@@ -886,6 +887,9 @@ async function loadSettings() {
         settingsLoaded = true;
         if (saved && promptUpgrade.installed) {
             showToast(SCENE_PLANNER_PRESET_INSTALL_NOTICE, 'info', 8000);
+        }
+        if (promptUpgrade.proAdded) {
+            showToast('提示词预设列表已新增「进阶-构图强化」，可在提示词设置中切换；当前预设保持不变', 'info', 8000);
         }
         if (promptUpgrade.upstreamPresetCount > 0) {
             const customNotice = promptUpgrade.customPresetCount > 0

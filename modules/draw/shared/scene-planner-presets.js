@@ -3,6 +3,7 @@ import { updateScenePlannerPresetOpenings } from './scene-planner-opening-migrat
 export const SCENE_PLANNER_PRESET_NAMES = Object.freeze({
     normal: '新版-完整规则',
     pov: '新版-第一人称完整规则',
+    pro: '进阶-构图强化',
 });
 
 export function isPovPromptPreset(name) {
@@ -30,6 +31,22 @@ export function createScenePlannerDefaultPresets(defaults) {
             ? { tagGuideContent: defaults.tagGuideContent }
             : { modelGuideOverrides: {} }),
     }));
+}
+
+/**
+ * One optional, non-default preset: standard (third-person) opening paired with the
+ * enhanced composition/expression rule set. Selection is never switched to it.
+ */
+export function createScenePlannerProPreset(defaults) {
+    return {
+        id: `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        name: SCENE_PLANNER_PRESET_NAMES.pro,
+        topSystem: defaults.topSystem,
+        sceneRules: defaults.sceneRulesPro,
+        ...(typeof defaults.tagGuideContent === 'string'
+            ? { tagGuideContent: defaults.tagGuideContent }
+            : { modelGuideOverrides: {} }),
+    };
 }
 
 /**

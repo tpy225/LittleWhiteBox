@@ -17,14 +17,20 @@ const GUIDE_PATHS = Object.freeze({
 /**
  * 首次升级安装新版预设；后续内容升级只替换未编辑的默认首段。
  */
-const PROMPT_TEMPLATE_VERSION = 14;
+const PROMPT_TEMPLATE_VERSION = 15;
 
 /** 用户可编辑的默认值；内置骨架由 scene-planner-frame.js 生成，不在此列。 */
 let LLM_PROMPT_CONFIG = {
     topSystem: '',
     topSystemPov: '',
     sceneRules: '',
+    sceneRulesPro: '',
 };
+
+/** Optional enhanced scene rules, offered as a non-default preset. */
+const EXTRA_PROMPT_TEMPLATE_FILES = Object.freeze({
+    sceneRulesPro: `${extensionFolderPath}/modules/draw/shared/prompts/scene-rules-pro.md`,
+});
 
 const promptGuides = new Map();
 const PROMPT_GUIDE_IDS = Object.freeze(Object.values(NOVEL_PROMPT_GUIDES));
@@ -100,12 +106,18 @@ export async function loadTagGuide() {
  * 必须在 loadSettings() 之前调用。
  */
 export async function loadPromptTemplates() {
-    const { texts, ok } = await fetchPromptTemplateFiles(SHARED_PROMPT_TEMPLATE_FILES, '[NovelDraw Prompts]');
-    Object.assign(LLM_PROMPT_CONFIG, texts);
-    if (ok) {
+    const [sharedResult, extraResult] = await Promise.all([
+        fetchPromptTemplateFiles(SHARED_PROMPT_TEMPLATE_FILES, '[NovelDraw Prompts]'),
+        fetchPromptTemplateFiles(EXTRA_PROMPT_TEMPLATE_FILES, '[NovelDraw Prompts]'),
+    ]);
+    Object.assign(LLM_PROMPT_CONFIG, sharedResult.texts, extraResult.texts);
+    if (sharedResult.ok) {
         console.log('[NovelDraw Prompts] 提示词模板已加载 (topSystem, topSystemPov, sceneRules)');
     } else {
         console.warn('[NovelDraw Prompts] 部分提示词文件加载失败，将使用空默认值');
     }
-    return ok;
+    if (extraResult.ok) {
+        console.log('[NovelDraw Prompts] 进阶场景规则已加载 (sceneRulesPro)');
+    }
+    return sharedResult.ok;
 }
