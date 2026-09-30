@@ -43,6 +43,7 @@ import {
     getSharedDrawSettings,
     updateSharedDrawSettingsPersistent,
     normalizeSharedCacheDays,
+    normalizeImageTitleMode,
     mergeNovelDrawProviderSettingsIntoStorageRoot,
 } from "../../shared/draw-settings.js";
 import { getLastDrawAgentDiagnostic } from "../../shared/draw-agent.js";
@@ -3097,6 +3098,7 @@ async function sendInitData() {
             timeout: settings.timeout,
             requestDelay: settings.requestDelay,
             cacheDays: getSharedDrawSettings().cacheDays,
+            imageTitleMode: getSharedDrawSettings().imageTitleMode,
             selectedParamsPresetId: settings.selectedParamsPresetId,
             paramsPresets: settings.paramsPresets,
             useWorldInfo: settings.useWorldInfo,
@@ -3277,6 +3279,15 @@ async function handleFrameMessage(event) {
             }, '已保存', { notify: false, silent: false });
             postStatus(ok ? 'success' : 'error', ok ? '已保存' : '保存失败', 'gallery');
             if (ok) sendInitData();
+            break;
+        }
+
+        case 'SAVE_IMAGE_TITLE_MODE': {
+            const nextMode = normalizeImageTitleMode(data.imageTitleMode, getSharedDrawSettings().imageTitleMode);
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.imageTitleMode = nextMode;
+            }, '已保存', { notify: false, silent: false });
+            if (ok) renderAllDrawPreviews?.({ force: true });
             break;
         }
 
