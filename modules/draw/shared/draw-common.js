@@ -47,6 +47,9 @@ export const ImageState = {
     FAILED: 'failed',
 };
 
+/** Tabler reload glyph; 1em/currentColor so it inherits each button's size and color. */
+export const RELOAD_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none;"><path d="M19.933 13.041a8 8 0 1 1 -9.925 -8.788c3.899 -1 7.935 1.007 9.425 4.747"></path><path d="M20 4v5h-5"></path></svg>';
+
 export const ErrorType = {
     INPUT: { code: 'input', label: '正文输入', desc: '正文没有可用的配图内容' },
     NETWORK: { code: 'network', label: '网络', desc: '连接超时或网络不稳定' },
@@ -238,12 +241,9 @@ export function ensureDrawImageStyles() {
     style.id = 'xiaobaix-draw-image-styles';
     style.textContent = `
 .xb-nd-img{margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border-radius:14px;padding:4px;box-sizing:border-box}
-.xb-nd-img[data-state="preview"]{border:1px dashed rgba(255,152,0,0.35)}
-.xb-nd-img[data-state="failed"]{border:1px dashed rgba(248,113,113,0.5);background:rgba(248,113,113,0.05);padding:20px}
-.xb-nd-img[data-state="pending"]{border:1px dashed rgba(212,165,116,0.4);background:rgba(212,165,116,0.06);padding:18px;color:inherit}
 .xb-nd-img.busy img{opacity:0.5}
 .xb-nd-img-wrap{position:relative;overflow:hidden;border-radius:10px;touch-action:pan-y pinch-zoom}
-.xb-nd-img img{width:auto;height:auto;max-width:100%;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);display:block;user-select:none;-webkit-user-drag:none;transition:transform 0.25s ease,opacity 0.2s ease}
+.xb-nd-img img{width:auto;height:auto;max-width:100%;margin:0 auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);display:block;user-select:none;-webkit-user-drag:none;transition:transform 0.25s ease,opacity 0.2s ease}
 .xb-nd-img img.sliding-left{animation:ndSlideOutLeft 0.25s ease forwards;will-change:transform,opacity}
 .xb-nd-img img.sliding-right{animation:ndSlideOutRight 0.25s ease forwards;will-change:transform,opacity}
 .xb-nd-img img.sliding-in-left{animation:ndSlideInLeft 0.25s ease forwards;will-change:transform,opacity}
@@ -307,7 +307,6 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
     if (state === ImageState.SAVING) indicator = '<div class="xb-nd-indicator">💾 保存中...</div>';
     else if (state === ImageState.REFRESHING) indicator = '<div class="xb-nd-indicator"><i class="fa-solid fa-rotate" aria-hidden="true"></i> 生成中...</div>';
 
-    const border = isPreview ? 'border:1px dashed rgba(255,152,0,0.35);' : '';
     const lazyAttr = String(url || '').startsWith('data:') ? '' : 'loading="lazy"';
     const displayVersion = historyCount - currentIndex;
     const navPill = `<div class="xb-nd-nav-pill" data-total="${historyCount}" data-current="${currentIndex}">
@@ -320,13 +319,13 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
         <button class="xb-nd-menu-trigger" data-action="toggle-menu" title="操作">⋮</button>
         <div class="xb-nd-dropdown">
             ${isPreview ? '<button data-action="save-image" title="保存到服务器">⬇</button>' : ''}
-            <button data-action="refresh-image" title="重新生成">⟳</button>
-            <button data-action="edit-tags" title="编辑TAG">✐️</button>
+            <button data-action="refresh-image" title="重新生成">${RELOAD_ICON_SVG}</button>
+            <button data-action="edit-tags" title="编辑TAG">✐</button>
             <button data-action="delete-image" title="删除">✕</button>
         </div>
     </div>`;
 
-    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;${border}border-radius:14px;padding:4px;">
+    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;border-radius:14px;padding:4px;">
 ${indicator}
 <div class="xb-nd-img-wrap" data-total="${historyCount}">
     <img src="${escapeHtml(url)}" style="max-width:100%;width:auto;height:auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);${isBusy ? 'opacity:0.5;' : ''}" data-action="open-gallery" ${lazyAttr}>
@@ -354,7 +353,7 @@ function buildTagEditor(tags, failed) {
 // 状态文案永远是当前运行时和后端状态动态渲染出来的。
 export function buildPendingImageHtml({ slotId, messageId, index = 0, total = 0, label = '等待生成' }) {
     const progress = total > 0 ? `${Math.max(1, Number(index) || 1)} / ${total}` : '';
-    return `<div class="xb-nd-img" data-slot-id="${escapeHtml(slotId)}" data-mesid="${escapeHtml(messageId)}" data-state="pending" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border:1px dashed rgba(212,165,116,0.4);border-radius:14px;padding:18px;background:rgba(212,165,116,0.06);color:inherit;">
+    return `<div class="xb-nd-img" data-slot-id="${escapeHtml(slotId)}" data-mesid="${escapeHtml(messageId)}" data-state="pending" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;color:inherit;">
 <div class="xb-nd-indicator" style="position:static;transform:none;display:inline-block;">🎨 ${escapeHtml(label)}${progress ? ` · ${progress}` : ''}</div>
 </div>`;
 }
@@ -559,15 +558,18 @@ async function resolveRenderPreviewForSlot(message, messageId, slotId) {
 export function buildFailedPlaceholderHtml({ slotId, imgId = '', messageId, tags, positive, errorType, errorMessage, historyCount = 0 }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
-    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${escapeHtml(imgId)}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;border:1px dashed rgba(248,113,113,0.5);border-radius:14px;padding:20px;background:rgba(248,113,113,0.05);">
-<div class="xb-nd-failed-icon">⚠️</div>
-<div class="xb-nd-failed-title">${escapeHtml(errorType || '生成失败')}</div>
-<div class="xb-nd-failed-desc">${escapeHtml(errorMessage || '点击重试')}</div>
-<div class="xb-nd-failed-btns">
-    <button class="xb-nd-retry-btn" data-action="retry-image">⟳ 重新生成</button>
-    <button class="xb-nd-edit-btn" data-action="edit-tags">✐ 编辑TAG</button>
-    ${historyCount > 0 ? `<button class="xb-nd-edit-btn" data-action="restore-image">${DRAW_SLOT_COPY.restoreImage}</button>` : ''}
-    <button class="xb-nd-remove-btn" data-action="remove-placeholder">✕ 移除</button>
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${escapeHtml(imgId)}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:#C0392B;border:1px solid rgba(255,255,255,0.85);border-radius:10px;padding:4px 8px;color:#fff;font-size:13px;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+<div style="display:flex;align-items:center;gap:8px;min-width:0;">
+<span style="font-size:14px;flex:none;">⚠️</span>
+<span class="xb-nd-failed-title" style="font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(errorType || '生成失败')}</span>
+</div>
+<div class="xb-nd-failed-btns" style="display:flex;gap:4px;flex:none;">
+    <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;opacity:0.9;display:flex;align-items:center;" title="重新生成">${RELOAD_ICON_SVG}</button>
+    <button class="xb-nd-edit-btn" data-action="edit-tags" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="编辑TAG">✎</button>
+    ${historyCount > 0 ? `<button class="xb-nd-edit-btn" data-action="restore-image" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:13px;line-height:1;cursor:pointer;opacity:0.9;" title="${DRAW_SLOT_COPY.restoreImage}">↺</button>` : ''}
+    <button class="xb-nd-remove-btn" data-action="remove-placeholder" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="移除">✕</button>
+</div>
 </div>
 ${buildTagEditor(tags, true)}
 </div>`;

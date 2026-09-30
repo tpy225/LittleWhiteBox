@@ -1967,8 +1967,6 @@ function setImageState(container, state) {
         menuWrap.style.pointerEvents = isBusy ? 'none' : '';
         menuWrap.style.opacity = isBusy ? '0.3' : '';
     }
-    container.style.border = state === ImageState.PREVIEW ? '1px dashed rgba(255,152,0,0.35)' : 'none';
-
     const dropdown = container.querySelector('.xb-nd-dropdown');
     if (dropdown) {
         const saveItem = dropdown.querySelector('[data-action="save-image"]');
