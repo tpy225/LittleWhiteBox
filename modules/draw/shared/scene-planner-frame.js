@@ -37,7 +37,7 @@ export function buildScenePlannerFrameText(profile) {
 - 消息末尾的数量约束：可用插图点数、images 数量、每图人数上限。
 
 ## 你的输出去哪
-The app uses each image's scene and character fields, together with the character library and the user's generation settings, to build a request for ${imageModelName}. Field meanings and model-specific controls are described in submit_scene_plan.`;
+The app shows each image's title as the caption on the generated picture, and uses its scene and character fields, together with the character library and the user's generation settings, to build a request for ${imageModelName}. Field meanings and model-specific controls are described in submit_scene_plan.`;
 }
 
 export function buildScenePlannerSystemPrompt({ opening = '', guide = '', sceneRules = '', profile } = {}) {
