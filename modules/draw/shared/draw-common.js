@@ -17,6 +17,7 @@ import { createDrawImageSlotRegex } from './image-marker-syntax.js';
 import { hasPreviewImage, PreviewStatus, DRAW_SLOT_COPY, DRAW_SLOT_ERRORS } from './image-record.js';
 import { getSlotActivity } from './slot-activity.js';
 import { classifyScenePlannerErrorForUi } from "./scene-planner-error-ui.js";
+import { getSharedDrawSettings, normalizeImageTitleMode } from './draw-settings.js';
 import { isCharacterEnabled } from './character-selection.js';
 import { joinTags } from './character-prompts.js';
 import { createModuleEvents, event_types } from "../../../core/event-manager.js";
@@ -259,6 +260,16 @@ export function ensureDrawImageStyles() {
 .xb-nd-nav-arrow:disabled{opacity:0.3;cursor:not-allowed}
 .xb-nd-nav-text{min-width:36px;text-align:center;font-variant-numeric:tabular-nums;padding:0 2px}
 @media(hover:none),(pointer:coarse){.xb-nd-nav-pill{opacity:0.78;padding:5px 8px}}
+.xb-nd-title-bar{position:absolute;top:0;left:0;right:0;z-index:6;pointer-events:none;display:flex;align-items:center;min-height:22px;padding:3px 44px 3px 10px;background:rgba(0,0,0,0.55);font-size:13px;line-height:1.4;letter-spacing:0.02em;color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,0.6);opacity:0;transition:opacity 0.2s ease}
+.xb-nd-img-wrap:hover .xb-nd-title-bar,.xb-nd-img-wrap.title-show .xb-nd-title-bar{opacity:1}
+/* details 收縮到內容寬並置中；摺疊標題列寬度吃 JS 量得的圖片實寬（--xb-img-w），
+   變量未就緒時 auto 回退為貼文字的初始膠囊。 */
+.xb-nd-details{width:fit-content;max-width:100%;margin:0 auto;border-radius:10px;overflow:hidden}
+.xb-nd-summary{list-style:none;cursor:pointer;width:var(--xb-img-w,auto);max-width:100%;box-sizing:border-box;padding:4px 8px;background:#12151c;border:1px solid #fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1.3;color:#fff;text-shadow:none;user-select:none}
+.xb-nd-summary::-webkit-details-marker{display:none}
+.xb-nd-summary span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:none}
+/* 摺疊時懸浮的編輯彈窗必須隨之隱藏（JS 會把內聯 display 重置為 none，這條兜底防閃現） */
+.xb-nd-details:not([open]) ~ .xb-nd-edit{display:none!important}
 .xb-nd-menu-wrap{position:absolute;top:8px;right:8px;z-index:10}
 .xb-nd-menu-wrap.busy{pointer-events:none;opacity:0.3}
 .xb-nd-menu-trigger{width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.75);color:rgba(255,255,255,0.85);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;opacity:0.85}
@@ -298,7 +309,7 @@ export function ensureDrawImageStyles() {
     document.head.appendChild(style);
 }
 
-export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state = ImageState.PREVIEW, historyCount = 1, currentIndex = 0 }) {
+export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, state = ImageState.PREVIEW, historyCount = 1, currentIndex = 0, title = '' }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
     const isPreview = state === ImageState.PREVIEW;
@@ -308,6 +319,9 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
     else if (state === ImageState.REFRESHING) indicator = '<div class="xb-nd-indicator"><i class="fa-solid fa-rotate" aria-hidden="true"></i> 生成中...</div>';
 
     const lazyAttr = String(url || '').startsWith('data:') ? '' : 'loading="lazy"';
+    // 标题只取 AI 生成的 title；缺省（旧数据/模型漏填）时宁可不显示，也不拿 TAG 充数。
+    const rawTitle = String(title || '').trim();
+    const titleMode = normalizeImageTitleMode(getSharedDrawSettings().imageTitleMode);
     const displayVersion = historyCount - currentIndex;
     const navPill = `<div class="xb-nd-nav-pill" data-total="${historyCount}" data-current="${currentIndex}">
         <button class="xb-nd-nav-arrow" data-action="nav-prev" title="上一版本" ${currentIndex >= historyCount - 1 ? 'disabled' : ''}>‹</button>
@@ -325,15 +339,70 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
         </div>
     </div>`;
 
-    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;border-radius:14px;padding:4px;">
-${indicator}
-<div class="xb-nd-img-wrap" data-total="${historyCount}">
+    const imageWrap = `<div class="xb-nd-img-wrap" data-total="${historyCount}">
     <img src="${escapeHtml(url)}" style="max-width:100%;width:auto;height:auto;border-radius:10px;cursor:pointer;box-shadow:0 3px 15px rgba(0,0,0,0.25);${isBusy ? 'opacity:0.5;' : ''}" data-action="open-gallery" ${lazyAttr}>
+    ${titleMode === 'overlay' && rawTitle ? `<div class="xb-nd-title-bar" title="${escapeHtml(rawTitle)}">${escapeHtml(rawTitle)}</div>` : ''}
+    ${indicator}
     ${navPill}
-</div>
-${menuHtml}
+    ${menuHtml}
+</div>`;
+    // 摺疊標題列寬度由 JS 量得的圖片實寬寫入 --xb-img-w（見 syncCollapseTitleWidths）；
+    // 摺疊後主圖被 details 隱藏也能保持與圖片同寬；變量未就緒時回退初始的文字膠囊。
+    const imageFrame = (titleMode === 'collapse' && rawTitle)
+        ? `<details class="xb-nd-details" open>
+    <summary class="xb-nd-summary"><span>．·°∴ ☆．．·° ${escapeHtml(rawTitle.slice(0, 20))} °·．．☆ ∴°·．</span></summary>
+${imageWrap}
+</details>`
+        : imageWrap;
+
+    return `<div class="xb-nd-img ${isBusy ? 'busy' : ''}" data-slot-id="${slotId}" data-img-id="${imgId}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="${state}" data-current-index="${currentIndex}" data-history-count="${historyCount}" style="margin:0.8em auto;position:relative;display:block;width:fit-content;max-width:100%;border-radius:14px;padding:4px;">
+${imageFrame}
 ${buildTagEditor(tags, false)}
 </div>`;
+}
+
+// 版本切换时只换 img 不重建卡片，标题条/折叠摘要里的文字需要就地同步成新版本的 title。
+export function syncImageTitleElements(container, title = '') {
+    if (!container?.querySelector) return;
+    const rawTitle = String(title || '').trim();
+    const bar = container.querySelector('.xb-nd-title-bar');
+    if (bar) {
+        bar.textContent = rawTitle;
+        bar.setAttribute('title', rawTitle);
+    }
+    const summary = container.querySelector('.xb-nd-summary span');
+    if (summary) {
+        summary.textContent = rawTitle
+            ? `．·°∴ ☆．．·° ${rawTitle.slice(0, 20)} °·．．☆ ∴°·．`
+            : '';
+    }
+    // 版本切換換了主圖 src，摺疊標題列寬度需按新圖重測。
+    syncCollapseTitleWidths(container);
+}
+
+// 把摺疊標題列寬度釘成圖片實寬（寫入 details 上的 --xb-img-w）。
+// 摺疊時主圖被 details 隱藏、clientWidth=0：已量過就沿用展開時的實測值（摺疊瞬間若用
+// 父行寬估算會把窄圖的標題列撐成整行寬）；只有從未量過時才用固有寬度兜底估算一次。
+export function syncCollapseTitleWidths(scope = document) {
+    if (!scope?.querySelectorAll) return;
+    const detailsList = typeof scope.matches === 'function' && scope.matches('.xb-nd-details')
+        ? [scope]
+        : Array.from(scope.querySelectorAll('.xb-nd-details'));
+    for (const details of detailsList) {
+        const img = details.querySelector('.xb-nd-img-wrap img');
+        if (!img) continue;
+        const visibleWidth = img.clientWidth || 0;
+        const measured = parseFloat(details.style.getPropertyValue('--xb-img-w')) || 0;
+        if (visibleWidth > 0) {
+            details.style.setProperty('--xb-img-w', `${Math.round(visibleWidth)}px`);
+        } else if (!measured && img.naturalWidth) {
+            const outer = details.parentElement;
+            const available = outer?.clientWidth
+                ? outer.clientWidth - 8 // summary 左右 padding
+                : img.naturalWidth;
+            details.style.setProperty('--xb-img-w', `${Math.max(0, Math.round(Math.min(img.naturalWidth, available)))}px`);
+        }
+    }
 }
 
 function buildTagEditor(tags, failed) {
@@ -519,7 +588,10 @@ export function insertPreviewIntoRenderedMessage({ messageId, slotId, html }) {
     const mesTextEl = getMesTextElement(messageId);
     if (!mesTextEl || !slotId || !html) return false;
     const insertedSlotIds = replaceSceneSlotElements(mesTextEl, [{ slotId, html }]);
-    if (insertedSlotIds.has(slotId)) return true;
+    if (insertedSlotIds.has(slotId)) {
+        syncCollapseTitleWidths(mesTextEl);
+        return true;
+    }
     return mesTextEl.querySelector(buildDrawSlotSelector(slotId)) !== null;
 }
 
@@ -620,6 +692,7 @@ async function rebuildRenderedMessageFromState(messageId, {
 
 async function renderPreviewsForMessageNow(messageId, {
     refreshSlotIds = [],
+    force = false,
     expectedChatId,
     expectedMessage,
     content,
@@ -639,7 +712,9 @@ async function renderPreviewsForMessageNow(messageId, {
     // 锚点探测与实际替换共用 DOM 解析；不能因合法空格或换行误判缺失，
     // 再用尚未提交新槽位的正文重建 DOM，把本批等待卡清掉。
     const renderedSlots = getRenderedSceneSlotIds(mesTextEl);
-    if ([...slotIds].some(slotId => !renderedSlots.has(slotId))) {
+    // 纯外观强制刷新（如切换图片标题模式）只碰眼前已有的卡片，绝不整楼重建：
+    // 重建会丢掉前台生成中、尚未入缓存的临时卡片，随后被误判成「缓存丢失」。
+    if (!force && [...slotIds].some(slotId => !renderedSlots.has(slotId))) {
         // A content lease projects the host's formatted text, including its regex
         // filters. Missing markers are not permission to rewrite that content.
         if (content) return;
@@ -670,10 +745,18 @@ async function renderPreviewsForMessageNow(messageId, {
         return (await pendingSlotsPromise).get(slotId) || null;
     };
     for (const slotId of slotIds) {
-        if (!refreshSlots.has(slotId) && mesTextEl.querySelector(buildDrawSlotSelector(slotId))) continue;
+        const existingCard = mesTextEl.querySelector(buildDrawSlotSelector(slotId));
+        if (!force && !refreshSlots.has(slotId) && existingCard) continue;
         let replacementHtml;
         try {
             const displayData = await resolveRenderPreviewForSlot(message, messageId, slotId);
+            const hasImage = displayData.hasData && !displayData.isFailed && displayData.preview;
+            // 纯外观强制刷新只做「有图换样式」：眼前已经是图/生成中/失败卡，而缓存此刻
+            // 给不出新图时（前台生成中、暂存尚未写入），原卡原样保留，绝不贴「缓存丢失」。
+            if (force && existingCard) {
+                const existingState = existingCard.dataset.state || '';
+                if (existingState === 'failed' || !hasImage) continue;
+            }
             const activity = getSlotActivity(slotId);
             const pendingJob = await resolvePendingSlot(slotId);
             // An older image is not this attempt's result. Conversely, one
@@ -710,6 +793,7 @@ async function renderPreviewsForMessageNow(messageId, {
                     imgId: displayData.preview.imgId,
                     url,
                     tags: displayData.preview.tags || '',
+                    title: displayData.preview.title || '',
                     positive: displayData.preview.positive || '',
                     messageId,
                     state: displayData.preview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW,
@@ -749,12 +833,13 @@ async function renderPreviewsForMessageNow(messageId, {
         || getMesTextElement(messageId) !== mesTextEl
         || isMessageBeingEdited(messageId)) return;
     replaceSceneSlotElements(mesTextEl, replacements);
+    syncCollapseTitleWidths(mesTextEl);
 }
 
 // 同一楼层只允许一个异步投影在运行。图片落库、恢复状态变化和消息事件可能在同一时刻
 // 发起刷新；串行执行保证较早读取的旧事实一定先完成，最后留在 DOM 的总是较新的投影。
 // 队列只绑定当前 message 对象，聊天切换或宿主替换消息对象后，旧任务会被上面的身份守卫丢弃。
-export function renderPreviewsForMessage(messageId, { refreshSlotIds = [], content, signal } = {}) {
+export function renderPreviewsForMessage(messageId, { refreshSlotIds = [], force = false, content, signal } = {}) {
     const ctx = getContext();
     const message = ctx.chat?.[messageId];
     if (!message?.mes) return Promise.resolve();
@@ -768,6 +853,7 @@ export function renderPreviewsForMessage(messageId, { refreshSlotIds = [], conte
     const requestedSlots = Array.isArray(refreshSlotIds) ? [...refreshSlotIds] : [];
     const render = queue.tail.then(() => renderPreviewsForMessageNow(messageId, {
         refreshSlotIds: requestedSlots,
+        force,
         expectedChatId,
         expectedMessage: message,
         content,
@@ -832,7 +918,7 @@ function cleanupDrawPreviewMessageObserver() {
     });
 }
 
-export async function renderAllDrawPreviews() {
+export async function renderAllDrawPreviews({ force = false } = {}) {
     const ctx = getContext();
     const chat = ctx.chat || [];
     let rendered = 0;
@@ -841,7 +927,7 @@ export async function renderAllDrawPreviews() {
         if (extractSlotIds(chat[i]?.mes).size === 0) continue;
         const mesEl = document.querySelector(`.mes[mesid="${i}"]`);
         if (rendered < INITIAL_RENDER_MESSAGE_LIMIT || isMessageNearViewport(mesEl)) {
-            await renderPreviewsForMessage(i);
+            await renderPreviewsForMessage(i, { force });
             rendered++;
         } else {
             observeMessageForDrawPreviewLazyRender(i);
@@ -896,8 +982,54 @@ function handleGalleryCacheChanged({ slotIds } = {}) {
     }
 }
 
+// 桌面端靠 CSS :hover 揭示悬浮标题条；触屏没有 hover，轻按图片时短显 2 秒。
+// 监听器只绑一次，三个 Provider 的卡片共用同一套 class。
+let drawTitleRevealBound = false;
+export function bindDrawImageTitleReveal() {
+    if (drawTitleRevealBound || typeof document === 'undefined') return;
+    drawTitleRevealBound = true;
+    document.addEventListener('pointerdown', (event) => {
+        if (event.pointerType !== 'touch') return;
+        const wrap = event.target?.closest?.('.xb-nd-img-wrap');
+        if (!wrap || !wrap.querySelector('.xb-nd-title-bar')) return;
+        wrap.classList.add('title-show');
+        clearTimeout(wrap._xbTitleRevealTimer);
+        wrap._xbTitleRevealTimer = setTimeout(() => wrap.classList.remove('title-show'), 2000);
+    });
+}
+
+// 摺疊標題列寬度跟隨圖片：圖片 load/版本切換後量實寬；視窗縮放時重測；
+// 摺疊態量不到就用固有寬度估算，重新展開時校正。全文档只綁一次。
+let drawCollapseWidthBound = false;
+export function bindDrawCollapseTitleWidth() {
+    if (drawCollapseWidthBound || typeof document === 'undefined') return;
+    drawCollapseWidthBound = true;
+    document.addEventListener('load', (event) => {
+        const img = event.target;
+        if (img?.closest?.('.xb-nd-details .xb-nd-img-wrap')) syncCollapseTitleWidths(img.closest('.xb-nd-details'));
+    }, true);
+    document.addEventListener('toggle', (event) => {
+        const details = event.target;
+        if (!details?.classList?.contains('xb-nd-details')) return;
+        if (!details.open) {
+            // 摺疊＝一併收起懸浮的編輯 TAG 彈窗與 ⋮ 菜單，否則圖片被 details 隱藏後，
+            // 絕對定位的彈窗會脫離卡片懸在頂層（再展開也不該自動回彈）。
+            const card = details.closest('.xb-nd-img');
+            const editPanel = card?.querySelector('.xb-nd-edit');
+            if (editPanel) editPanel.style.display = 'none';
+            card?.querySelector('.xb-nd-menu-wrap.open')?.classList.remove('open');
+        }
+        requestAnimationFrame(() => syncCollapseTitleWidths(details));
+    });
+    window.addEventListener('resize', () => syncCollapseTitleWidths());
+    if (document.readyState !== 'loading') syncCollapseTitleWidths();
+    else document.addEventListener('DOMContentLoaded', () => syncCollapseTitleWidths());
+}
+
 export function startSharedDrawPreviewRuntime() {
     drawPreviewRuntimeRefs++;
+    bindDrawImageTitleReveal();
+    bindDrawCollapseTitleWidth();
     if (drawPreviewRuntimeEvents) return;
 
     drawPreviewRuntimeGeneration++;
