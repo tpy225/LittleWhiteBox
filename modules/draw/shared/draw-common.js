@@ -627,10 +627,10 @@ async function resolveRenderPreviewForSlot(message, messageId, slotId) {
     return display;
 }
 
-export function buildFailedPlaceholderHtml({ slotId, imgId = '', messageId, tags, positive, errorType, errorMessage, historyCount = 0 }) {
+export function buildFailedPlaceholderHtml({ slotId, imgId = '', messageId, tags, title = '', positive, errorType, errorMessage, historyCount = 0 }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
-    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${escapeHtml(imgId)}" data-tags="${escapedTags}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:#C0392B;border:1px solid rgba(255,255,255,0.85);border-radius:10px;padding:4px 8px;color:#fff;font-size:13px;">
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${escapeHtml(imgId)}" data-tags="${escapedTags}" data-title="${escapeHtml(String(title || ''))}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="failed" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:#C0392B;border:1px solid rgba(255,255,255,0.85);border-radius:10px;padding:4px 8px;color:#fff;font-size:13px;">
 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
 <div style="display:flex;align-items:center;gap:8px;min-width:0;">
 <span style="font-size:14px;flex:none;">⚠️</span>

@@ -73,6 +73,7 @@ import {
     DEFAULT_MESSAGE_FILTER_RULES,
     joinTags,
     ensureDrawImageStyles,
+    RELOAD_ICON_SVG,
     classifyError,
     ErrorType,
     syncDrawSavedFromPreview,
@@ -82,6 +83,7 @@ import {
     stopSharedDrawPreviewRuntime,
     toScenePlannerProgress,
     buildFailedPlaceholderHtml,
+    syncImageTitleElements,
 } from "../../shared/draw-common.js";
 import {
     loadLocalDanbooruDB,
@@ -3884,6 +3886,7 @@ export async function generateImagesFromText(options = {}) {
         onStateChange: options.onStateChange,
         onItemReady: async ({ index, base64 }) => {
             const { task, slotId, imgId, promptData } = requests[index];
+            const titleForStore = task.title || '';
             await storePreview({
                 ...galleryMeta,
                 imgId,
@@ -3891,6 +3894,7 @@ export async function generateImagesFromText(options = {}) {
                 messageId,
                 base64,
                 tags: task.scene || options.promptOverride || '',
+                title: titleForStore,
                 positive: promptData.positive,
                 characterPrompts: promptData.characterPrompts,
                 negativePrompt: promptData.negative,
@@ -3902,6 +3906,7 @@ export async function generateImagesFromText(options = {}) {
                 imgId,
                 placement: task.placement,
                 tags: task.scene || options.promptOverride || '',
+                title: titleForStore,
                 positive: promptData.positive,
                 negativePrompt: promptData.negative,
                 displayUrl: getPreviewDisplayUrl({ imgId, base64 }),
@@ -3917,6 +3922,7 @@ export async function generateImagesFromText(options = {}) {
                 slotId,
                 messageId,
                 tags: task.scene || options.promptOverride || '',
+                title: task.title || '',
                 positive: promptData.positive,
                 errorType: errorType.code,
                 errorMessage: errorType.desc,
@@ -3927,6 +3933,7 @@ export async function generateImagesFromText(options = {}) {
                 slotId,
                 placement: task.placement,
                 tags: task.scene || options.promptOverride || '',
+                title: task.title || '',
                 positive: promptData.positive,
                 negativePrompt: promptData.negative,
                 success: false,
@@ -3996,6 +4003,7 @@ function syncContainerToPreview(container, preview, historyCount = 1, currentInd
     container.dataset.imgId = preview.imgId;
     container.dataset.tags = String(preview.tags || '');
     container.dataset.positive = String(preview.positive || '');
+    syncImageTitleElements(container, preview.title || '');
     container.dataset.currentIndex = String(currentIndex);
     container.dataset.historyCount = String(historyCount);
     setImageState(container, preview.savedUrl ? ImageState.SAVED : ImageState.PREVIEW);
@@ -4102,13 +4110,15 @@ function buildSharedGalleryCallbacks(slotId, messageId) {
                 // eslint-disable-next-line no-unsanitized/property
                 cont.outerHTML = buildFailedPlaceholderHtml({
                     slotId: sid, messageId: msgId,
-                    tags: lastImageInfo.tags || '', positive: lastImageInfo.positive || '',
+                    tags: lastImageInfo.tags || '', title: lastImageInfo.title || '',
+                    positive: lastImageInfo.positive || '',
                     errorType: '图片已删除', errorMessage: '点击重试可重新生成',
                 });
             }
             await storeFailedPlaceholder({
                 slotId: sid, messageId: msgId,
-                tags: lastImageInfo.tags || '', positive: lastImageInfo.positive || '',
+                tags: lastImageInfo.tags || '', title: lastImageInfo.title || '',
+                positive: lastImageInfo.positive || '',
                 errorType: 'deleted', errorMessage: '图片已删除，点击重试可重新生成',
             }).catch(() => {});
             await clearDrawSavedEntry(msgId, sid).catch(() => {});
