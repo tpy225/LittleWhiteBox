@@ -1790,19 +1790,8 @@ function createFloatingButton() {
     detail.append(detailRowResult, detailRowError, detailRowTime);
 
     const menu = createEl('div', 'nd-menu');
-    const card = createEl('div', 'nd-card');
-    const rowPreset = createEl('div', 'nd-row');
-    rowPreset.appendChild(createEl('span', 'nd-label', '预设'));
-    const presetSelect = createEl('select', 'nd-select nd-preset-select');
-    fillPresetSelect(presetSelect);
-    rowPreset.appendChild(presetSelect);
-    const innerSep = createEl('div', 'nd-inner-sep');
-    const rowSize = createEl('div', 'nd-row');
-    rowSize.appendChild(createEl('span', 'nd-label', '尺寸'));
     const sizeSelect = createEl('select', 'nd-select size nd-size-select');
     fillSizeSelect(sizeSelect);
-    rowSize.appendChild(sizeSelect);
-    card.append(rowPreset, innerSep, rowSize);
 
     const controls = createEl('div', 'nd-controls');
     const autoToggle = createEl('div', `nd-auto${isAuto ? ' on' : ''} nd-auto-toggle`);
@@ -1812,8 +1801,8 @@ function createFloatingButton() {
     );
     const settingsBtn = createEl('button', 'nd-gear nd-settings-btn', '⚙');
     settingsBtn.title = '打开设置';
-    controls.append(autoToggle, settingsBtn);
-    menu.append(card, controls);
+    controls.append(autoToggle, sizeSelect, settingsBtn);
+    menu.append(controls);
 
     const presetGrid = createEl('div', 'nd-preset-grid');
     renderPresetGrid(presetGrid);
