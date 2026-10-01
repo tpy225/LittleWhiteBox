@@ -295,6 +295,10 @@ export function ensureDrawImageStyles() {
 .xb-nd-failed-icon{color:rgba(248,113,113,0.9);font-size:24px;margin-bottom:8px}
 .xb-nd-failed-title{color:inherit;font-size:13px;margin-bottom:4px}
 .xb-nd-failed-desc{color:inherit;opacity:.75;font-size:12px;margin-bottom:12px;overflow-wrap:anywhere}
+.xb-nd-error-tip{cursor:help;outline:none;position:relative}
+.xb-nd-error-tip::after{content:attr(data-tip);display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:60;width:max-content;max-width:min(320px,80vw);padding:8px 10px;border-radius:8px;background:rgba(20,20,20,.96);color:#fff;font-size:12px;font-weight:400;line-height:1.5;white-space:normal;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+.xb-nd-error-tip:hover::after,.xb-nd-error-tip:focus::after{display:block}
+.xb-nd-error-tip[data-tip=""]{cursor:default}
 .xb-nd-failed-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .xb-nd-failed-btns button{padding:8px 16px;border-radius:8px;font-size:12px;cursor:pointer;transition:all 0.15s}
 .xb-nd-tag-actions{display:inline-flex;margin-inline-start:12px;vertical-align:middle}
@@ -634,7 +638,7 @@ export function buildFailedPlaceholderHtml({ slotId, imgId = '', messageId, tags
 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
 <div style="display:flex;align-items:center;gap:8px;min-width:0;">
 <span style="font-size:14px;flex:none;">⚠️</span>
-<span class="xb-nd-failed-title" style="font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(errorType || '生成失败')}</span>
+<span class="xb-nd-failed-title xb-nd-error-tip" tabindex="0" data-tip="${escapeHtml(errorMessage || '')}" style="font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(errorType || '生成失败')}</span>
 </div>
 <div class="xb-nd-failed-btns" style="display:flex;gap:4px;flex:none;">
     <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:2px 6px;background:transparent;border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;opacity:0.9;display:flex;align-items:center;" title="重新生成">${RELOAD_ICON_SVG}</button>
