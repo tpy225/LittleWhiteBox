@@ -1974,12 +1974,16 @@ function createOverlay() {
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
     const isNarrow = window.matchMedia?.("(max-width: 768px)").matches;
-    const overlayHeight = (isMobile || isNarrow) ? "92.5vh" : "100vh";
+
+    const offsetTop = window.visualViewport?.offsetTop || 0;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
 
     const $overlay = $(`
         <div id="xiaobaix-story-summary-overlay" style="
-            position: fixed !important; inset: 0 !important;
-            width: 100vw !important; height: ${overlayHeight} !important;
+            position: fixed !important; left: 0 !important;
+            top: calc(${offsetTop}px + env(safe-area-inset-top, 0px)) !important;
+            width: 100vw !important;
+            height: calc(${vh}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
             z-index: 99999 !important; display: none; overflow: hidden !important;
         ">
             <div class="xb-ss-backdrop" style="
@@ -2016,6 +2020,13 @@ function createOverlay() {
 
 function showOverlay() {
     if (!overlayCreated) createOverlay();
+    const overlay = document.getElementById("xiaobaix-story-summary-overlay");
+    if (overlay) {
+        const offsetTop = window.visualViewport?.offsetTop || 0;
+        const vh = window.visualViewport?.height ?? window.innerHeight;
+        overlay.style.top = `calc(${offsetTop}px + env(safe-area-inset-top, 0px))`;
+        overlay.style.height = `calc(${vh}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`;
+    }
     $("#xiaobaix-story-summary-overlay").show();
 }
 
@@ -2034,7 +2045,7 @@ function hideOverlay() {
 
 function createSummaryBtn(mesId) {
     const btn = document.createElement("div");
-    btn.className = "mes_btn xiaobaix-story-summary-btn";
+    btn.className = "mes_button xiaobaix-story-summary-btn";
     btn.title = "剧情总结";
     btn.dataset.mesid = mesId;
     btn.innerHTML = '<i class="fa-solid fa-chart-line"></i>';
@@ -2069,7 +2080,7 @@ export function mountStorySummaryButton(message, mesId) {
     if (!getSettings().storySummary?.enabled || message.querySelector('.xiaobaix-story-summary-btn')) return;
     const button = createSummaryBtn(mesId);
     if (!window.registerButtonToSubContainer?.(mesId, button)) {
-        message.querySelector('.flex-container.flex1.alignitemscenter')?.appendChild(button);
+        message.querySelector(".mes_block .mes_buttons")?.appendChild(button);
     }
     return () => button.remove();
 }
