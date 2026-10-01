@@ -3967,7 +3967,7 @@ async function handleFrameMessage(event) {
                 const preset = {
                     fixedPrompt: p.positivePrefix || "",
                     fixedPrompt_end: "",
-                    negativePrompt: p.negativePrompt || ""
+                    negativePrompt: p.negativePrefix || ""
                 };
                 if (p.thumbnail) {
                     const imageId = `lwb-thumb-${i + 1}`;
