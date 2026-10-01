@@ -21,6 +21,7 @@ export const WORLD_INFO_TEMPLATE = `<worldInfo>
 
 export const CONTENT_TEMPLATE = `<content>
 {{characterInfo}}
+{{continuity}}
 ---
 {{lastMessage}}
 </content>`;
@@ -53,11 +54,21 @@ export function buildScenePlannerSystemPrompt({ opening = '', guide = '', sceneR
 }
 
 /** Slots are opaque tokens; the caller resolves them after macro expansion. */
-export function buildScenePlannerUserTask({ worldInfoSlot, characterInfoSlot, lastMessageSlot, limitsLine = '' } = {}) {
+export function buildScenePlannerUserTask({
+    worldInfoSlot,
+    characterInfoSlot,
+    continuitySlot = '',
+    lastMessageSlot,
+    limitsLine = '',
+} = {}) {
     return joinBlocks([
         spliceLiteral(WORLD_INFO_TEMPLATE, '{$worldInfo}', worldInfoSlot),
         spliceLiteral(
-            spliceLiteral(CONTENT_TEMPLATE, '{{characterInfo}}', characterInfoSlot),
+            spliceLiteral(
+                spliceLiteral(CONTENT_TEMPLATE, '{{characterInfo}}', characterInfoSlot),
+                '{{continuity}}',
+                continuitySlot,
+            ),
             '{{lastMessage}}',
             lastMessageSlot,
         ),
@@ -121,7 +132,7 @@ export function buildScenePlannerChainPreview({ profile, hasTagGuide = true } = 
                     key: 'content',
                     summary: '已录入角色 + 正文（含【插图点 N】）',
                     content: CONTENT_TEMPLATE,
-                    variables: ['{{characterInfo}} — 已录入角色列表', '{{lastMessage}} — 正文'],
+                    variables: ['{{characterInfo}} — 已录入角色列表', '{{continuity}} — 上镜锚点（跨楼层外貌/服装）', '{{lastMessage}} — 正文'],
                 },
                 { key: 'limits', summary: '本次数量约束：可用插图点数、images 数量、每图人数上限' },
             ],

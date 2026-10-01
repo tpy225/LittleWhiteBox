@@ -18,3 +18,11 @@ output/playwright/
 output/dice-frequency-eval*.json
 output/dice-frequency-eval.mjs
 output/memory-maintenance-check*/
+
+# 本地基準備份
+LittleWhiteBox_掉格式bug/
+* 2.md
+LittleWhiteBox3.1.6最新/
+.DS_Store
+**/.DS_Store
+* 2.md

@@ -44,6 +44,8 @@ const NOVEL_DRAW_PROVIDER_SETTING_KEYS = new Set([
     'selectedPromptPresetId',
     '_promptTemplateVersion',
     '_proPresetVersion',
+    'continuityEnabled',
+    'vibeLibrary',
 ]);
 
 let settingsCache = null;

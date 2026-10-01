@@ -18,6 +18,8 @@ const LEGACY_UC_TO_V5 = Object.freeze({
     2: 'humanFocus',
     3: 'none',
 });
+// Vibe 编码按模型分别缓存，只接受这 4 个合法 key
+const VIBE_MODEL_KEYS = Object.freeze(['v4curated', 'v4full', 'v4-5curated', 'v4-5full']);
 const DEFAULT_PARAMS = Object.freeze({
     model: 'nai-diffusion-4-5-full',
     sampler: 'k_euler_ancestral',
@@ -126,17 +128,234 @@ function normalizeImportedParams(rawParams, version, warnings) {
     return { ...DEFAULT_PARAMS, ...importedParams };
 }
 
-export function parsePresetData(data, generateId) {
+// ── 云端分享的 Vibe 内联（原图与各模型编码随文件走，换机免重花点数） ──
+// 两种形态：
+//   散装  vibe.references = [{ id, enabled, strength, item: single }]
+//   组引用 vibe.group = { name, members: [{ enabled, strength, item: single }] }
+// 导入方一律重新生成本地 id，single 合入自己的库，组则重建并让预设引用新组 id。
+function sanitizeSharedEncodings(rawEncodings) {
+    const encodings = {};
+    if (rawEncodings && typeof rawEncodings === 'object' && !Array.isArray(rawEncodings)) {
+        for (const key of VIBE_MODEL_KEYS) {
+            if (typeof rawEncodings[key] === 'string' && rawEncodings[key].trim()) {
+                encodings[key] = rawEncodings[key];
+            }
+        }
+    }
+    return encodings;
+}
+
+function clampSharedStrength(value) {
+    let strength = Number(value);
+    if (!Number.isFinite(strength)) strength = 0.6;
+    return Math.min(1, Math.max(0, strength));
+}
+
+// 单个内联项 → 本地 single（重新生成 id）；无原图且无任何编码时返回 null
+function importInlineSingle(srcItem, generateVibeId) {
+    if (!srcItem || typeof srcItem !== 'object' || Array.isArray(srcItem)) return null;
+    const image = String(srcItem.image || '');
+    const encodings = sanitizeSharedEncodings(srcItem.encodings);
+    if (!image && Object.keys(encodings).length === 0) return null;
+    return {
+        single: {
+            id: generateVibeId(),
+            name: String(srcItem.name || '').slice(0, 60),
+            image,
+            thumbnail: String(srcItem.thumbnail || ''),
+            infoExtracted: Number(srcItem.infoExtracted) === 0 ? 0 : 1,
+            encodings,
+        },
+    };
+}
+
+// 散装引用解析：同一分享内重复内联同一项只入库一次
+function normalizeVibeReferences(raw, generateVibeId) {
+    const rawRefs = raw && typeof raw === 'object' && Array.isArray(raw.references) ? raw.references : [];
+    const selections = [];
+    const vibeImports = [];
+    const seenShareIds = new Set();
+
+    for (const entry of rawRefs) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        const srcItem = entry.item;
+        const shareId = String(entry.id || srcItem?.id || '');
+        if (shareId) {
+            if (seenShareIds.has(shareId)) continue;
+            seenShareIds.add(shareId);
+        }
+        const imported = importInlineSingle(srcItem, generateVibeId);
+        if (!imported) continue;
+        vibeImports.push(imported.single);
+        selections.push({
+            id: imported.single.id,
+            enabled: entry.enabled !== false,
+            strength: clampSharedStrength(entry.strength),
+        });
+    }
+
+    return { selections, vibeImports };
+}
+
+// 组引用解析：成员 single 全部入库，并在本地重建同名组（组 id 也是新的）
+function normalizeVibeGroup(rawGroup, generateVibeId) {
+    const src = rawGroup && typeof rawGroup === 'object' && !Array.isArray(rawGroup) ? rawGroup : {};
+    const rawMembers = Array.isArray(src.members) ? src.members : [];
+    const vibeImports = [];
+    const members = [];
+    const seenShareIds = new Set();
+
+    for (const entry of rawMembers) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        const srcItem = entry.item;
+        const shareId = String(entry.id || srcItem?.id || '');
+        if (shareId) {
+            if (seenShareIds.has(shareId)) continue;
+            seenShareIds.add(shareId);
+        }
+        const imported = importInlineSingle(srcItem, generateVibeId);
+        if (!imported) continue;
+        vibeImports.push(imported.single);
+        members.push({
+            id: imported.single.id,
+            enabled: entry.enabled !== false,
+            strength: clampSharedStrength(entry.strength),
+        });
+    }
+
+    if (!members.length) return { vibeGroup: null, vibeImports };
+    return {
+        vibeGroup: {
+            id: String(generateVibeId()).replace(/^vibe-/, 'vibegroup-'),
+            name: String(src.name || '').slice(0, 60) || '导入的 Vibe 组',
+            members,
+        },
+        vibeImports,
+    };
+}
+
+// 导出散装模式：把预设勾选项对应的库内 single 内联（库中已删除 / 无原图跳过）
+function collectVibeReferences(preset, vibeLibrary) {
+    const selections = Array.isArray(preset?.vibe?.selections) ? preset.vibe.selections : [];
+    const singles = vibeLibrary && Array.isArray(vibeLibrary.singles) ? vibeLibrary.singles : [];
+    if (!selections.length || !singles.length) return [];
+
+    const references = [];
+    const seen = new Set();
+    for (const sel of selections) {
+        if (!sel || !sel.id || seen.has(sel.id)) continue;
+        const item = singles.find(s => s.id === sel.id);
+        if (!item || !item.image) continue;
+        seen.add(sel.id);
+        references.push({
+            id: item.id,
+            enabled: sel.enabled !== false,
+            strength: clampSharedStrength(sel.strength),
+            item: buildSharedSingle(item),
+        });
+    }
+    return references;
+}
+
+// 导出组模式：内联组名 + 成员勾选/强度 + 成员 single；组在库里已删除则返回 null
+function collectVibeGroupExport(preset, vibeLibrary) {
+    const groupId = String(preset?.vibe?.groupId || '');
+    const singles = vibeLibrary && Array.isArray(vibeLibrary.singles) ? vibeLibrary.singles : [];
+    const groups = vibeLibrary && Array.isArray(vibeLibrary.groups) ? vibeLibrary.groups : [];
+    if (!groupId || !groups.length || !singles.length) return null;
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return null;
+
+    const members = [];
+    for (const m of Array.isArray(group.members) ? group.members : []) {
+        if (!m || !m.id) continue;
+        const item = singles.find(s => s.id === m.id);
+        if (!item || !item.image) continue;
+        members.push({
+            id: item.id,
+            enabled: m.enabled !== false,
+            strength: clampSharedStrength(m.strength),
+            item: buildSharedSingle(item),
+        });
+    }
+    if (!members.length) return null;
+    return { name: String(group.name || '').slice(0, 60) || 'Vibe 组', members };
+}
+
+// 供非 envelope 场景复用（如智绘姬互通文件挂 lwb 扩展键）：
+// 组优先内联整组，否则散装内联被勾选项；无 Vibe 返回 null
+export function collectPresetVibeExport(preset, vibeLibrary) {
+    const group = collectVibeGroupExport(preset, vibeLibrary);
+    if (group) return { group };
+    const references = collectVibeReferences(preset, vibeLibrary);
+    return references.length ? { references } : null;
+}
+
+// collectPresetVibeExport 的逆向：把 vibe 片段解析成入库所需三件套
+export function parsePresetVibeFragment(rawVibe, generateVibeId) {
+    const emptyVibe = { groupId: '', selections: [] };
+    if (!rawVibe || typeof rawVibe !== 'object') {
+        return { vibe: emptyVibe, vibeImports: [], vibeGroup: null };
+    }
+    if (rawVibe.group && typeof rawVibe.group === 'object') {
+        const result = normalizeVibeGroup(rawVibe.group, generateVibeId);
+        return {
+            vibe: { groupId: result.vibeGroup.id, selections: [] },
+            vibeImports: result.vibeImports,
+            vibeGroup: result.vibeGroup,
+        };
+    }
+    const result = normalizeVibeReferences(rawVibe, generateVibeId);
+    return { vibe: { groupId: '', selections: result.selections }, vibeImports: result.vibeImports, vibeGroup: null };
+}
+
+function buildSharedSingle(item) {
+    return {
+        id: item.id,
+        name: String(item.name || '').slice(0, 60),
+        image: item.image,
+        thumbnail: String(item.thumbnail || ''),
+        infoExtracted: Number(item.infoExtracted) === 0 ? 0 : 1,
+        encodings: sanitizeSharedEncodings(item.encodings),
+    };
+}
+
+export function parsePresetData(data, generateId, generateVibeId = generateId) {
     const version = requirePresetEnvelope(data);
     if (typeof generateId !== 'function') throw new TypeError('generateId must be a function');
+    if (typeof generateVibeId !== 'function') throw new TypeError('generateVibeId must be a function');
     const warnings = [];
     const importedParams = normalizeImportedParams(data.preset.params, version, warnings);
+
+    // Vibe：v1 旧分享没有该字段。v2 组模式内联 vibe.group，散装模式内联 vibe.references
+    let vibeImports = [];
+    let vibeGroup = null;
+    let selections = [];
+    if (version !== 1) {
+        const rawVibe = data.preset.vibe;
+        if (rawVibe && typeof rawVibe === 'object' && rawVibe.group && typeof rawVibe.group === 'object') {
+            const groupResult = normalizeVibeGroup(rawVibe.group, generateVibeId);
+            vibeGroup = groupResult.vibeGroup;
+            vibeImports = groupResult.vibeImports;
+        } else {
+            const refsResult = normalizeVibeReferences(rawVibe, generateVibeId);
+            selections = refsResult.selections;
+            vibeImports = refsResult.vibeImports;
+        }
+    }
+
     return {
         preset: {
             id: generateId(),
             name: String(data.name || data.preset.name || '云端预设'),
             positivePrefix: String(data.preset.positivePrefix || ''),
             negativePrefix: String(data.preset.negativePrefix || ''),
+            // 还原分享时附带的缩略图（旧版本/无图时为空字符串）
+            thumbnail: typeof data.preset.thumbnail === 'string' ? data.preset.thumbnail : '',
+            // 组模式只存新组 id（组对象在 vibeGroup 里待父层入库）；散装存勾选快照
+            vibe: vibeGroup
+                ? { groupId: vibeGroup.id, selections: [] }
+                : { groupId: '', selections },
             maxImages: version === 1 ? 0 : Math.max(0, Number(data.preset.maxImages) || 0),
             maxCharactersPerImage: version === 1
                 ? 0
@@ -144,13 +363,19 @@ export function parsePresetData(data, generateId) {
             params: importedParams,
         },
         warnings,
+        vibeImports,
+        vibeGroup,
     };
 }
 
-export function exportPreset(preset) {
-    const author = prompt("请输入你的作者名:", "") || "";
-    const description = prompt("简介 (画风介绍):", "") || "";
-    
+export function exportPreset(preset, vibeLibrary = null, { interactive = true } = {}) {
+    // 云端分享才需要询问作者名/简介；本地完整备份直接跳过 prompt
+    const author = interactive ? (prompt("请输入你的作者名:", "") || "") : "";
+    const description = interactive ? (prompt("简介 (画风介绍):", "") || "") : "";
+    // 组模式内联整个组（名+成员勾选+原图编码）；散装模式只内联被勾选的 single
+    const vibeGroupExport = collectVibeGroupExport(preset, vibeLibrary);
+    const vibeReferences = vibeGroupExport ? [] : collectVibeReferences(preset, vibeLibrary);
+
     return {
         type: PRESET_TYPE,
         version: CURRENT_PRESET_VERSION,
@@ -163,6 +388,13 @@ export function exportPreset(preset) {
             negativePrefix: preset.negativePrefix,
             maxImages: preset.maxImages || 0,
             maxCharactersPerImage: preset.maxCharactersPerImage || 0,
+            // 缩略图（dataURL）随云端预设一起分享；无图则省略
+            ...(preset.thumbnail ? { thumbnail: preset.thumbnail } : {}),
+            ...(vibeGroupExport
+                ? { vibe: { group: vibeGroupExport } }
+                : vibeReferences.length
+                    ? { vibe: { references: vibeReferences } }
+                    : {}),
             params: { ...preset.params }
         }
     };
@@ -791,13 +1023,14 @@ export function closeModal() {
     modalElement?.remove();
 }
 
-export function downloadPresetAsFile(preset) {
-    const data = exportPreset(preset);
+export function downloadPresetAsFile(preset, vibeLibrary = null) {
+    const data = exportPreset(preset, vibeLibrary, { interactive: false });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${preset.name || 'preset'}.json`;
+    const safeName = String(preset.name || 'preset').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+    a.download = `lwb-preset-${safeName}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

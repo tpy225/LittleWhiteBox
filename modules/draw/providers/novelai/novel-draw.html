@@ -639,6 +639,265 @@ select.input { cursor: pointer; }
     color: var(--text-secondary); font-family: monospace; font-size: 11px; line-height: 1.45;
     white-space: pre-wrap; word-break: break-word;
 }
+
+/* ── 预设缩略图（头像式上传方框，3:4 竖图） ── */
+.nd-thumb-box {
+    position: relative;
+    width: 96px;
+    height: 128px;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: var(--bg-input);
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s;
+}
+.nd-thumb-box:hover,
+.nd-thumb-box:focus-visible { border-color: var(--border-focus); outline: none; }
+.nd-thumb-box.has-image { border-style: solid; }
+.nd-thumb-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+}
+.nd-thumb-box.has-image img { display: block; }
+.nd-thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.3;
+}
+.nd-thumb-placeholder i { font-size: 22px; opacity: 0.6; }
+.nd-thumb-box.has-image .nd-thumb-placeholder { display: none; }
+.nd-thumb-mask {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 4px 0;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 10px;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+.nd-thumb-box.has-image:hover .nd-thumb-mask,
+.nd-thumb-box.has-image:focus-visible .nd-thumb-mask { opacity: 1; }
+.nd-thumb-clear {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+.nd-thumb-box.has-image .nd-thumb-clear { display: flex; }
+.nd-thumb-clear:hover { background: var(--danger); }
+
+/* ── Vibe 氛围转移：组保存栏 + 单个 Vibe 列表 ── */
+.nd-vibe-group-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+.nd-vibe-group-bar select {
+    /* 下拉独占一行；按钮组自然落到第二行 */
+    flex: 0 0 100%;
+    min-width: 0;
+    font-size: 12px;
+    padding: 6px 8px;
+}
+.nd-vibe-group-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    padding: 0;
+}
+.nd-vibe-group-btn:hover:not(:disabled) { border-color: var(--border-focus, #7c6ff0); }
+.nd-vibe-group-btn.primary { background: var(--border-focus, #7c6ff0); border-color: transparent; color: #fff; }
+.nd-vibe-group-btn.danger:hover:not(:disabled) { background: var(--danger); border-color: transparent; color: #fff; }
+.nd-vibe-group-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.nd-vibe-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.nd-vibe-upload-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 14px 12px;
+    cursor: pointer;
+}
+.nd-vibe-upload-tile:hover { border-color: var(--border-focus, #7c6ff0); color: var(--text); }
+.nd-vibe-upload-tile i { font-size: 16px; }
+
+/* 标题旁的 ⓘ 用法说明：hover 或点击聚焦时展开；弹层以整个标题为定位锚点，左缘与标题对齐 */
+.nd-vibe-title { position: relative; }
+.nd-info-tip {
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: normal;
+    cursor: help;
+    outline: none;
+    vertical-align: middle;
+}
+.nd-info-tip:hover,
+.nd-info-tip:focus { color: var(--text); }
+.nd-info-tip-body {
+    display: none;
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 60;
+    width: 280px;
+    max-width: calc(100vw - 48px);
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 1.7;
+    text-align: left;
+    white-space: normal;
+    flex-direction: column;
+    gap: 6px;
+}
+.nd-info-tip-body b { color: var(--text-primary); font-weight: 600; }
+.nd-info-tip:hover .nd-info-tip-body,
+.nd-info-tip:focus .nd-info-tip-body,
+.nd-info-tip:focus-within .nd-info-tip-body { display: flex; }
+.nd-vibe-item {
+    display: flex;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-input);
+    align-items: flex-start;
+}
+.nd-vibe-item.is-disabled { opacity: 0.5; }
+.nd-vibe-item.is-busy { opacity: 0.7; }
+.nd-vibe-enable {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 22px;
+    cursor: pointer;
+    accent-color: var(--border-focus, #7c6ff0);
+}
+.nd-vibe-item img {
+    width: 48px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.25);
+}
+.nd-vibe-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.nd-vibe-name {
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nd-vibe-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.nd-vibe-row label { color: var(--text-muted); flex-shrink: 0; }
+.nd-vibe-row input[type="range"] { flex: 1; min-width: 0; }
+.nd-vibe-row .nd-vibe-val { width: 38px; text-align: right; color: var(--text); flex-shrink: 0; }
+.nd-vibe-info-row { display: flex; }
+.nd-vibe-info-sel { font-size: 11px; padding: 2px 6px; max-width: 110px; }
+.nd-vibe-badge {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.nd-vibe-badge.ok { background: rgba(63, 185, 80, 0.18); color: #58d16e; }
+.nd-vibe-badge.pending { background: rgba(210, 153, 34, 0.18); color: #e0a93e; }
+.nd-vibe-badge.off { background: rgba(160,160,160,0.15); color: var(--text-muted); }
+.nd-vibe-icon-btn {
+    width: 26px;
+    height: 26px;
+    margin-top: 18px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.nd-vibe-icon-btn:hover { background: rgba(124,111,240,0.18); color: var(--text); }
+.nd-vibe-icon-btn.danger:hover { background: var(--danger); color: #fff; }
 </style>
 </head>
 
@@ -825,7 +1084,8 @@ select.input { cursor: pointer; }
                         <button id="nd_params_rename" class="btn btn-icon" title="重命名"><i class="fa-solid fa-pen"></i></button>
                         <button id="nd_params_save" class="btn btn-primary" title="保存"><i class="fa-solid fa-floppy-disk"></i></button>
                         <button id="nd_params_cloud" class="btn btn-icon" title="云端预设" style="color:#d4a574;"><i class="fa-solid fa-cloud-arrow-down"></i></button>
-                        <button id="nd_params_export" class="btn btn-icon" title="导出当前预设"><i class="fa-solid fa-share-from-square"></i></button>
+                        <button id="nd_params_export" class="btn btn-icon" title="导出所有预设（智绘姬互通，含模型参数与 Vibe）"><i class="fa-solid fa-share-from-square"></i></button>
+                        <label class="btn btn-icon" title="导入预设文件（自动恢复模型参数与 Vibe）" style="cursor:pointer;"><i class="fa-solid fa-file-import"></i><input type="file" id="nd_params_import" accept=".json" style="display:none;"></label>
                         <button id="nd_params_del" class="btn btn-danger btn-icon" title="删除"><i class="fa-solid fa-trash"></i></button>
                     </div>
                     <div id="nd_params_status" class="status-text inline-status"></div>
@@ -842,6 +1102,21 @@ select.input { cursor: pointer; }
                         <label class="form-label">负向固定</label>
                         <textarea id="nd_negative" class="input" rows="3" placeholder="lowres, bad anatomy..."></textarea>
                         <p class="form-hint">鬼图、畸形、风格污染相关的排除词也建议固定在这里。</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">预设缩略图</label>
+                        <div id="nd_thumbnail_box" class="nd-thumb-box" role="button" tabindex="0" title="点击上传或更换缩略图">
+                            <img id="nd_thumbnail_preview" alt="">
+                            <span class="nd-thumb-placeholder" id="nd_thumbnail_placeholder">
+                                <i class="fa-regular fa-image"></i>
+                                <span>上传缩略图</span>
+                            </span>
+                            <span class="nd-thumb-mask"><i class="fa-solid fa-arrows-rotate"></i> 点击更换</span>
+                            <button type="button" id="nd_thumbnail_clear" class="nd-thumb-clear" title="移除缩略图"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <input type="file" id="nd_thumbnail_file" accept="image/*" hidden>
+                        <input type="hidden" id="nd_thumbnail">
+                        <p class="form-hint">点击方框选择本地图片；悬浮窗 / 楼层按钮的画师串卡片会显示这张缩略图。</p>
                     </div>
                 </div>
                 
@@ -886,7 +1161,30 @@ select.input { cursor: pointer; }
                         </div>
                     </div>
                 </div>
-                
+
+                <div class="card">
+                    <div class="card-title nd-vibe-title">✨ Vibe 氛围转移<span class="nd-info-tip" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="nd-info-tip-body"><span class="nd-info-tip-lead">上传参考图把画风 / 构图 / 色彩迁移到生成结果。两种用法：</span><span class="nd-info-tip-item"><b>① 散装：</b>直接勾选 → 点最上面卡片的「保存」，勾选随该画师串预设切换。</span><span class="nd-info-tip-item"><b>② Vibe 组：</b>勾选后用 💾 存成 Vibe 组，下拉选组再保存画师串预设；之后改组（💾覆盖），所有引用它的预设一起更新。</span></span></span><span id="nd_vibe_model_hint" class="form-hint" style="display:inline;margin-left:8px;"></span></div>
+
+                    <!-- Vibe 组保存栏：下拉选组即套用勾选/强度；＋另存新组，✏重命名，💾覆盖保存当前组，🗑删组 -->
+                    <div class="nd-vibe-group-bar">
+                        <select id="nd_vibe_group_sel" class="input"></select>
+                        <button type="button" class="nd-vibe-group-btn" id="nd_vibe_group_saveas" title="把当前勾选与强度另存为新 Vibe 组"><i class="fa-solid fa-plus"></i></button>
+                        <button type="button" class="nd-vibe-group-btn" id="nd_vibe_group_rename" title="重命名当前组" disabled><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="nd-vibe-group-btn primary" id="nd_vibe_group_save" title="无选中组时＝另存新组；有选中组时＝覆盖保存当前组"><i class="fa-solid fa-floppy-disk"></i></button>
+                        <button type="button" class="nd-vibe-group-btn danger" id="nd_vibe_group_del" title="删除当前组（组内参考图仍保留）" disabled><i class="fa-solid fa-trash-can"></i></button>
+                        <button type="button" class="nd-vibe-group-btn" id="nd_vibe_group_export" title="导出当前组（含组内原图与编码，换机免重花点数）" disabled><i class="fa-solid fa-file-export"></i></button>
+                        <label class="nd-vibe-group-btn" title="导入 Vibe / 组文件（.json，含编码）" style="cursor:pointer;">
+                            <i class="fa-solid fa-file-import"></i>
+                            <input type="file" id="nd_vibe_import_file" accept="application/json,.json" multiple hidden>
+                        </label>
+                    </div>
+
+                    <!-- 列表展示库里全部单个 Vibe：勾选=本预设启用，✕=从库删除 -->
+                    <div id="nd_vibe_list" class="nd-vibe-list"></div>
+                    <input type="file" id="nd_vibe_file" accept="image/*" multiple hidden>
+                    <div id="nd_vibe_status" class="status-text"></div>
+                </div>
+
                 <div class="card">
                     <div class="card-title">尺寸与参数</div>
                     <div class="form-row">
@@ -1115,6 +1413,16 @@ select.input { cursor: pointer; }
                                     </label>
                                 </div>
                                 <p class="form-hint" style="margin-left:44px;margin-top:4px;">生成图片时自动记住 LLM 识别的新角色</p>
+                            </div>
+                            <div class="auto-learn-section" style="margin-bottom:12px;">
+                                <div class="auto-learn-toggle-row">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="nd_continuity">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span>上镜锚点（跨楼层服装/外貌延续）</span>
+                                </div>
+                                <p class="form-hint" style="margin-left:44px;margin-top:4px;">记住每个角色最近一次入画时的着装英文标签，下一楼规划时默认沿用，减少凭空换装；正文明确写换装时才更新</p>
                             </div>
                             <div class="auto-learn-section">
                                 <div class="auto-learn-toggle-row">
@@ -1457,6 +1765,7 @@ let state = {
     characterTags: [],
     autoLearnCharacters: false,
     autoLearnMode: 'new_only',
+    continuityEnabled: true,
     danbooruLocalDB: false,
     showFloorButton: true,
     showFloatingButton: false,
@@ -2716,6 +3025,7 @@ function applyStateToUI() {
         $('nd_auto_learn').checked = !!state.autoLearnCharacters;
         $('nd_auto_learn_update').checked = (state.autoLearnMode || 'new_only') === 'auto_update';
         $('nd_auto_learn_sub').classList.toggle('hidden', !state.autoLearnCharacters);
+        $('nd_continuity').checked = state.continuityEnabled !== false;
         $('nd_danbooru_local').checked = !!state.danbooruLocalDB;
         $('nd_danbooru_local_sub').classList.toggle('hidden', !state.danbooruLocalDB);
         $('nd_danbooru_local_status').textContent = state.danbooruLocalDB ? '已加载' : '未加载';
@@ -2731,12 +3041,677 @@ function applyStateToUI() {
     }
 }
 
+function updateThumbnailPreview(src) {
+    const box = $('nd_thumbnail_box');
+    const img = $('nd_thumbnail_preview');
+    if (!box || !img) return;
+    const url = String(src || '').trim();
+    if (url) {
+        img.src = url;
+        box.classList.add('has-image');
+    } else {
+        img.removeAttribute('src');
+        box.classList.remove('has-image');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Vibe 氛围转移
+// 编码花点数 → 参考图统一存全局 vibeLibrary（state.vibeLibrary）。
+// 列表展示库里全部 single；vibeDraftSelections = 当前画师串预设的勾选工作副本
+// [{ id, enabled, strength }]。Vibe 组是这份勾选+强度的命名快照，选组即整体套用。
+// ═══════════════════════════════════════════════════════════════════════════
+let vibeDraftSelections = [];
+let vibeSelectedGroupId = '';
+let vibeEncodeSeq = 0;
+const vibePendingEncodes = new Map();
+
+const VIBE_ENCODING_KEYS_LOCAL = ['v4curated', 'v4full', 'v4-5curated', 'v4-5full'];
+
+function clampVibeStrength(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0.6;
+    return Math.min(1, Math.max(0, n));
+}
+
+function sanitizeVibeEncodings(raw) {
+    const out = {};
+    if (raw && typeof raw === 'object') {
+        for (const key of VIBE_ENCODING_KEYS_LOCAL) {
+            if (typeof raw[key] === 'string' && raw[key]) out[key] = raw[key];
+        }
+    }
+    return out;
+}
+
+function getVibeModelKeyLocal(model) {
+    const name = String(model || '');
+    if (name.includes('4-5-curated')) return 'v4-5curated';
+    if (name.includes('4-5-full')) return 'v4-5full';
+    if (name.includes('4-curated')) return 'v4curated';
+    if (name.includes('4-full')) return 'v4full';
+    return null;
+}
+
+function currentFormModel() {
+    const sel = $('nd_model_sel');
+    if (!sel) return '';
+    return sel.value === 'custom' ? (($('nd_model')?.value) || '') : sel.value;
+}
+
+function setVibeStatus(text, state) {
+    const el = $('nd_vibe_status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'status-text' + (state ? ' ' + state : '');
+}
+
+function makeVibeId() {
+    return `vibe-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getVibeLibrary() {
+    if (!state.vibeLibrary || typeof state.vibeLibrary !== 'object') {
+        state.vibeLibrary = { singles: [], groups: [] };
+    }
+    if (!Array.isArray(state.vibeLibrary.singles)) state.vibeLibrary.singles = [];
+    if (!Array.isArray(state.vibeLibrary.groups)) state.vibeLibrary.groups = [];
+    return state.vibeLibrary;
+}
+
+function getLibItem(id) {
+    return getVibeLibrary().singles.find(item => item.id === id) || null;
+}
+
+function saveVibeLibrary() {
+    postToParent({ type: 'SAVE_VIBE_LIBRARY', vibeLibrary: state.vibeLibrary });
+}
+
+function downscaleFileToDataUrl(file, maxDim, mime, quality) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale));
+                const h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(url);
+                resolve(canvas.toDataURL(mime, quality));
+            } catch (e) {
+                URL.revokeObjectURL(url);
+                reject(e);
+            }
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('图片读取失败'));
+        };
+        img.src = url;
+    });
+}
+
+function requestVibeEncode({ image, model, informationExtracted }) {
+    return new Promise((resolve, reject) => {
+        const requestId = `vibe-enc-${++vibeEncodeSeq}-${Date.now()}`;
+        const timer = setTimeout(() => {
+            if (!vibePendingEncodes.has(requestId)) return;
+            vibePendingEncodes.delete(requestId);
+            reject(new Error('编码超时（60 秒）'));
+        }, 60000);
+        vibePendingEncodes.set(requestId, {
+            resolve: (value) => { clearTimeout(timer); resolve(value); },
+            reject: (error) => { clearTimeout(timer); reject(error); },
+        });
+        postToParent({ type: 'ENCODE_VIBE', requestId, image, model, informationExtracted });
+    });
+}
+
+// 按 id 编码库里的单个 Vibe；编码完成后用 id 回查最新对象再写回，
+// 避免 INIT_DATA 中途替换 state.vibeLibrary 导致编码写到游离对象上。
+async function encodeLibItemById(id) {
+    const model = currentFormModel();
+    const modelKey = getVibeModelKeyLocal(model);
+    if (!modelKey) return;
+    const item = getLibItem(id);
+    if (!item || !item.image) return;
+    item.busy = true;
+    renderVibeAll();
+    try {
+        const encoding = await requestVibeEncode({
+            image: item.image,
+            model,
+            informationExtracted: item.infoExtracted === 0 ? 0 : 1,
+        });
+        const fresh = getLibItem(id);
+        if (fresh) {
+            fresh.encodings = fresh.encodings || {};
+            fresh.encodings[modelKey] = encoding;
+            saveVibeLibrary();
+        }
+    } finally {
+        const current = getLibItem(id);
+        if (current) delete current.busy;
+    }
+    renderVibeAll();
+}
+
+function makeIconBtn(iconClass, title, onClick, danger = false) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nd-vibe-icon-btn' + (danger ? ' danger' : '');
+    btn.title = title;
+    btn.innerHTML = `<i class="${iconClass}"></i>`;
+    btn.addEventListener('click', onClick);
+    return btn;
+}
+
+// ── 列表：顶部上传砖 + 库里全部单个 Vibe。勾选=本预设启用，强度随行编辑 ──
+function renderVibeList(modelKey) {
+    const list = $('nd_vibe_list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'nd-vibe-upload-tile';
+    tile.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i><span>上传参考图（编码花点数，仅 NAI V4 / V4.5 支持）</span>';
+    tile.addEventListener('click', () => $('nd_vibe_file')?.click());
+    list.appendChild(tile);
+
+    const lib = getVibeLibrary();
+    lib.singles.forEach((item) => {
+        const sel = vibeDraftSelections.find(s => s.id === item.id) || null;
+        const checked = !!sel && sel.enabled !== false;
+        const isBusy = !!item.busy;
+        const row = document.createElement('div');
+        row.className = 'nd-vibe-item'
+            + (sel && sel.enabled === false ? ' is-disabled' : '')
+            + (isBusy ? ' is-busy' : '');
+
+        const enable = document.createElement('input');
+        enable.type = 'checkbox';
+        enable.className = 'nd-vibe-enable';
+        enable.checked = checked;
+        enable.title = '勾选后此参考图才参与本预设生成';
+        enable.addEventListener('change', () => {
+            let draft = vibeDraftSelections.find(s => s.id === item.id);
+            if (!draft) {
+                draft = { id: item.id, enabled: enable.checked, strength: 0.6 };
+                vibeDraftSelections.push(draft);
+            } else {
+                draft.enabled = enable.checked;
+            }
+            hintGroupEdited();
+            renderVibeList(modelKey);
+        });
+        row.appendChild(enable);
+
+        const thumb = document.createElement('img');
+        thumb.src = item.thumbnail || item.image;
+        thumb.alt = '';
+        thumb.title = item.name || '';
+        row.appendChild(thumb);
+
+        const main = document.createElement('div');
+        main.className = 'nd-vibe-main';
+        const name = document.createElement('div');
+        name.className = 'nd-vibe-name';
+        name.textContent = item.name || '未命名 Vibe';
+        name.title = name.textContent;
+        main.appendChild(name);
+
+        const strengthRow = document.createElement('div');
+        strengthRow.className = 'nd-vibe-row';
+        const strengthLabel = document.createElement('label');
+        strengthLabel.textContent = '强度';
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.min = '0';
+        range.max = '1';
+        range.step = '0.05';
+        range.value = String(sel ? clampVibeStrength(sel.strength) : 0.6);
+        const val = document.createElement('span');
+        val.className = 'nd-vibe-val';
+        val.textContent = Number(range.value).toFixed(2);
+        // 拖强度本身就代表要使用此图：未入工作副本时自动勾选
+        const ensureDraft = () => {
+            let draft = vibeDraftSelections.find(s => s.id === item.id);
+            if (!draft) {
+                draft = { id: item.id, enabled: true, strength: Number(range.value) };
+                vibeDraftSelections.push(draft);
+            }
+            return draft;
+        };
+        range.addEventListener('input', () => {
+            ensureDraft().strength = Number(range.value);
+            val.textContent = Number(range.value).toFixed(2);
+        });
+        range.addEventListener('change', () => {
+            hintGroupEdited();
+            renderVibeList(modelKey);
+        });
+        strengthRow.appendChild(strengthLabel);
+        strengthRow.appendChild(range);
+        strengthRow.appendChild(val);
+
+        const badge = document.createElement('span');
+        if (!modelKey) {
+            badge.className = 'nd-vibe-badge off';
+            badge.textContent = '模型不支持';
+        } else if (isBusy) {
+            badge.className = 'nd-vibe-badge pending';
+            badge.textContent = '编码中…';
+        } else if (item.encodings && item.encodings[modelKey]) {
+            badge.className = 'nd-vibe-badge ok';
+            badge.textContent = '✓ 已编码';
+        } else {
+            badge.className = 'nd-vibe-badge pending';
+            badge.textContent = '生成时编码';
+        }
+        strengthRow.appendChild(badge);
+        main.appendChild(strengthRow);
+
+        // 信息提取烘焙进编码；修改后清空全部模型编码并重编当前模型
+        const infoRow = document.createElement('div');
+        infoRow.className = 'nd-vibe-info-row';
+        const infoSel = document.createElement('select');
+        infoSel.className = 'input nd-vibe-info-sel';
+        infoSel.innerHTML = '<option value="1">高·构图</option><option value="0">低·色彩</option>';
+        infoSel.value = String(item.infoExtracted === 0 ? 0 : 1);
+        infoSel.title = '信息提取（改了要重新花点数编码）';
+        infoSel.disabled = !!item.busy;
+        infoSel.addEventListener('change', async () => {
+            item.infoExtracted = Number(infoSel.value);
+            item.encodings = {};
+            saveVibeLibrary();
+            renderVibeAll();
+            if (modelKey) {
+                setVibeStatus('信息提取已变更，正在重新编码…');
+                try {
+                    await encodeLibItemById(item.id);
+                    setVibeStatus('重新编码完成', 'success');
+                } catch (e) {
+                    setVibeStatus(`重新编码失败：${e?.message || ''}；下次生成时自动重试`, 'error');
+                }
+            } else {
+                setVibeStatus('信息提取已变更；当前模型不支持编码，切到 V4 / V4.5 后生效', 'error');
+            }
+        });
+        infoRow.appendChild(infoSel);
+        main.appendChild(infoRow);
+        row.appendChild(main);
+
+        row.appendChild(makeIconBtn('fa-solid fa-file-export', '导出此 Vibe（含原图与各模型编码）', () => exportVibeSingle(item.id)));
+        row.appendChild(makeIconBtn('fa-solid fa-xmark', '从库删除（所有预设 / 组里的引用都会失效）', () => removeLibItem(item.id), true));
+
+        list.appendChild(row);
+    });
+}
+
+// ── Vibe 组保存栏：下拉选组整体套用勾选+强度；＋另存 / ✏重命名 / 💾覆盖 / 🗑删 ──
+function renderGroupBar() {
+    const lib = getVibeLibrary();
+    const sel = $('nd_vibe_group_sel');
+    if (sel) {
+        sel.innerHTML = '<option value="">— Vibe 组 —</option>'
+            + lib.groups.map(g => {
+                const label = `${g.name || '未命名组'}（${g.members.length} 张）`;
+                return `<option value="${g.id}">${escapeHtml(label)}</option>`;
+            }).join('');
+        vibeSelectedGroupId = lib.groups.some(g => g.id === vibeSelectedGroupId) ? vibeSelectedGroupId : '';
+        sel.value = vibeSelectedGroupId;
+    }
+    const hasGroup = !!getSelectedGroup();
+    ['nd_vibe_group_rename', 'nd_vibe_group_del', 'nd_vibe_group_export'].forEach((id) => {
+        const el = $(id);
+        if (el) el.disabled = !hasGroup;
+    });
+}
+
+function renderVibeAll() {
+    const modelKey = getVibeModelKeyLocal(currentFormModel());
+    const hint = $('nd_vibe_model_hint');
+    if (hint) hint.textContent = modelKey ? '' : '（当前模型不支持 Vibe）';
+    renderVibeList(modelKey);
+    renderGroupBar();
+}
+
+function getSelectedGroup() {
+    if (!vibeSelectedGroupId) return null;
+    return getVibeLibrary().groups.find(g => g.id === vibeSelectedGroupId) || null;
+}
+
+// 选组：用组快照整体替换当前勾选工作副本（库中已删除的成员跳过）
+function applyGroupToDraft(groupId) {
+    vibeSelectedGroupId = groupId || '';
+    const group = getSelectedGroup();
+    if (!group) {
+        renderVibeList(getVibeModelKeyLocal(currentFormModel()));
+        return;
+    }
+    vibeDraftSelections = group.members
+        .filter(m => getLibItem(m.id))
+        .map(m => ({
+            id: m.id,
+            enabled: m.enabled !== false,
+            strength: clampVibeStrength(m.strength),
+        }));
+    renderVibeList(getVibeModelKeyLocal(currentFormModel()));
+    setVibeStatus(`已套用组「${group.name}」；点最上面卡片的「保存」即把该组绑定到当前画师串预设`, 'success');
+}
+
+// 组选中状态下手改勾选/强度只是临时草稿：画师串预设只存组 id。
+// 要让修改长期生效，必须 💾 覆盖当前组或 ＋ 另存新组——这里显式提示，防止“存了但没生效”。
+function hintGroupEdited() {
+    if (!vibeSelectedGroupId) return;
+    const group = getSelectedGroup();
+    if (!group) return;
+    setVibeStatus(`当前改动不会写进组「${group.name}」：按 💾 覆盖该组、或 ＋ 另存新组后才会生效；直接保存画师串预设只会继续引用原组`, 'error');
+}
+
+// 当前勾选+强度的快照（只保留库里仍存在的项）
+function snapshotDraftMembers() {
+    return vibeDraftSelections
+        .filter(s => getLibItem(s.id))
+        .map(s => ({
+            id: s.id,
+            enabled: s.enabled !== false,
+            strength: clampVibeStrength(s.strength),
+        }));
+}
+
+function saveDraftAsNewGroup() {
+    const members = snapshotDraftMembers().filter(m => m.enabled);
+    if (!members.length) {
+        setVibeStatus('当前没有勾选任何 Vibe，无法存组', 'error');
+        return;
+    }
+    const name = prompt('新 Vibe 组名称（保存当前勾选与强度）：', '');
+    if (name == null) return;
+    const group = {
+        id: makeVibeId().replace('vibe-', 'vibegroup-'),
+        name: name.trim().slice(0, 60) || `Vibe组 ${getVibeLibrary().groups.length + 1}`,
+        members,
+    };
+    getVibeLibrary().groups.push(group);
+    vibeSelectedGroupId = group.id;
+    saveVibeLibrary();
+    renderVibeAll();
+    setVibeStatus(`已另存为新组「${group.name}」`, 'success');
+}
+
+// 💾：有选中组→用当前勾选覆盖；未选组→走另存新组
+function overwriteOrSaveGroup() {
+    const group = getSelectedGroup();
+    if (!group) {
+        saveDraftAsNewGroup();
+        return;
+    }
+    const members = snapshotDraftMembers().filter(m => m.enabled);
+    if (!members.length) {
+        setVibeStatus('当前没有勾选任何 Vibe，无法覆盖保存', 'error');
+        return;
+    }
+    group.members = members;
+    saveVibeLibrary();
+    renderGroupBar();
+    setVibeStatus(`组「${group.name}」已更新为当前勾选与强度`, 'success');
+}
+
+function renameSelectedGroup() {
+    const group = getSelectedGroup();
+    if (!group) return;
+    const name = prompt('组名称：', group.name || '');
+    if (name == null) return;
+    group.name = name.trim().slice(0, 60) || group.name;
+    saveVibeLibrary();
+    renderGroupBar();
+}
+
+function deleteSelectedGroup() {
+    const group = getSelectedGroup();
+    if (!group) return;
+    if (!confirm(`删除组「${group.name}」？组内的单个 Vibe 仍保留在库里，本预设的勾选也不受影响。`)) return;
+    const lib = getVibeLibrary();
+    lib.groups = lib.groups.filter(g => g.id !== group.id);
+    vibeSelectedGroupId = '';
+    saveVibeLibrary();
+    renderVibeAll();
+    setVibeStatus('组已删除', 'success');
+}
+
+// ✕ 行内按钮：从库删除单个 Vibe，同步修剪所有组与当前工作副本
+function removeLibItem(id) {
+    if (!confirm('从库删除此 Vibe？所有画师串预设 / Vibe 组里对它的引用都会失效（编码不会自动找回，需要重新花点数）。')) return;
+    const lib = getVibeLibrary();
+    lib.singles = lib.singles.filter(item => item.id !== id);
+    lib.groups.forEach(group => {
+        group.members = group.members.filter(m => m.id !== id);
+    });
+    // 成员清空的组没有存在意义；若删的正是当前选中组则回到未选择
+    lib.groups = lib.groups.filter(group => group.members.length > 0);
+    if (vibeSelectedGroupId && !lib.groups.some(g => g.id === vibeSelectedGroupId)) {
+        vibeSelectedGroupId = '';
+    }
+    vibeDraftSelections = vibeDraftSelections.filter(sel => sel.id !== id);
+    saveVibeLibrary();
+    renderVibeAll();
+}
+
+// ── 上传：先入库（编码的家），再自动引用到本预设 ──
+async function handleVibeFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const modelKey = getVibeModelKeyLocal(currentFormModel());
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setVibeStatus(`正在处理图片 ${i + 1}/${files.length}…`);
+        let image;
+        let thumbnail;
+        try {
+            image = await downscaleFileToDataUrl(file, 1024, 'image/jpeg', 0.9);
+            thumbnail = await downscaleFileToDataUrl(file, 256, 'image/jpeg', 0.8);
+        } catch (e) {
+            setVibeStatus(`图片处理失败：${e.message}`, 'error');
+            continue;
+        }
+        const baseName = (file.name || '').replace(/\.[^.]+$/, '').slice(0, 50);
+        const item = {
+            id: makeVibeId(),
+            name: baseName || `Vibe ${getVibeLibrary().singles.length + 1}`,
+            image,
+            thumbnail,
+            infoExtracted: 1,
+            encodings: {},
+        };
+        getVibeLibrary().singles.push(item);
+        if (!vibeDraftSelections.some(sel => sel.id === item.id)) {
+            vibeDraftSelections.push({ id: item.id, enabled: true, strength: 0.6 });
+        }
+        saveVibeLibrary();
+        renderVibeAll();
+        if (modelKey) {
+            setVibeStatus(`正在编码 Vibe ${i + 1}/${files.length}（约需数秒，消耗点数）…`);
+            try {
+                await encodeLibItemById(item.id);
+            } catch (e) {
+                setVibeStatus(`编码失败：${e.message}；图已入库，下次生成时自动重试`, 'error');
+            }
+        }
+    }
+    const fileInput = $('nd_vibe_file');
+    if (fileInput) fileInput.value = '';
+    if (vibeSelectedGroupId) {
+        hintGroupEdited();
+    } else if (modelKey) {
+        setVibeStatus('处理完成：已入库并勾选，点最上面卡片的「保存」写入画师串预设', 'success');
+    } else {
+        setVibeStatus('图片已入库；当前模型不支持 Vibe，切到 V4 / V4.5 后生成时自动编码', 'error');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Vibe / 组 的导出导入（JSON，含原图与各模型编码，换机可免重新花点数）
+// ═══════════════════════════════════════════════════════════════════════════
+function downloadJson(filename, obj) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function safeFileName(name) {
+    return String(name || 'vibe').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60) || 'vibe';
+}
+
+function exportVibeSingle(id) {
+    const item = getLibItem(id);
+    if (!item) return;
+    downloadJson(`${safeFileName(item.name)}.vibe.json`, {
+        type: 'lwb-novel-vibe',
+        version: 1,
+        kind: 'single',
+        exportDate: new Date().toISOString(),
+        item: buildVibeSinglePayload(item),
+    });
+}
+
+function buildVibeSinglePayload(item) {
+    return {
+        id: item.id,
+        name: String(item.name || '').slice(0, 60),
+        image: String(item.image || ''),
+        thumbnail: String(item.thumbnail || ''),
+        infoExtracted: Number(item.infoExtracted) === 0 ? 0 : 1,
+        encodings: sanitizeVibeEncodings(item.encodings),
+    };
+}
+
+function exportVibeGroup(groupId) {
+    const lib = getVibeLibrary();
+    const group = lib.groups.find(g => g.id === groupId);
+    if (!group) return;
+    // 成员顺序内联勾选/强度 + 完整 single（原图与编码）；已从库丢失的成员跳过
+    const members = group.members
+        .map(m => {
+            const item = lib.singles.find(s => s.id === m.id);
+            if (!item) return null;
+            return {
+                enabled: m.enabled !== false,
+                strength: clampVibeStrength(m.strength),
+                item: buildVibeSinglePayload(item),
+            };
+        })
+        .filter(Boolean);
+    if (!members.length) return;
+    downloadJson(`${safeFileName(group.name)}.vibegroup.json`, {
+        type: 'lwb-novel-vibe',
+        version: 1,
+        kind: 'group',
+        exportDate: new Date().toISOString(),
+        name: group.name,
+        members,
+    });
+}
+
+async function handleVibeImportFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const lib = getVibeLibrary();
+    let importedSingles = 0;
+    let importedGroups = 0;
+    const failures = [];
+
+    for (const file of files) {
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!data || data.type !== 'lwb-novel-vibe' || data.version !== 1) {
+                failures.push(`${file.name}: 不是小白X Vibe 文件`);
+                continue;
+            }
+            if (data.kind === 'single') {
+                if (!data.item || typeof data.item !== 'object' || !data.item.image) {
+                    failures.push(`${file.name}: 内容不完整`);
+                    continue;
+                }
+                lib.singles.push({
+                    id: makeVibeId(),
+                    name: String(data.item.name || '').slice(0, 60),
+                    image: String(data.item.image || ''),
+                    thumbnail: String(data.item.thumbnail || data.item.image || ''),
+                    infoExtracted: Number(data.item.infoExtracted) === 0 ? 0 : 1,
+                    encodings: sanitizeVibeEncodings(data.item.encodings),
+                });
+                importedSingles++;
+            } else if (data.kind === 'group') {
+                const rawMembers = Array.isArray(data.members) ? data.members : [];
+                const members = [];
+                rawMembers.forEach(raw => {
+                    if (!raw || typeof raw !== 'object' || !raw.item || typeof raw.item !== 'object' || !raw.item.image) return;
+                    const newId = makeVibeId();
+                    lib.singles.push({
+                        id: newId,
+                        name: String(raw.item.name || '').slice(0, 60),
+                        image: String(raw.item.image || ''),
+                        thumbnail: String(raw.item.thumbnail || raw.item.image || ''),
+                        infoExtracted: Number(raw.item.infoExtracted) === 0 ? 0 : 1,
+                        encodings: sanitizeVibeEncodings(raw.item.encodings),
+                    });
+                    members.push({
+                        id: newId,
+                        enabled: raw.enabled !== false,
+                        strength: clampVibeStrength(raw.strength),
+                    });
+                });
+                if (!members.length) {
+                    failures.push(`${file.name}: 组内没有有效图片`);
+                    continue;
+                }
+                lib.groups.push({
+                    id: makeVibeId().replace('vibe-', 'vibegroup-'),
+                    name: String(data.name || '').slice(0, 60) || `导入组 ${lib.groups.length + 1}`,
+                    members,
+                });
+                importedGroups++;
+            } else {
+                failures.push(`${file.name}: 未知类型`);
+            }
+        } catch (e) {
+            failures.push(`${file.name}: ${e?.message || '解析失败'}`);
+        }
+    }
+
+    const importInput = $('nd_vibe_import_file');
+    if (importInput) importInput.value = '';
+    if (importedSingles || importedGroups) {
+        saveVibeLibrary();
+        renderVibeAll();
+        setVibeStatus(`已导入 ${importedSingles} 个单个 / ${importedGroups} 个组（编码随文件带入，无需重花点数）`, 'success');
+    }
+    if (failures.length) {
+        setVibeStatus(`部分文件未导入：${failures.join('；')}`, 'error');
+    }
+}
+
 function applyParamsPreset() {
     const p = state.paramsPresets.find(x => x.id === state.selectedParamsPresetId) || state.paramsPresets[0];
     if (!p) return;
 
     $('nd_positive').value = p.positivePrefix || '';
     $('nd_negative').value = p.negativePrefix || '';
+    $('nd_thumbnail').value = p.thumbnail || '';
+    updateThumbnailPreview(p.thumbnail || '');
     $('nd_max_images').value = p.maxImages || 0;
     $('nd_max_chars').value = p.maxCharactersPerImage || 0;
     
@@ -2765,8 +3740,30 @@ function applyParamsPreset() {
     $('nd_sm').checked = pm.sm ?? dp.sm;
     $('nd_sm_dyn').checked = pm.sm_dyn ?? dp.sm_dyn;
     $('nd_decrisper').checked = pm.decrisper ?? dp.decrisper;
-    
+
     updateModelOptions();
+
+    // Vibe：组模式（预设引用组 id，组更新自动跟随）优先；组已删除则回退散装勾选
+    // 在 updateModelOptions 之后，徽标才能按当前模型渲染
+    const savedGroupId = String(p.vibe?.groupId || '');
+    const savedGroup = savedGroupId ? getVibeLibrary().groups.find(g => g.id === savedGroupId) : null;
+    if (savedGroup) {
+        vibeSelectedGroupId = savedGroup.id;
+        vibeDraftSelections = savedGroup.members
+            .filter(m => getLibItem(m.id))
+            .map(m => ({
+                id: m.id,
+                enabled: m.enabled !== false,
+                strength: clampVibeStrength(m.strength),
+            }));
+    } else {
+        vibeSelectedGroupId = '';
+        vibeDraftSelections = Array.isArray(p.vibe?.selections)
+            ? JSON.parse(JSON.stringify(p.vibe.selections))
+            : [];
+    }
+    renderVibeAll();
+    setVibeStatus('');
 }
 
 /** 纯本地：从当前选中的提示词预设加载 textarea 内容（对标 applyParamsPreset） */
@@ -2920,6 +3917,7 @@ function collectParamsPreset() {
 
     p.positivePrefix = $('nd_positive').value;
     p.negativePrefix = $('nd_negative').value;
+    p.thumbnail = ($('nd_thumbnail').value || '').trim();
     p.maxImages = Math.max(0, Number($('nd_max_images').value) || 0);
     const model = $('nd_model_sel').value === 'custom' ? $('nd_model').value : $('nd_model_sel').value;
     const characterLimit = getModelCapability(model).maxCharactersPerImage || 10;
@@ -2945,6 +3943,12 @@ function collectParamsPreset() {
     p.params.sm = $('nd_sm').checked;
     p.params.sm_dyn = $('nd_sm_dyn').checked;
     p.params.decrisper = $('nd_decrisper').checked;
+
+    // Vibe：选中组时画师串预设只存组 id（组以后更新会自动跟随）；
+    // 未选组时散装保存当前勾选+强度快照。原图与编码始终在全局库。
+    p.vibe = vibeSelectedGroupId
+        ? { groupId: vibeSelectedGroupId, selections: [] }
+        : { groupId: '', selections: JSON.parse(JSON.stringify(vibeDraftSelections || [])) };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2982,7 +3986,16 @@ window.addEventListener('message', event => {
             loadedCharPreviews[data.charName] = data.slots;
             renderCharacterSlots(data.charName, data.slots);
             break;
-            
+
+        case 'ENCODE_VIBE_RESULT': {
+            const pending = vibePendingEncodes.get(data.requestId);
+            if (!pending) break;
+            vibePendingEncodes.delete(data.requestId);
+            if (data.ok) pending.resolve(data.encoding);
+            else pending.reject(new Error(data.message || 'Vibe 编码失败'));
+            break;
+        }
+
         case 'TEST_RESULT':
             $('nd_preview_img').src = data.url;
             $('nd_preview').classList.add('visible');
@@ -3277,11 +4290,62 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════════
     // 参数预设管理
     // ═══════════════════════════════════════════════════════════════════════
-    $('nd_params_preset').addEventListener('change', () => { 
-        state.selectedParamsPresetId = $('nd_params_preset').value; 
-        applyParamsPreset(); 
+    $('nd_params_preset').addEventListener('change', () => {
+        state.selectedParamsPresetId = $('nd_params_preset').value;
+        applyParamsPreset();
     });
-    
+
+    // 预设缩略图：头像式方框，点击上传/更换，× 移除；本地图片转 dataURL
+    const thumbBox = $('nd_thumbnail_box');
+    const thumbFile = $('nd_thumbnail_file');
+    thumbBox?.addEventListener('click', () => thumbFile?.click());
+    thumbBox?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            thumbFile?.click();
+        }
+    });
+    $('nd_thumbnail_clear')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        $('nd_thumbnail').value = '';
+        updateThumbnailPreview('');
+    });
+    thumbFile?.addEventListener('change', e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            $('nd_thumbnail').value = String(reader.result || '');
+            updateThumbnailPreview(reader.result);
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    });
+
+    // ── Vibe 氛围转移 ──
+    $('nd_vibe_file')?.addEventListener('change', e => {
+        const files = e.target.files;
+        if (files?.length) handleVibeFiles(files);
+    });
+    // 切换模型后刷新 Vibe 支持提示与编码徽标（编码本身在生成时按需自动补）
+    $('nd_model_sel')?.addEventListener('change', () => renderVibeAll());
+    $('nd_model')?.addEventListener('input', () => renderVibeAll());
+
+    // ── Vibe 组保存栏 ──
+    $('nd_vibe_group_sel')?.addEventListener('change', e => applyGroupToDraft(e.target.value));
+    $('nd_vibe_group_saveas')?.addEventListener('click', () => saveDraftAsNewGroup());
+    $('nd_vibe_group_rename')?.addEventListener('click', () => renameSelectedGroup());
+    $('nd_vibe_group_save')?.addEventListener('click', () => overwriteOrSaveGroup());
+    $('nd_vibe_group_del')?.addEventListener('click', () => deleteSelectedGroup());
+    $('nd_vibe_group_export')?.addEventListener('click', () => {
+        const group = getSelectedGroup();
+        if (group) exportVibeGroup(group.id);
+    });
+    $('nd_vibe_import_file')?.addEventListener('change', e => {
+        const files = e.target.files;
+        if (files?.length) handleVibeImportFiles(files);
+    });
+
     $('nd_params_save').addEventListener('click', () => {
         setSavingState($('nd_params_save'));
         collectParamsPreset();
@@ -3314,7 +4378,21 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_params_export').addEventListener('click', () => {
         postToParent({ type: 'EXPORT_CURRENT_PRESET', presetId: state.selectedParamsPresetId });
     });
-    
+
+    // 智绘姬互通格式导入（不含 Vibe）
+    $('nd_params_import').addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            postToParent({ type: 'IMPORT_CHATU8_PRESETS', payload: data });
+        } catch (err) {
+            alert('读取文件失败，可能不是合法的 JSON: ' + err.message);
+        }
+        e.target.value = ''; // 清空选择，允许重复选同一个文件
+    });
+
     // ═══════════════════════════════════════════════════════════════════════
     // 角色标签
     // ═══════════════════════════════════════════════════════════════════════
@@ -3366,6 +4444,11 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_auto_learn_update').addEventListener('change', () => {
         const mode = $('nd_auto_learn_update').checked ? 'auto_update' : 'new_only';
         postToParent({ type: 'SAVE_AUTO_LEARN', autoLearnCharacters: $('nd_auto_learn').checked, autoLearnMode: mode });
+    });
+    $('nd_continuity').addEventListener('change', () => {
+        const enabled = $('nd_continuity').checked;
+        state.continuityEnabled = enabled; // 乐观更新
+        postToParent({ type: 'SAVE_CONTINUITY', enabled });
     });
 
     $('nd_danbooru_local').addEventListener('change', () => {
