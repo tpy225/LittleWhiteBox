@@ -279,13 +279,13 @@ export function compile(scenePlan, generationRecipe) {
             const prepared = compileNovelImageRequest({
                 ...promptData,
                 params: recipe.params,
+                vibeReferences: recipe.vibeReferences,
             }, recipe, normalizeSeed(recipe.seeds[index], index));
             return {
                 request: {
                     transport: prepared.transport,
                     url: prepared.apiUrl,
                     payload: prepared.payload,
-                    vibeReferences: recipe.vibeReferences,
                 },
                 timeout,
             };

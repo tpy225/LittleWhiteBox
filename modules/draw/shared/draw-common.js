@@ -322,6 +322,7 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
     // 标题只取 AI 生成的 title；缺省（旧数据/模型漏填）时宁可不显示，也不拿 TAG 充数。
     const rawTitle = String(title || '').trim();
     const titleMode = normalizeImageTitleMode(getSharedDrawSettings().imageTitleMode);
+    console.log('[二改診斷] buildImageHtml:', { mode: titleMode, rawTitle, hasTitleArg: !!String(title || '').trim() });
     const displayVersion = historyCount - currentIndex;
     const navPill = `<div class="xb-nd-nav-pill" data-total="${historyCount}" data-current="${currentIndex}">
         <button class="xb-nd-nav-arrow" data-action="nav-prev" title="上一版本" ${currentIndex >= historyCount - 1 ? 'disabled' : ''}>‹</button>

@@ -123,6 +123,14 @@ function resolveDrawProviderConfig(rawSettings, timeout) {
         );
     }
 
+    if (!isSillyTavernProvider(providerConfig.provider)
+        && !String(providerConfig.apiKey || '').trim()) {
+        throw new ScenePlannerError(
+            `共享主预设「${providerConfig.currentPresetName || settings.currentPresetName}」缺少 API Key。`,
+            'API_KEY_MISSING',
+        );
+    }
+
     return { settings, providerConfig };
 }
 

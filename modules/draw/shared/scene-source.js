@@ -123,12 +123,32 @@ function skipHorizontalWhitespace(mapped, start) {
     return cursor;
 }
 
+// 判定插图位置是否落在两个相邻标签之间的纯空白缝隙里，例如
+// `</content>\n<branches>`。这类位置插入块级占位符后，会夹进一段非空白文本，
+// 打断宿主侧把相邻标签作为整体匹配的正则（如 `</content>\s*<branches>`），导致渲染失败。
+// 缝隙两侧必须各是一个真实标签：左侧以 `>` 结尾，右侧以 `<标签名` 开头。
+function isTagBoundaryGap(mapped, contentOffset) {
+    let left = contentOffset - 1;
+    while (left >= 0 && /\s/.test(mapped[left].char)) left -= 1;
+    if (left < 0 || mapped[left].char !== '>') return false;
+
+    let right = contentOffset;
+    while (right < mapped.length && /\s/.test(mapped[right].char)) right += 1;
+    if (right >= mapped.length || mapped[right].char !== '<') return false;
+
+    // `<` 后紧跟标签名字母才算开标签，排除小于号等文本用法。
+    return /[A-Za-z]/.test(mapped[right + 1]?.char || '');
+}
+
 function collectScenePoints(mapped) {
     const points = [];
     let hasContent = false;
     const addPoint = (contentOffset) => {
         const previous = mapped[contentOffset - 1];
         if (!previous || points.at(-1)?.contentOffset === contentOffset) return;
+        // 标签缝隙（如 </content>\n<branches>）不产生插图点，避免块级占位符
+        // 注入后打断宿主侧把相邻标签作为整体匹配的显示正则。
+        if (isTagBoundaryGap(mapped, contentOffset)) return;
         points.push({
             number: points.length + 1,
             contentOffset,

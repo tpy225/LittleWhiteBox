@@ -63,10 +63,10 @@ export function getScenePlanCharacterProperties(profile) {
             `Character category: ${CHARACTER_TYPES.join(' / ')}. Use \`no_humans\` for non-humanoid subjects such as animals or monsters. Fill this for every unregistered character; omit for registered characters, whose category comes from the character library.`,
         ),
         appear: stringSchema(
-            'Stable appearance visible in this composition, such as hair, eyes or build. Every unregistered character needs a non-empty appearance description. Omit for registered characters, whose appearance comes from the character library.',
+            'Stable appearance visible in this composition, such as hair, eyes or build. Every unregistered character needs a non-empty appearance description. Omit for registered characters, whose appearance comes from the character library. 若 <content> 的【上镜锚点】给了该角色「上镜外貌」，必须逐字复用，仅在正文明确写出永久外貌变化时改写。',
         ),
         costume: stringSchema(
-            '本图实际穿着与状态：款式、颜色、细节、穿着状态（敞开、破损、湿透、滑落）。已录入角色有服装参考时，选一套或其变体并按画面状态改写，不把多套拼在一起。没有服装事实时省略。',
+            '本图实际穿着与状态：版型/款式、主色、关键部件、穿着状态（敞开、破损、湿透、滑落），不要只写 school uniform、dress 这类孤立泛词。若【上镜锚点】给了「当前着装」，默认逐字复用；只有正文出现穿脱、换装、衣物损坏或明确的时间/场景切换时才改写。已录入角色另有服装参考时可在锚点之外据参考补充，但不把多套拼在一起。没有服装事实时省略。',
         ),
         action: stringSchema(
             '本图该角色的姿态、动作、视线、面向、表情。',
