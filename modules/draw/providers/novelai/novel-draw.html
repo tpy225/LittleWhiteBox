@@ -321,6 +321,13 @@ select.input { cursor: pointer; }
 }
 .preview-box.visible { display: block; }
 .preview-box img { max-width: 100%; max-height: 400px; border-radius: 6px; }
+#nd_preview_img { cursor: zoom-in; }
+.nd-test-strip { display: flex; gap: 8px; overflow-x: auto; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.nd-test-strip:empty { display: none; }
+.nd-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; opacity: .55; cursor: pointer; flex: none; }
+.nd-thumb.active, .nd-thumb:hover { opacity: 1; }
+.nd-gallery-link { display: none; margin-top: 12px; }
+.nd-gallery-link.visible { display: inline-flex; }
 .status-text { font-size: 12px; color: var(--text-secondary); margin-top: 8px; min-height: 18px; }
 .status-text.success { color: var(--success); }
 .status-text.error { color: var(--danger); }
@@ -971,7 +978,8 @@ select.input { cursor: pointer; }
                             <button id="nd_test_single" class="btn btn-primary"><i class="fa-solid fa-play"></i> 生成</button>
                         </div>
                     </div>
-                    <div id="nd_preview" class="preview-box"><img id="nd_preview_img" alt=""></div>
+                    <div id="nd_preview" class="preview-box"><img id="nd_preview_img" alt=""><div id="nd_test_strip" class="nd-test-strip"></div></div>
+                    <button id="nd_open_gallery" class="btn nd-gallery-link"><i class="fa-solid fa-images"></i> 打开画廊</button>
                     <div id="nd_status" class="status-text"></div>
                 </div>
                 <div class="tip-box">
@@ -3996,10 +4004,28 @@ window.addEventListener('message', event => {
             break;
         }
 
-        case 'TEST_RESULT':
-            $('nd_preview_img').src = data.url;
-            $('nd_preview').classList.add('visible');
+        case 'TEST_RESULT': {
+            const items = data.items || [];
+            const strip = $('nd_test_strip');
+            strip.innerHTML = '';
+            if (items.length) {
+                $('nd_preview_img').src = items[0].url;
+                $('nd_preview').classList.add('visible');
+                items.forEach((item, i) => {
+                    const t = document.createElement('img');
+                    t.src = item.url;
+                    t.className = 'nd-thumb' + (i === 0 ? ' active' : '');
+                    t.addEventListener('click', () => {
+                        $('nd_preview_img').src = item.url;
+                        strip.querySelectorAll('.nd-thumb').forEach(el => el.classList.remove('active'));
+                        t.classList.add('active');
+                    });
+                    strip.appendChild(t);
+                });
+                $('nd_open_gallery').classList.add('visible');
+            }
             break;
+        }
 
         case 'BACKEND_PLUGIN_STATUS': {
             state.backendPluginStatus = data.status || {};
@@ -4123,6 +4149,9 @@ window.addEventListener('beforeunload', () => {
 
 document.addEventListener('DOMContentLoaded', () => {
     shuffleCredits();
+    postToParent({ type: 'TEST_HISTORY' });
+    $('nd_open_gallery').addEventListener('click', () => postToParent({ type: 'OPEN_TEST_GALLERY' }));
+    $('nd_preview_img').addEventListener('click', () => postToParent({ type: 'OPEN_TEST_GALLERY' }));
     // ═══════════════════════════════════════════════════════════════════════
     // 导航切换
     // ═══════════════════════════════════════════════════════════════════════
