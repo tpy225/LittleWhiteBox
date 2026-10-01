@@ -2929,6 +2929,7 @@ async function generateImagesFromText(options = {}) {
         }
 
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
+        console.log('[二改診斷] 規劃完成 tasks:', tasks.map(t => ({ scene: (t.scene || '').slice(0, 20), title: t.title || '', keys: Object.keys(t) })));
         await maybeAutoLearnFromTasks(tasks, settings);
         if (settings.continuityEnabled !== false) {
             await recordPlanContinuity(tasks, {
