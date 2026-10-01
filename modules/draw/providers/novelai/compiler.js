@@ -251,6 +251,9 @@ export function compile(scenePlan, generationRecipe) {
     if (!['new_only', 'auto_update'].includes(recipe.autoLearnMode)) {
         throw new TypeError('NovelAI generationRecipe.autoLearnMode 无效');
     }
+    if (typeof recipe.continuityEnabled !== 'boolean') {
+        throw new TypeError('NovelAI generationRecipe.continuityEnabled 必须是布尔值');
+    }
     const artifacts = tasks.map((task) => {
         const promptData = compileNovelPromptForTask(task, recipe);
         return {
@@ -262,6 +265,9 @@ export function compile(scenePlan, generationRecipe) {
                     ? task.chars
                     : [],
                 autoLearnMode: recipe.autoLearnMode,
+                continuityCharacters: recipe.continuityEnabled && Array.isArray(task?.chars)
+                    ? task.chars
+                    : [],
             },
         };
     });
