@@ -4472,7 +4472,12 @@ async function handleFrameMessage(event) {
             break;
 
         case 'OPEN_TEST_GALLERY':
-            await openGallery(TEST_SLOT_ID, null);
+            try {
+                await openGallery(TEST_SLOT_ID, null);
+            } catch (e) {
+                console.error('[NovelDraw] 打开画廊失败:', e);
+                postStatus('error', '打开画廊失败: ' + (e?.message || ''));
+            }
             break;
     }
 }
