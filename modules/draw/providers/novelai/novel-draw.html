@@ -979,7 +979,6 @@ select.input { cursor: pointer; }
                         </div>
                     </div>
                     <div id="nd_preview" class="preview-box"><img id="nd_preview_img" alt=""><div id="nd_test_strip" class="nd-test-strip"></div></div>
-                    <button id="nd_open_gallery" class="btn nd-gallery-link"><i class="fa-solid fa-images"></i> 打开画廊</button>
                     <div id="nd_status" class="status-text"></div>
                 </div>
                 <div class="tip-box">
@@ -4022,7 +4021,6 @@ window.addEventListener('message', event => {
                     });
                     strip.appendChild(t);
                 });
-                $('nd_open_gallery').classList.add('visible');
             }
             break;
         }
@@ -4150,7 +4148,6 @@ window.addEventListener('beforeunload', () => {
 document.addEventListener('DOMContentLoaded', () => {
     shuffleCredits();
     postToParent({ type: 'TEST_HISTORY' });
-    $('nd_open_gallery').addEventListener('click', () => postToParent({ type: 'OPEN_TEST_GALLERY' }));
     $('nd_preview_img').addEventListener('click', () => postToParent({ type: 'OPEN_TEST_GALLERY' }));
     // ═══════════════════════════════════════════════════════════════════════
     // 导航切换
