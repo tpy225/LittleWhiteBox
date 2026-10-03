@@ -4380,8 +4380,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     $('nd_params_add').addEventListener('click', () => postToParent({ type: 'ADD_PARAMS_PRESET' }));
     
-    $('nd_params_del').addEventListener('click', () => { 
-        if (confirm('确定删除当前参数预设？')) postToParent({ type: 'DEL_PARAMS_PRESET' }); 
+    $('nd_params_del').addEventListener('click', () => {
+        const p = state.paramsPresets.find(x => x.id === state.selectedParamsPresetId);
+        if (!p) return;
+        if (confirm(`确定删除预设「${p.name || '未命名'}」？`)) postToParent({ type: 'DEL_PARAMS_PRESET', id: p.id });
     });
     
     $('nd_params_rename').addEventListener('click', () => {
