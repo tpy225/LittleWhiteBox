@@ -3692,10 +3692,15 @@ async function handleFrameMessage(event) {
                 postStatus('error', '至少保留一个预设', 'params');
                 break;
             }
+            const targetId = data.id ? String(data.id) : null;
             const ok = await updateSettingsPersistent((settings) => {
-                const idx = settings.paramsPresets.findIndex(p => p.id === settings.selectedParamsPresetId);
-                if (idx >= 0) settings.paramsPresets.splice(idx, 1);
-                settings.selectedParamsPresetId = settings.paramsPresets[0]?.id || null;
+                const idx = settings.paramsPresets.findIndex(p => p.id === (targetId || settings.selectedParamsPresetId));
+                if (idx < 0) return;
+                const removedId = settings.paramsPresets[idx].id;
+                settings.paramsPresets.splice(idx, 1);
+                settings.selectedParamsPresetId = removedId === settings.selectedParamsPresetId
+                    ? (settings.paramsPresets[0]?.id || null)
+                    : settings.selectedParamsPresetId;
             }, '已删除', { target: 'params' });
             if (ok) {
                 sendInitData();
