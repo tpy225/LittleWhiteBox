@@ -23,6 +23,8 @@ function injectStyles() {
     margin: 8px 0;
     min-height: 34px;
     flex-wrap: wrap;
+    position: relative;
+    z-index: 1000;
 }
 
 .xb-msg-toolbar:empty {
