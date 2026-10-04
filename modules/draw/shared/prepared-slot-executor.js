@@ -59,8 +59,9 @@ export async function executePreparedSlots({ items, backend, store, remove, sele
         const unknown = !backend && started.has(index)
             && ![ImageRequestOutcome.NOT_SUBMITTED, ImageRequestOutcome.REJECTED].includes(error?.imageRequestOutcome);
         const problem = unknown ? DRAW_SLOT_ERRORS.unknown : kind;
+        const detail = unknown && error ? `（${error.name || 'Error'}: ${String(error.message || '').slice(0, 120)}）` : '';
         await deliver(index, { status: unknown ? PreviewStatus.UNKNOWN : PreviewStatus.FAILED,
-            errorType: problem.label, errorMessage: unknown ? problem.desc : error?.message || problem.desc }, guard);
+            errorType: problem.label, errorMessage: unknown ? `${problem.desc}${detail}` : error?.message || problem.desc }, guard);
     };
     try {
         for (const [index, item] of items.entries()) {
