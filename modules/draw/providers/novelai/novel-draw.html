@@ -723,6 +723,73 @@ select.input { cursor: pointer; }
 }
 .nd-thumb-box.has-image .nd-thumb-clear { display: flex; }
 .nd-thumb-clear:hover { background: var(--danger); }
+#nd_thumbnail_pick { margin-top: 6px; padding: 5px 12px; font-size: 12px; }
+
+/* ── 从画廊选缩略图弹层 ── */
+.nd-thumbpick-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0, 0, 0, 0.55);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+}
+.nd-thumbpick-overlay.visible { display: flex; }
+.nd-thumbpick-dialog {
+    width: min(720px, 100%);
+    max-height: 80vh;
+    display: flex; flex-direction: column;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.nd-thumbpick-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+}
+.nd-thumbpick-title { font-size: 13px; font-weight: 600; flex: 1; color: var(--text-primary); }
+.nd-thumbpick-toggle, .nd-thumbpick-close {
+    border: 1px solid var(--border); background: var(--bg-input);
+    color: var(--text-primary); border-radius: 8px; font-size: 12px;
+    padding: 5px 10px; cursor: pointer;
+}
+.nd-thumbpick-close { width: 30px; padding: 0; }
+.nd-thumbpick-toggle:hover, .nd-thumbpick-close:hover { border-color: var(--border-focus); }
+.nd-thumbpick-grid {
+    flex: 1; overflow-y: auto; padding: 14px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    align-content: start;
+}
+.nd-thumbpick-hint {
+    grid-column: 1 / -1;
+    color: var(--text-muted); font-size: 12px; text-align: center; padding: 30px 10px;
+}
+.nd-thumbpick-item {
+    position: relative;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--bg-input);
+    transition: border-color 0.15s;
+}
+.nd-thumbpick-item:hover { border-color: var(--border-focus); }
+.nd-thumbpick-item img { width: 100%; height: 140px; object-fit: cover; display: block; }
+.nd-thumbpick-item.is-other { opacity: 0.82; }
+.nd-thumbpick-badge {
+    position: absolute; top: 4px; left: 4px;
+    background: rgba(0,0,0,0.65); color: #fff;
+    font-size: 10px; padding: 2px 6px; border-radius: 6px;
+}
+.nd-thumbpick-tags {
+    display: block;
+    font-size: 10px; line-height: 1.3;
+    color: var(--text-muted);
+    padding: 4px 6px;
+    max-height: 34px; overflow: hidden;
+    word-break: break-all;
+}
 
 /* ── Vibe 氛围转移：组保存栏 + 单个 Vibe 列表 ── */
 .nd-vibe-group-bar {
@@ -1123,7 +1190,8 @@ select.input { cursor: pointer; }
                         </div>
                         <input type="file" id="nd_thumbnail_file" accept="image/*" hidden>
                         <input type="hidden" id="nd_thumbnail">
-                        <p class="form-hint">点击方框选择本地图片；悬浮窗 / 楼层按钮的画师串卡片会显示这张缩略图。</p>
+                        <button type="button" id="nd_thumbnail_pick" class="btn btn-sm">从画廊选图</button>
+                        <p class="form-hint">点击方框选择本地图片，或「从画廊选图」挑一张用本预设生成过的图；悬浮窗 / 楼层按钮的画师串卡片会显示这张缩略图。</p>
                     </div>
                 </div>
                 
@@ -1770,7 +1838,7 @@ let state = {
     selectedParamsPresetId: null,
     paramsPresets: [],
     characterTags: [],
-    autoLearnCharacters: false,
+    autoLearnCharacters: true,
     autoLearnMode: 'new_only',
     continuityEnabled: true,
     danbooruLocalDB: false,
@@ -3063,6 +3131,113 @@ function updateThumbnailPreview(src) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 从画廊选缩略图：默认只列用当前预设生成过的成功图，可切换显示全部
+// ═══════════════════════════════════════════════════════════════════════════
+let thumbPickSeq = 0;
+const thumbPickState = { presetId: '', all: false, requestId: 0 };
+
+function makeThumbPickHint(text) {
+    const hint = document.createElement('div');
+    hint.className = 'nd-thumbpick-hint';
+    hint.textContent = text;
+    return hint;
+}
+
+function ensureThumbPickOverlay() {
+    let overlay = $('nd_thumb_pick_overlay');
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'nd_thumb_pick_overlay';
+    overlay.className = 'nd-thumbpick-overlay';
+    overlay.innerHTML = `
+        <div class="nd-thumbpick-dialog">
+            <div class="nd-thumbpick-head">
+                <span class="nd-thumbpick-title">从画廊选择缩略图</span>
+                <button type="button" id="nd_thumb_pick_toggle" class="nd-thumbpick-toggle">显示全部图片</button>
+                <button type="button" id="nd_thumb_pick_close" class="nd-thumbpick-close" title="关闭"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="nd_thumb_pick_grid" class="nd-thumbpick-grid"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('visible'); });
+    $('nd_thumb_pick_close').addEventListener('click', () => overlay.classList.remove('visible'));
+    $('nd_thumb_pick_toggle').addEventListener('click', () => {
+        thumbPickState.all = !thumbPickState.all;
+        requestThumbCandidates(thumbPickState.all);
+    });
+    $('nd_thumb_pick_grid').addEventListener('click', (e) => {
+        const card = e.target.closest('.nd-thumbpick-item');
+        const thumb = card?.dataset?.thumb;
+        if (!thumb) return;
+        $('nd_thumbnail').value = thumb;
+        updateThumbnailPreview(thumb);
+        overlay.classList.remove('visible');
+    });
+    return overlay;
+}
+
+function requestThumbCandidates(all) {
+    const grid = $('nd_thumb_pick_grid');
+    grid.replaceChildren(makeThumbPickHint('加载中…'));
+    const toggle = $('nd_thumb_pick_toggle');
+    if (toggle) toggle.textContent = all ? '只看本预设' : '显示全部图片';
+    thumbPickState.requestId = ++thumbPickSeq;
+    postToParent({
+        type: 'PRESET_THUMB_CANDIDATES',
+        requestId: thumbPickState.requestId,
+        presetId: thumbPickState.presetId,
+        all,
+    });
+}
+
+function openThumbnailPicker() {
+    thumbPickState.presetId = String(state.selectedParamsPresetId || '');
+    thumbPickState.all = false;
+    ensureThumbPickOverlay().classList.add('visible');
+    requestThumbCandidates(false);
+}
+
+function renderThumbCandidates(data) {
+    if (Number(data.requestId) !== thumbPickState.requestId) return;
+    if (String(data.presetId || '') !== thumbPickState.presetId) return;
+    const grid = $('nd_thumb_pick_grid');
+    const images = Array.isArray(data.images) ? data.images : [];
+    if (data.error) {
+        grid.replaceChildren(makeThumbPickHint(data.error));
+        return;
+    }
+    if (!images.length) {
+        grid.replaceChildren(makeThumbPickHint(
+            thumbPickState.all ? '画廊中暂无成功图片' : '本预设还没有生成记录，可切换「显示全部图片」手动挑选',
+        ));
+        return;
+    }
+    const cards = images.map((image) => {
+        const card = document.createElement('div');
+        card.className = 'nd-thumbpick-item' + (image.matched ? '' : ' is-other');
+        card.dataset.thumb = image.thumb;
+        card.title = image.tags || image.title || '';
+        const imgEl = document.createElement('img');
+        imgEl.alt = '';
+        imgEl.src = image.thumb;
+        imgEl.loading = 'lazy';
+        card.appendChild(imgEl);
+        if (!image.matched) {
+            const badge = document.createElement('span');
+            badge.className = 'nd-thumbpick-badge';
+            badge.textContent = '其他预设';
+            card.appendChild(badge);
+        }
+        const label = document.createElement('span');
+        label.className = 'nd-thumbpick-tags';
+        label.textContent = image.title || image.tags || '';
+        card.appendChild(label);
+        return card;
+    });
+    grid.replaceChildren(...cards);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Vibe 氛围转移
 // 编码花点数 → 参考图统一存全局 vibeLibrary（state.vibeLibrary）。
 // 列表展示库里全部 single；vibeDraftSelections = 当前画师串预设的勾选工作副本
@@ -4109,6 +4284,10 @@ window.addEventListener('message', event => {
             renderPromptChain(data.chain || []);
             break;
 
+        case 'PRESET_THUMB_CANDIDATES_DATA':
+            renderThumbCandidates(data);
+            break;
+
         case 'LAST_LLM_REQUEST_DATA':
             renderLastLlmRequest(data.snapshot || null);
             break;
@@ -4335,6 +4514,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         $('nd_thumbnail').value = '';
         updateThumbnailPreview('');
+    });
+    $('nd_thumbnail_pick')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openThumbnailPicker();
     });
     thumbFile?.addEventListener('change', e => {
         const file = e.target.files?.[0];

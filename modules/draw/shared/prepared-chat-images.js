@@ -69,13 +69,14 @@ export function placePreparedImageSlots(source, tasks, ids) {
 // batch runner. This is the only owner of pre-request chat placement for them.
 export async function submitPreparedChatImages({ ctx, message, messageId, sourceText,
     tasks, metadata, backend, run, signal, onStateChange, onPlacement, nativeMessage = false, onPrepared, placementSource,
-    swipeIndex = message.swipe_id ?? 0 }) {
+    swipeIndex = message.swipe_id ?? 0, presetId = '', presetName = '' }) {
     const chatId = String(ctx.chatId);
     const ids = tasks.map(task => ({ ...createImageIdentifiers(),
         ...(task.placement?.mode === 'existing' ? { slotId: task.placement.slotId } : {}) }));
     const plannedText = nativeMessage ? null : placePreparedImageSlots(sourceText, tasks, ids);
     const owner = {};
     const items = metadata.map((data, index) => ({ ...data, ...ids[index], messageId,
+        presetId: String(presetId || ''), presetName: String(presetName || ''),
         chatId, characterName: message.name || '',
         delivery: { mode: 'slots', chatId, messageId: String(messageId), swipeIndex,
             ...(nativeMessage ? { retainWithoutSlot: true } : {}) },
