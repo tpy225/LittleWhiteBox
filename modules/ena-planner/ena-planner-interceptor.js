@@ -113,6 +113,8 @@ export function createEnaPlannerSendInterceptor({
     const getEligibleSend = () => {
         const settings = getSettings();
         if (!settings?.enabled) return null;
+        // 未配置 API 時規劃必然失敗，放行原生發送，避免靜默吞掉每次發送
+        if (!String(settings?.api?.baseUrl ?? '').trim()) return null;
 
         const textarea = getTextarea();
         const button = getSendButton();
