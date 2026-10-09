@@ -566,11 +566,20 @@ const STYLES = `
 }
 
 .nd-floating-global .nd-capsule {
+    width: 108px;
     background: var(--nd-bg-solid);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     touch-action: none;
     cursor: grab;
 }
+
+.nd-floating-global .nd-btn-img-jump {
+    flex: 0 0 24px;
+    font-size: 10px;
+    color: var(--nd-text-dim);
+    opacity: 0.75;
+}
+.nd-floating-global .nd-btn-img-jump:hover { color: var(--nd-text-primary); opacity: 1; }
 
 .nd-floating-global .nd-capsule:active { cursor: grabbing; }
 
@@ -1639,8 +1648,36 @@ function onFloatingPointerUp(e) {
     }
 }
 
+function getVisibleChatImageWrappers() {
+    return [...document.querySelectorAll('#chat .mes .mes_text .xb-nd-img')]
+        .filter(w => w.offsetHeight > 0 && w.offsetWidth > 0 && w.querySelector('img'));
+}
+
+// 以視口中線為「當前位置」：dir=-1 跳到中線上方最近一張，dir=1 跳下方最近一張。
+// 不記樓層，手動滾動後再點仍然正確。
+function jumpToChatImage(dir) {
+    const center = window.innerHeight / 2;
+    let target = null;
+    let best = Infinity;
+    for (const w of getVisibleChatImageWrappers()) {
+        const r = w.getBoundingClientRect();
+        if (dir < 0 && r.bottom < center - 1) {
+            const d = center - r.bottom;
+            if (d < best) { best = d; target = w; }
+        } else if (dir > 0 && r.top > center + 1) {
+            const d = r.top - center;
+            if (d < best) { best = d; target = w; }
+        }
+    }
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function routeFloatingClick(target) {
-    if (target.closest('.nd-btn-draw')) {
+    if (target.closest('.nd-btn-img-prev')) {
+        jumpToChatImage(-1);
+    } else if (target.closest('.nd-btn-img-next')) {
+        jumpToChatImage(1);
+    } else if (target.closest('.nd-btn-draw')) {
         handleFloatingDrawClick();
     } else if (target.closest('.nd-btn-menu')) {
         floatingEl.classList.remove('show-detail');
@@ -1804,10 +1841,15 @@ function createFloatingButton() {
     drawBtn.appendChild(createEl('span', '', '🎨'));
     drawBtn.appendChild(createEl('span', 'nd-auto-dot'));
     const sep = createEl('div', 'nd-sep');
+    const imgPrevBtn = createEl('button', 'nd-btn-draw nd-btn-img-jump nd-btn-img-prev', '▲');
+    imgPrevBtn.title = '跳到上一张图片';
+    const imgNextBtn = createEl('button', 'nd-btn-draw nd-btn-img-jump nd-btn-img-next', '▼');
+    imgNextBtn.title = '跳到下一张图片';
+    const sepAfterJump = createEl('div', 'nd-sep');
     const menuBtn = createEl('button', 'nd-btn-menu');
     menuBtn.title = '展开菜单';
     menuBtn.appendChild(createEl('span', 'nd-arrow', '▲'));
-    layerIdle.append(drawBtn, sep, menuBtn);
+    layerIdle.append(drawBtn, sep, imgPrevBtn, imgNextBtn, sepAfterJump, menuBtn);
     const layerActive = createEl('div', 'nd-layer nd-layer-active');
     layerActive.append(
         createEl('span', 'nd-status-icon', '⏳'),
