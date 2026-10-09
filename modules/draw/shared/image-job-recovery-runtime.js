@@ -129,6 +129,8 @@ function previewOptions(record, item, target) {
         positive: item.previewMetadata?.positive || '',
         characterPrompts: item.previewMetadata?.characterPrompts ?? null,
         negativePrompt: item.previewMetadata?.negativePrompt ?? null,
+        presetId: item.previewMetadata?.presetId || '',
+        presetName: item.previewMetadata?.presetName || '',
     };
 }
 

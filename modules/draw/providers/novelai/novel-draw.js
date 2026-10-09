@@ -35,6 +35,7 @@ import {
     getBase64ImagePayload,
     preloadPreviewDisplayUrl,
     warmSlotPreviewNeighbors,
+    getThumbnailCandidates,
 } from "../../shared/gallery-cache.js";
 import { ScenePlannerError, generateAndParseScenePlan, prepareScenePlannerInput } from "../../shared/scene-planner.js";
 import { classifyScenePlannerErrorForUi } from "../../shared/scene-planner-error-ui.js";
@@ -82,7 +83,7 @@ import {
     normalizeNovelPromptGuideOverrides,
 } from "./novel-prompts.js";
 import { parseNovelPromptPresetImport } from "./novel-prompt-import.js";
-import { createScenePlannerDefaultPresets, isPovPromptPreset, SCENE_PLANNER_PRESET_INSTALL_NOTICE } from "../../shared/scene-planner-presets.js";
+import { createScenePlannerDefaultPresets, isPovPromptPreset, SCENE_PLANNER_PRESET_INSTALL_NOTICE, SCENE_PLANNER_PRESET_NAMES } from "../../shared/scene-planner-presets.js";
 import {
     getNovelModelCapability,
     getNovelModelCapabilitiesForUi,
@@ -345,7 +346,7 @@ const DEFAULT_SETTINGS = {
     timeout: 60000,
     useWorldInfo: false,    
     characterTags: [],
-    autoLearnCharacters: false,
+    autoLearnCharacters: true,
     autoLearnMode: 'new_only',
     continuityEnabled: true,
     overrideSize: 'default',
@@ -1004,7 +1005,7 @@ function normalizeSettings(saved = {}) {
         cacheDays: normalizeSharedCacheDays(source.cacheDays),
         useWorldInfo: source.useWorldInfo === true,
         characterTags: Array.isArray(source.characterTags) ? source.characterTags : [],
-        autoLearnCharacters: source.autoLearnCharacters === true,
+        autoLearnCharacters: source.autoLearnCharacters !== false,
         autoLearnMode: source.autoLearnMode,
         continuityEnabled: source.continuityEnabled !== false,
         overrideSize: String(source.overrideSize || 'default'),
@@ -1080,7 +1081,10 @@ function normalizeSettings(saved = {}) {
     });
     if (!merged.selectedPromptPresetId
         || !merged.promptPresets.some(preset => preset.id === merged.selectedPromptPresetId)) {
-        merged.selectedPromptPresetId = merged.promptPresets[0]?.id || null;
+        // 仅「未选择/选择失效」时兜底：新用户与未选择者默认进阶预设，
+        // 已明确选了常规预设的用户不受影响。
+        const proPreset = merged.promptPresets.find(preset => preset.name === SCENE_PLANNER_PRESET_NAMES.pro);
+        merged.selectedPromptPresetId = proPreset?.id || merged.promptPresets[0]?.id || null;
     }
     // ── 消息过滤规则规范化 ──
     if (!Array.isArray(merged.messageFilterRules)) merged.messageFilterRules = [];
@@ -2991,6 +2995,8 @@ async function generateImagesFromText(options = {}) {
                     positive: item.scene,
                     characterPrompts: item.characterPrompts,
                     negativePrompt: item.negativePrompt,
+                    presetId: preset.id,
+                    presetName: preset.name,
                 });
                 await setSlotSelection(item.slotId, imgId);
                 successCount++;
@@ -3022,6 +3028,8 @@ async function generateImagesFromText(options = {}) {
                     errorMessage: errorType.desc,
                     characterPrompts: item.characterPrompts,
                     negativePrompt: item.negativePrompt,
+                    presetId: preset.id,
+                    presetName: preset.name,
                 });
                 images[index] = {
                     slotId: item.slotId,
@@ -3076,6 +3084,7 @@ async function runPreparedNovelSlots(input) {
         const monitorGeneration = backendJobMonitors.captureGeneration();
         return await submitPreparedChatImages({
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
+            presetId: preset.id, presetName: preset.name,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: resolveNovelImageTransport(settings) === 'backend-job',
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,
@@ -3455,6 +3464,57 @@ async function pushTestHistory() {
         .filter(p => p.base64)
         .map(p => ({ imgId: p.imgId, url: getPreviewDisplayUrl(p) }));
     postToIframe(iframe, { type: 'TEST_RESULT', items }, 'LittleWhiteBox-NovelDraw');
+}
+
+// 把画廊记录压成小体积 JPEG dataURL，作为画师串预设缩略图候选项。
+// 远程 savedUrl 跨域会污染画布导致导出失败，失败时返回空串由调用方跳过。
+function createThumbnailDataUrlFromPreview(record, maxDim = 160) {
+    return new Promise((resolve) => {
+        const url = getPreviewDisplayUrl(record);
+        if (!url || typeof Image === 'undefined') { resolve(''); return; }
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale));
+                const h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', 0.82));
+            } catch {
+                resolve('');
+            }
+        };
+        img.onerror = () => resolve('');
+        img.src = url;
+    });
+}
+
+async function pushPresetThumbCandidates(iframe, { requestId, presetId, all }) {
+    const { matched, others } = await getThumbnailCandidates(presetId);
+    const limit = 60;
+    const pool = (all ? [...matched, ...others] : matched).slice(0, limit);
+    const images = [];
+    for (const record of pool) {
+        const thumb = await createThumbnailDataUrlFromPreview(record);
+        if (!thumb) continue;
+        images.push({
+            imgId: record.imgId,
+            thumb,
+            matched: Boolean(presetId) && record.presetId === String(presetId),
+            timestamp: record.timestamp || 0,
+            title: String(record.title || '').slice(0, 60),
+            tags: String(record.tags || record.positive || '').slice(0, 120),
+        });
+    }
+    postToIframe(iframe, {
+        type: 'PRESET_THUMB_CANDIDATES_DATA',
+        requestId,
+        presetId: String(presetId || ''),
+        images,
+    }, 'LittleWhiteBox-NovelDraw');
 }
 
 async function handleFrameMessage(event) {
@@ -4463,6 +4523,8 @@ async function handleFrameMessage(event) {
                     positive: scene,
                     negativePrompt: preset?.negativePrefix || '',
                     source: 'quick-test',
+                    presetId: preset?.id || '',
+                    presetName: preset?.name || '',
                 });
                 await pushTestHistory();
                 postStatus('success', `完成 ${((Date.now() - t0) / 1000).toFixed(1)}s`);
@@ -4484,6 +4546,27 @@ async function handleFrameMessage(event) {
                 postStatus('error', '打开画廊失败: ' + (e?.message || ''));
             }
             break;
+
+        case 'PRESET_THUMB_CANDIDATES': {
+            if (!iframe?.isConnected) break;
+            try {
+                await pushPresetThumbCandidates(iframe, {
+                    requestId: data.requestId,
+                    presetId: String(data.presetId || ''),
+                    all: data.all === true,
+                });
+            } catch (e) {
+                console.error('[NovelDraw] 读取缩略图候选失败:', e);
+                postToIframe(iframe, {
+                    type: 'PRESET_THUMB_CANDIDATES_DATA',
+                    requestId: data.requestId,
+                    presetId: String(data.presetId || ''),
+                    images: [],
+                    error: e?.message || '读取画廊失败',
+                }, 'LittleWhiteBox-NovelDraw');
+            }
+            break;
+        }
     }
 }
 

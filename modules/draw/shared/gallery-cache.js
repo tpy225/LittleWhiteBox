@@ -606,6 +606,8 @@ export async function storePreview(opts) {
         bookTitle = '',
         chapterPath = '',
         chapterTitle = '',
+        presetId = '',
+        presetName = '',
     } = opts;
     const database = await openDB();
     const ctx = getContext();
@@ -637,6 +639,8 @@ export async function storePreview(opts) {
                 errorMessage,
                 characterPrompts,
                 negativePrompt,
+                presetId: String(presetId || ''),
+                presetName: String(presetName || ''),
                 timestamp: Date.now()
             });
             tx.oncomplete = () => {
@@ -672,6 +676,8 @@ export async function storeFailedPlaceholder(opts) {
         errorMessage: opts.errorMessage,
         characterPrompts: opts.characterPrompts ?? null,
         negativePrompt: opts.negativePrompt ?? null,
+        presetId: opts.presetId || '',
+        presetName: opts.presetName || '',
     });
 }
 
@@ -1048,6 +1054,40 @@ export async function getGallerySummary() {
             tx.onerror = () => resolve({});
         } catch {
             resolve({});
+        }
+    });
+}
+
+// 预设缩略图候选：一次扫描分出「用该预设生成过的图」与其他成功图，
+// 均按时间倒序。旧记录没有 presetId，只能在 others 里手动认。
+export async function getThumbnailCandidates(presetId = '') {
+    const database = await openDB();
+    return new Promise((resolve, reject) => {
+        const matched = [];
+        const others = [];
+        try {
+            const tx = database.transaction(DB_STORE, 'readonly');
+            const store = tx.objectStore(DB_STORE);
+            const request = store.openCursor();
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor) {
+                    matched.sort((a, b) => b.timestamp - a.timestamp);
+                    others.sort((a, b) => b.timestamp - a.timestamp);
+                    resolve({ matched, others });
+                    return;
+                }
+                const record = cursor.value;
+                if (record && hasPreviewImage(record)) {
+                    (record.presetId === String(presetId || '') && presetId
+                        ? matched
+                        : others).push(record);
+                }
+                cursor.continue();
+            };
+            request.onerror = () => reject(request.error);
+        } catch (e) {
+            reject(e);
         }
     });
 }
