@@ -579,23 +579,23 @@ const STYLES = `
     transform: translateX(-50%);
     width: 34px;
     height: 22px;
-    border: 1px solid var(--nd-border);
+    border: none;
     border-radius: 11px;
-    background: var(--nd-bg-solid);
+    background: transparent;
     color: var(--nd-text-dim);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    box-shadow: none;
     z-index: 1;
     padding: 0;
 }
-.nd-floating-global .nd-img-jump-prev { bottom: calc(100% + 6px); }
-.nd-floating-global .nd-img-jump-next { top: calc(100% + 6px); }
-.nd-floating-global .nd-img-jump:hover { color: var(--nd-text-primary); background: var(--nd-bg-hover); }
+.nd-floating-global .nd-img-jump-prev { bottom: calc(100% + 4px); }
+.nd-floating-global .nd-img-jump-next { top: calc(100% + 4px); }
+.nd-floating-global .nd-img-jump:hover { color: var(--nd-text-primary); }
 
 .nd-floating-global .nd-capsule:active { cursor: grabbing; }
 
