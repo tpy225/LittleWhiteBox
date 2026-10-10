@@ -104,6 +104,12 @@ export function initSendLockWatch() {
         ].filter(Boolean).join('\n');
     };
 
+    // buildFullText 在後段定義（閉包提升取用）
+    const render = () => {
+        const body = document.getElementById('xb-sendlive-body');
+        if (body) body.textContent = buildFullText();
+    };
+
     let overlay = null;
     const showOverlay = () => {
         if (document.getElementById('xb-sendlive-ov')) { render(); return; }
@@ -125,7 +131,7 @@ export function initSendLockWatch() {
         overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
         overlay.querySelector('#xb-sendlive-close').onclick = () => overlay.remove();
         overlay.querySelector('#xb-sendlive-copy').onclick = () => {
-            const text = buildText();
+            const text = buildFullText();
             navigator.clipboard?.writeText(text).then(
                 () => toastr?.success?.('診斷已複製'),
                 () => toastr?.warning?.('複製失敗，請長按文字選擇'),
@@ -133,14 +139,71 @@ export function initSendLockWatch() {
         };
         render();
     };
-    const render = () => {
-        const body = document.getElementById('xb-sendlive-body');
-        if (body) body.textContent = buildText();
+
+    // ---- 「發送被吞」偵測：點發送後聊天沒長樓、文字保留、ST 又不忙碌 ----
+    let lastAttempt = null;   // { at, value, chatLen, stack, via }
+    let attemptAlerted = false;
+
+    const recordAttempt = via => {
+        const ta = document.getElementById('send_textarea');
+        const ctx = window.SillyTavern?.getContext?.();
+        const value = String(ta?.value ?? '');
+        if (!value.trim() || value.trim().startsWith('/')) return;
+        lastAttempt = {
+            at: Date.now(),
+            via,
+            value: value.slice(0, 80),
+            placeholder: String(ta?.placeholder ?? ''),
+            chatLen: ctx?.chat?.length ?? -1,
+            stack: (new Error().stack || '').split('\n').slice(2, 14).join('\n'),
+        };
+        attemptAlerted = false;
     };
 
-    window.xbSendLockDump = () => { showOverlay(); return buildText(); };
+    const bindAttemptHooks = () => {
+        const btn = document.getElementById('send_but');
+        const ta = document.getElementById('send_textarea');
+        if (btn && !btn.__xbWatch) {
+            btn.__xbWatch = 1;
+            btn.addEventListener('click', () => recordAttempt('send_but click'), true);
+        }
+        if (ta && !ta.__xbWatch) {
+            ta.__xbWatch = 1;
+            ta.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) recordAttempt('Enter');
+            }, true);
+        }
+        return !!(btn && ta);
+    };
+    if (!bindAttemptHooks()) {
+        const bindTimer = setInterval(() => { if (bindAttemptHooks()) clearInterval(bindTimer); }, 1000);
+    }
 
-    // ---- 忙碌狀態看門狗 ----
+    const buildExtra = () => {
+        if (!lastAttempt) return '';
+        const age = ((Date.now() - lastAttempt.at) / 1000).toFixed(1);
+        const ctx = window.SillyTavern?.getContext?.();
+        const ta = document.getElementById('send_textarea');
+        const globals = Object.keys(window).filter(k => /acu|qrf|shujuku|zero|mvu/i.test(k)).join(', ') || '無';
+        return [
+            '',
+            `■ 最近發送嘗試（${age}s 前，經${lastAttempt.via}）`,
+            `輸入框 placeholder：${lastAttempt.placeholder || '（空）'}`,
+            `當前 placeholder：${String(ta?.placeholder ?? '') || '（空）'}`,
+            `當前輸入值：${String(ta?.value ?? '').slice(0, 80) || '（空）'}`,
+            `聊天樓數：${lastAttempt.chatLen} → ${ctx?.chat?.length ?? '?'}`,
+            `相關全局：${globals}`,
+            '',
+            '發送時堆疊：',
+            lastAttempt.stack,
+        ].join('\n');
+    };
+
+    const buildFullText = () => buildText() + buildExtra();
+
+    window.xbSendLockDump = () => { showOverlay(); return buildFullText(); };
+
+    // ---- 看門狗：忙碌逾時 OR 發送被吞 ----
     let busySince = null;
     let alerted = false;
     setInterval(() => {
@@ -159,6 +222,19 @@ export function initSendLockWatch() {
             busySince = null;
             alerted = false;
         }
+
+        // 發送嘗試後 8 秒：沒長新樓、輸入值還在 → 被某個輸入管線吞掉
+        if (lastAttempt && !attemptAlerted && Date.now() - lastAttempt.at > 8000 && !busy) {
+            const ta = document.getElementById('send_textarea');
+            const stillThere = String(ta?.value ?? '').trim().length > 0;
+            const noNewFloor = (ctx?.chat?.length ?? 0) === lastAttempt.chatLen;
+            if (stillThere && noNewFloor) {
+                attemptAlerted = true;
+                try { toastr?.error?.('發送疑似被插件吞掉，彈出診斷（可截圖）', '小白X'); } catch {}
+                showOverlay();
+            }
+        }
+
         if (document.getElementById('xb-sendlive-ov')) render();
     }, 1000);
 }
