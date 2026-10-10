@@ -43,22 +43,8 @@ export function observeGenerateInterceptors(observe) {
     return () => observers.delete(observe);
 }
 
-// 除錯追蹤：記錄每次攔截鏈及各 handler 起止，供發送鎖看門狗讀取
-const interceptTrace = { runs: [] };
-try {
-    globalThis.__xbInterceptTrace = interceptTrace;
-} catch { /* 某些宿主 globalThis 唯寫受限時忽略 */ }
-
-function traceRunStart(type) {
-    const rec = { at: Date.now(), type: String(type ?? ''), ended: false, handlers: [] };
-    interceptTrace.runs.push(rec);
-    if (interceptTrace.runs.length > 20) interceptTrace.runs.shift();
-    return rec;
-}
-
 async function dispatch(chat, contextSize, abort, type) {
     activeDispatch?.abort(true);
-    const trace = traceRunStart(type);
 
     let aborted = false;
     const controller = new AbortController();
@@ -85,23 +71,17 @@ async function dispatch(chat, contextSize, abort, type) {
         for (const [id, entry] of orderedHandlers) {
             if (handlers.get(id) !== entry) continue;
             notifyObservers('handler-start', id, type, dispatchRun);
-            const hRec = { id, at: Date.now(), ended: false };
-            trace.handlers.push(hRec);
             try {
                 const result = await entry.handler(chat, contextSize, wrappedAbort, type, runContext);
                 runContext.results.set(id, result);
             } catch (error) {
                 xbLog.warn(MODULE_ID, `interceptor handler failed: ${id}`, error);
             } finally {
-                hRec.ended = true;
-                hRec.ms = Date.now() - hRec.at;
                 notifyObservers('handler-end', id, type, dispatchRun);
             }
             if (aborted) break;
         }
     } finally {
-        trace.ended = true;
-        trace.ms = Date.now() - trace.at;
         notifyObservers('dispatch-end', null, type, dispatchRun);
         if (activeDispatch === dispatchRun) activeDispatch = null;
     }
