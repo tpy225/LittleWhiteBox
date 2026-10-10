@@ -65,6 +65,7 @@ const FloatState = {
 
 const SIZE_OPTIONS = [
     { value: 'default', label: '跟随预设', width: null, height: null },
+    { value: 'auto', label: 'AI 自动（按构图）', width: null, height: null },
     { value: '832x1216', label: '832 × 1216  竖图', width: 832, height: 1216 },
     { value: '1216x832', label: '1216 × 832  横图', width: 1216, height: 832 },
     { value: '1024x1024', label: '1024 × 1024  方图', width: 1024, height: 1024 },

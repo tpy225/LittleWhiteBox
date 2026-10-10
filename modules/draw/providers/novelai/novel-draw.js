@@ -1340,6 +1340,7 @@ function compactPromptGuideOverrides(value) {
 
 const NOVEL_QUICK_SIZE_OPTIONS = [
     { value: 'default', label: '跟随预设' },
+    { value: 'auto', label: 'AI 自动（按构图）' },
     { value: '832x1216', label: '832 x 1216 竖图' },
     { value: '1216x832', label: '1216 x 832 横图' },
     { value: '1024x1024', label: '1024 x 1024 方图' },

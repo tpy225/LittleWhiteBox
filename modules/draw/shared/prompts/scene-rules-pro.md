@@ -27,6 +27,7 @@
 - 每 3 张图至少 1 张非正面；禁止 from front + upper body + mid shot 三件套连用
 - 建立镜头用 full body / wide shot；close-up 留给情绪与高潮
 - 相机=空间中自由移动的镜头，以主角为关键目标定格，区域覆盖关键互动，焦点锚定核心要素
+- 画幅方向随景别与主体排布决定（填入 orientation）：close-up / upper body、单人直立站姿用 portrait 竖幅；wide shot、全景远景、群像、开阔环境与左右展开的场面用 landscape 横幅；双人贴近构图仍用竖幅，人数只是参考，拿不准用竖幅
 
 ## 主体优先级
 - 每图先用一个词确定唯一主体：角色 / 动作 / 情绪 / 身体局部 / 环境
