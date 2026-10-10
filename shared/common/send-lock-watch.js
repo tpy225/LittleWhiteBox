@@ -239,7 +239,24 @@ export function initSendLockWatch() {
         ].join('\n');
     };
 
-    const buildFullText = () => buildText() + buildExtra();
+    const traceBlock = () => {
+        const tr = window.__xbInterceptTrace?.runs;
+        if (!tr) return '\n■ 小白X 攔截鏈追蹤：無資料';
+        const now = Date.now();
+        const lines = ['', '■ 小白X 攔截鏈（最近，⚠＝卡住）'];
+        tr.slice(-6).forEach(r => {
+            const age = ((now - r.at) / 1000).toFixed(1);
+            const head = `${r.ended ? '✓' : '⚠'} [${r.type || 'normal'}] ${age}s前`;
+            lines.push(head + (r.ms != null ? ` 共${r.ms}ms` : ''));
+            r.handlers.forEach(h => {
+                const mark = h.ended ? `${h.ms}ms` : `卡${((now - h.at) / 1000).toFixed(1)}s`;
+                lines.push(`   ${h.ended ? '·' : '⚠'} ${h.id} ${mark}`);
+            });
+        });
+        return lines.join('\n');
+    };
+
+    const buildFullText = () => buildText() + buildExtra() + traceBlock();
 
     window.xbSendLockDump = () => { showOverlay(); return buildFullText(); };
 
@@ -261,6 +278,15 @@ export function initSendLockWatch() {
         } else {
             busySince = null;
             alerted = false;
+        }
+
+        // 小白X 攔截鏈有 dispatch 卡逾 30 秒 → 某個 handler 沒返回
+        const stuckRun = (window.__xbInterceptTrace?.runs || [])
+            .find(r => !r.ended && Date.now() - r.at > BUSY_LIMIT_MS);
+        if (stuckRun && !stuckRun.__alerted) {
+            stuckRun.__alerted = true;
+            try { toastr?.error?.('小白X 攔截鏈卡住，彈出診斷（可截圖）', '小白X'); } catch {}
+            showOverlay();
         }
 
         // 發送嘗試後 10 秒：沒有任何生成事件，視為被輸入管線吞掉
