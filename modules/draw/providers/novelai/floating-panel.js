@@ -566,20 +566,36 @@ const STYLES = `
 }
 
 .nd-floating-global .nd-capsule {
-    width: 108px;
     background: var(--nd-bg-solid);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     touch-action: none;
     cursor: grab;
 }
 
-.nd-floating-global .nd-btn-img-jump {
-    flex: 0 0 24px;
-    font-size: 10px;
+/* 跳圖上下鈕：絕對定位在膠囊外，不影響膠囊尺寸與拖曳 */
+.nd-floating-global .nd-img-jump {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 34px;
+    height: 22px;
+    border: 1px solid var(--nd-border);
+    border-radius: 11px;
+    background: var(--nd-bg-solid);
     color: var(--nd-text-dim);
-    opacity: 0.75;
+    font-size: 10px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    z-index: 1;
+    padding: 0;
 }
-.nd-floating-global .nd-btn-img-jump:hover { color: var(--nd-text-primary); opacity: 1; }
+.nd-floating-global .nd-img-jump-prev { bottom: calc(100% + 6px); }
+.nd-floating-global .nd-img-jump-next { top: calc(100% + 6px); }
+.nd-floating-global .nd-img-jump:hover { color: var(--nd-text-primary); background: var(--nd-bg-hover); }
 
 .nd-floating-global .nd-capsule:active { cursor: grabbing; }
 
@@ -1417,8 +1433,9 @@ function applyFloatingPosition() {
     const pos = getFloatingPosition();
     const w = floatingEl.offsetWidth || 77;
     const h = floatingEl.offsetHeight || 34;
+    const JUMP_RESERVE = 30;
     floatingEl.style.left = `${Math.max(0, Math.min(pos.left, window.innerWidth - w))}px`;
-    floatingEl.style.top = `${Math.max(0, Math.min(pos.top, window.innerHeight - h))}px`;
+    floatingEl.style.top = `${Math.max(JUMP_RESERVE, Math.min(pos.top, window.innerHeight - h - JUMP_RESERVE))}px`;
 }
 
 function clearFloatingCooldownTimer() {
@@ -1626,8 +1643,10 @@ function onFloatingPointerMove(e) {
     if (floatingDragState.moved) {
         const w = floatingEl.offsetWidth || 88;
         const h = floatingEl.offsetHeight || 36;
+        // 預留膠囊外上下跳圖鈕的高度
+        const JUMP_RESERVE = 30;
         floatingEl.style.left = `${Math.max(0, Math.min(floatingDragState.startLeft + dx, window.innerWidth - w))}px`;
-        floatingEl.style.top = `${Math.max(0, Math.min(floatingDragState.startTop + dy, window.innerHeight - h))}px`;
+        floatingEl.style.top = `${Math.max(JUMP_RESERVE, Math.min(floatingDragState.startTop + dy, window.innerHeight - h - JUMP_RESERVE))}px`;
     }
 
     e.preventDefault();
@@ -1673,11 +1692,7 @@ function jumpToChatImage(dir) {
 }
 
 function routeFloatingClick(target) {
-    if (target.closest('.nd-btn-img-prev')) {
-        jumpToChatImage(-1);
-    } else if (target.closest('.nd-btn-img-next')) {
-        jumpToChatImage(1);
-    } else if (target.closest('.nd-btn-draw')) {
+    if (target.closest('.nd-btn-draw')) {
         handleFloatingDrawClick();
     } else if (target.closest('.nd-btn-menu')) {
         floatingEl.classList.remove('show-detail');
@@ -1841,15 +1856,10 @@ function createFloatingButton() {
     drawBtn.appendChild(createEl('span', '', '🎨'));
     drawBtn.appendChild(createEl('span', 'nd-auto-dot'));
     const sep = createEl('div', 'nd-sep');
-    const imgPrevBtn = createEl('button', 'nd-btn-draw nd-btn-img-jump nd-btn-img-prev', '▲');
-    imgPrevBtn.title = '跳到上一张图片';
-    const imgNextBtn = createEl('button', 'nd-btn-draw nd-btn-img-jump nd-btn-img-next', '▼');
-    imgNextBtn.title = '跳到下一张图片';
-    const sepAfterJump = createEl('div', 'nd-sep');
     const menuBtn = createEl('button', 'nd-btn-menu');
     menuBtn.title = '展开菜单';
     menuBtn.appendChild(createEl('span', 'nd-arrow', '▲'));
-    layerIdle.append(drawBtn, sep, imgPrevBtn, imgNextBtn, sepAfterJump, menuBtn);
+    layerIdle.append(drawBtn, sep, menuBtn);
     const layerActive = createEl('div', 'nd-layer nd-layer-active');
     layerActive.append(
         createEl('span', 'nd-status-icon', '⏳'),
@@ -1858,7 +1868,15 @@ function createFloatingButton() {
     inner.append(layerIdle, layerActive);
     capsule.appendChild(inner);
 
-    floatingEl.append(detail, menu, capsule);
+    // 上下跳圖鈕在膠囊外部，獨立於拖曳膠囊
+    const imgPrevBtn = createEl('button', 'nd-img-jump nd-img-jump-prev', '▲');
+    imgPrevBtn.title = '跳到上一张图片';
+    const imgNextBtn = createEl('button', 'nd-img-jump nd-img-jump-next', '▼');
+    imgNextBtn.title = '跳到下一张图片';
+    imgPrevBtn.addEventListener('click', (e) => { e.stopPropagation(); jumpToChatImage(-1); });
+    imgNextBtn.addEventListener('click', (e) => { e.stopPropagation(); jumpToChatImage(1); });
+
+    floatingEl.append(detail, menu, imgPrevBtn, capsule, imgNextBtn);
 
     document.body.appendChild(floatingEl);
     cacheFloatingDOM();
