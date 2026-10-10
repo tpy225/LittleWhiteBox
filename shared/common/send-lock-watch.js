@@ -140,6 +140,41 @@ export function initSendLockWatch() {
         render();
     };
 
+    // ---- eventSource.emit 級計時：定位哪個事件派發整體沒返回 ----
+    const emitTrace = [];
+    const wrapEmit = () => {
+        const ctx = window.SillyTavern?.getContext?.();
+        const es = ctx?.eventSource;
+        if (!es || typeof es.emit !== 'function' || es.emit.__xbEmit) return false;
+        const origEmit = es.emit.bind(es);
+        const wrapped = function (name, ...args) {
+            const rec = {
+                name: String(name),
+                at: Date.now(),
+                ended: false,
+                arg0: typeof args[0] === 'number' ? args[0] : String(args[0]?.constructor?.name ?? typeof args[0]),
+            };
+            pushRec(emitTrace, rec, 30);
+            try {
+                const r = origEmit(name, ...args);
+                if (r?.then) {
+                    return r.then(v => { rec.ended = true; rec.ms = Date.now() - rec.at; return v; },
+                        e => { rec.ended = 'ERR:' + (e?.name || e); rec.ms = Date.now() - rec.at; throw e; });
+                }
+                rec.ended = true; rec.ms = Date.now() - rec.at;
+                return r;
+            } catch (e) {
+                rec.ended = 'throw:' + (e?.name || e); rec.ms = Date.now() - rec.at;
+                throw e;
+            }
+        };
+        wrapped.__xbEmit = 1;
+        try { es.emit = wrapped; return true; } catch { return false; }
+    };
+    if (!wrapEmit()) {
+        const emitTimer = setInterval(() => { if (wrapEmit()) clearInterval(emitTimer); }, 1000);
+    }
+
     // ---- 生成事件時間線 ----
     const genEvents = []; // { name, at }
     const bindEvents = () => {
@@ -256,7 +291,21 @@ export function initSendLockWatch() {
         return lines.join('\n');
     };
 
-    const buildFullText = () => buildText() + buildExtra() + traceBlock();
+    const emitBlock = () => {
+        const now = Date.now();
+        const lines = ['', '■ 事件派發計時（⚠＝該事件 emit 未返回）'];
+        const pend = emitTrace.filter(r => r.ended === false);
+        if (pend.length) {
+            pend.forEach(r => lines.push(`⚠ ${r.name}(${r.arg0}) 卡${((now - r.at) / 1000).toFixed(1)}s`));
+        } else {
+            lines.push('全部已返回（→ 鎖在數據庫自己的等待門，非監聽器）');
+        }
+        lines.push('最近：', ...emitTrace.slice(-8).map(r =>
+            `${r.ended === true ? '✓' : '⚠'} ${r.name}(${r.arg0}) ${r.ended === true ? r.ms + 'ms' : '卡' + ((now - r.at) / 1000).toFixed(1) + 's'}`));
+        return lines.join('\n');
+    };
+
+    const buildFullText = () => buildText() + buildExtra() + traceBlock() + emitBlock();
 
     window.xbSendLockDump = () => { showOverlay(); return buildFullText(); };
 
@@ -278,6 +327,14 @@ export function initSendLockWatch() {
         } else {
             busySince = null;
             alerted = false;
+        }
+
+        // 事件派發卡逾 20 秒 → 某監聽器沒返回
+        const stuckEmit = emitTrace.find(r => r.ended === false && Date.now() - r.at > 20000 && !r.__alerted);
+        if (stuckEmit) {
+            stuckEmit.__alerted = true;
+            try { toastr?.error?.(`事件 ${stuckEmit.name} 派發卡住`, '小白X'); } catch {}
+            showOverlay();
         }
 
         // 小白X 攔截鏈有 dispatch 卡逾 30 秒 → 某個 handler 沒返回
