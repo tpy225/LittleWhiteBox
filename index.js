@@ -49,6 +49,7 @@ import {
 import { initSdDraw, cleanupSdDraw } from "./modules/draw/providers/sd-webui/sd-draw.js";
 import { initComfyDraw, cleanupComfyDraw } from "./modules/draw/providers/comfyui/comfy-draw.js";
 import { setupDrawGenerateInterceptor } from "./modules/draw/shared/draw-common.js";
+import { initSendLockWatch } from "./shared/common/send-lock-watch.js";
 import { startImageJobRecovery, stopImageJobRecovery } from "./modules/draw/shared/image-job-recovery-runtime.js";
 import {
     checkGeneratedImageCache as checkGeneratedImageCacheRuntime,
@@ -1089,6 +1090,7 @@ window.registerModuleCleanup = registerModuleCleanup;
 
 jQuery(async () => {
     try {
+        try { initSendLockWatch(); } catch (e) { console.warn('[LittleWhiteBox] 發送鎖看門狗啟動失敗', e); }
         cleanupDeprecatedData();
         await xiaobaiOsSettingsReady;
         isXiaobaixEnabled = settings.enabled;
