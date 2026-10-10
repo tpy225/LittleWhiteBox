@@ -563,7 +563,13 @@ const STYLES = `
     z-index: 10000;
     user-select: none;
     will-change: transform;
+    transition: transform 0.25s ease;
 }
+
+/* 貼邊半藏：膠囊一半移出螢幕；吸附時隱藏跳圖鈕 */
+.nd-floating-global.nd-docked-left { transform: translateX(-50%); }
+.nd-floating-global.nd-docked-right { transform: translateX(50%); }
+.nd-floating-global[class*="nd-docked"] .nd-img-jump { display: none; }
 
 .nd-floating-global .nd-capsule {
     background: var(--nd-bg-solid);
@@ -1417,13 +1423,26 @@ function getFloatingPosition() {
     return { left: window.innerWidth - 110, top: window.innerHeight - 80 };
 }
 
+let floatingDockedSide = null;
+
+// side: 'left' | 'right' | null（null＝完全展開）
+function setFloatingDock(side) {
+    if (!floatingEl) return;
+    floatingDockedSide = side;
+    floatingEl.classList.toggle('nd-docked-left', side === 'left');
+    floatingEl.classList.toggle('nd-docked-right', side === 'right');
+}
+
 function saveFloatingPosition() {
     if (!floatingEl) return;
-    const r = floatingEl.getBoundingClientRect();
+    // 吸附狀態下 getBoundingClientRect 含 translateX 偏移，只能讀 inline 定位
+    const left = parseFloat(floatingEl.style.left) || 0;
+    const top = parseFloat(floatingEl.style.top) || 0;
     try {
         localStorage.setItem(FLOAT_POS_KEY, JSON.stringify({
-            left: Math.round(r.left),
-            top: Math.round(r.top)
+            left: Math.round(left),
+            top: Math.round(top),
+            docked: floatingDockedSide || '',
         }));
     } catch {}
 }
@@ -1436,6 +1455,7 @@ function applyFloatingPosition() {
     const JUMP_RESERVE = 30;
     floatingEl.style.left = `${Math.max(0, Math.min(pos.left, window.innerWidth - w))}px`;
     floatingEl.style.top = `${Math.max(JUMP_RESERVE, Math.min(pos.top, window.innerHeight - h - JUMP_RESERVE))}px`;
+    setFloatingDock(pos.docked === 'left' || pos.docked === 'right' ? pos.docked : null);
 }
 
 function clearFloatingCooldownTimer() {
@@ -1616,6 +1636,14 @@ function updateFloatingDetailPopup() {
 function onFloatingPointerDown(e) {
     if (e.button !== 0) return;
 
+    // 吸附半藏狀態：首次按下只拉回，不起拖曳、不觸發膠囊內按鈕
+    if (floatingDockedSide) {
+        setFloatingDock(null);
+        saveFloatingPosition();
+        e.preventDefault();
+        return;
+    }
+
     floatingDragState = {
         startX: e.clientX,
         startY: e.clientY,
@@ -1661,6 +1689,14 @@ function onFloatingPointerUp(e) {
     floatingDragState = null;
 
     if (moved) {
+        // 離左右邊緣 28px 內放開＝貼邊半藏；其餘位置解除吸附
+        const finalLeft = parseFloat(floatingEl.style.left) || 0;
+        const w = floatingEl.offsetWidth || 88;
+        const EDGE_SNAP = 28;
+        let side = null;
+        if (finalLeft <= EDGE_SNAP) side = 'left';
+        else if (finalLeft >= window.innerWidth - w - EDGE_SNAP) side = 'right';
+        setFloatingDock(side);
         saveFloatingPosition();
     } else {
         routeFloatingClick(originalTarget);
