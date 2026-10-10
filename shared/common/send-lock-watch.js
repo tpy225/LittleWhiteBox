@@ -140,8 +140,28 @@ export function initSendLockWatch() {
         render();
     };
 
-    // ---- 「發送被吞」偵測：點發送後聊天沒長樓、文字保留、ST 又不忙碌 ----
+    // ---- 生成事件時間線 ----
+    const genEvents = []; // { name, at }
+    const bindEvents = () => {
+        const ctx = window.SillyTavern?.getContext?.();
+        const es = ctx?.eventSource;
+        const t = es?.event_types;
+        if (!es || !t) return false;
+        [t.GENERATION_STARTED, t.GENERATION_ENDED, t.GENERATION_STOPPED, t.MESSAGE_SENT, t.MESSAGE_RECEIVED]
+            .filter(Boolean)
+            .forEach(name => {
+                try { es.makeLast?.(name, () => pushRec(genEvents, { name: String(name).split('_').pop().toUpperCase(), at: Date.now() }, 40)); }
+                catch { try { es.on?.(name, () => pushRec(genEvents, { name: String(name).split('_').pop().toUpperCase(), at: Date.now() }, 40)); } catch {} }
+            });
+        return true;
+    };
+    if (!bindEvents()) {
+        const evTimer = setInterval(() => { if (bindEvents()) clearInterval(evTimer); }, 1000);
+    }
+
+    // ---- 「發送被吞」偵測：任何疑似發送操作後沒啟動生成 ----
     let lastAttempt = null;   // { at, value, chatLen, stack, via }
+    const attemptList = [];
     let attemptAlerted = false;
 
     const recordAttempt = via => {
@@ -157,30 +177,49 @@ export function initSendLockWatch() {
             chatLen: ctx?.chat?.length ?? -1,
             stack: (new Error().stack || '').split('\n').slice(2, 14).join('\n'),
         };
+        pushRec(attemptList, lastAttempt, 10);
         attemptAlerted = false;
     };
 
-    const bindAttemptHooks = () => {
-        const btn = document.getElementById('send_but');
-        const ta = document.getElementById('send_textarea');
-        if (btn && !btn.__xbWatch) {
-            btn.__xbWatch = 1;
-            btn.addEventListener('click', () => recordAttempt('send_but click'), true);
+    // 全文檔捕捉：TT 手機殼可能用非標發送鈕，只要點擊目標像發送鈕就記
+    document.addEventListener('pointerdown', e => {
+        const el = e.target?.closest?.('#send_but, .send_but, [id*="send_but"], .mes_send_button, [aria-label*="发送"], [aria-label*="Send"]');
+        if (el) recordAttempt('pointer:' + (el.id || el.className || el.tagName));
+    }, true);
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target?.id === 'send_textarea') {
+            recordAttempt('Enter');
         }
-        if (ta && !ta.__xbWatch) {
-            ta.__xbWatch = 1;
-            ta.addEventListener('keydown', e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) recordAttempt('Enter');
-            }, true);
-        }
-        return !!(btn && ta);
+    }, true);
+
+    // ---- 常駐小瓢蟲：卡死時手動打開診斷 ----
+    const mountBug = () => {
+        if (document.getElementById('xb-sendlive-bug')) return;
+        const bug = document.createElement('div');
+        bug.id = 'xb-sendlive-bug';
+        bug.textContent = '🐞';
+        bug.title = '小白X 發送診斷';
+        bug.style.cssText = 'position:fixed;left:8px;bottom:80px;z-index:2147483646;width:34px;height:34px;border-radius:50%;background:rgba(40,40,40,.55);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;touch-action:none';
+        bug.addEventListener('pointerdown', e => e.stopPropagation());
+        bug.addEventListener('click', e => { e.stopPropagation(); window.xbSendLockDump?.(); });
+        document.body.appendChild(bug);
     };
-    if (!bindAttemptHooks()) {
-        const bindTimer = setInterval(() => { if (bindAttemptHooks()) clearInterval(bindTimer); }, 1000);
-    }
+    mountBug();
+    setInterval(mountBug, 3000);
+
+    setTimeout(() => { try { toastr?.success?.('發送診斷 v2 已就緒（左下角🐞）', '小白X'); } catch {} }, 2500);
+
+    const timelineBlock = () => [
+        '',
+        '■ 發送嘗試記錄（最近）',
+        ...(attemptList.length ? attemptList.slice(-5).map(a => `${new Date(a.at).toLocaleTimeString()} 經${a.via} 樓=${a.chatLen} "${a.value.slice(0, 30)}"`) : ['無']),
+        '',
+        '■ 生成事件時間線（最近）',
+        ...(genEvents.length ? genEvents.slice(-12).map(x => `${new Date(x.at).toLocaleTimeString()} ${x.name}`) : ['無（事件總線未掛上）']),
+    ].join('\n');
 
     const buildExtra = () => {
-        if (!lastAttempt) return '';
+        if (!lastAttempt) return timelineBlock();
         const age = ((Date.now() - lastAttempt.at) / 1000).toFixed(1);
         const ctx = window.SillyTavern?.getContext?.();
         const ta = document.getElementById('send_textarea');
@@ -196,6 +235,7 @@ export function initSendLockWatch() {
             '',
             '發送時堆疊：',
             lastAttempt.stack,
+            timelineBlock(),
         ].join('\n');
     };
 
@@ -223,12 +263,11 @@ export function initSendLockWatch() {
             alerted = false;
         }
 
-        // 發送嘗試後 8 秒：沒長新樓、輸入值還在 → 被某個輸入管線吞掉
-        if (lastAttempt && !attemptAlerted && Date.now() - lastAttempt.at > 8000 && !busy) {
-            const ta = document.getElementById('send_textarea');
-            const stillThere = String(ta?.value ?? '').trim().length > 0;
-            const noNewFloor = (ctx?.chat?.length ?? 0) === lastAttempt.chatLen;
-            if (stillThere && noNewFloor) {
+        // 發送嘗試後 10 秒：沒有任何生成事件，視為被輸入管線吞掉
+        if (lastAttempt && !attemptAlerted && Date.now() - lastAttempt.at > 10000 && !busy) {
+            const startedAfter = genEvents.some(x => x.name === 'STARTED' && x.at >= lastAttempt.at - 500);
+            const sentAfter = genEvents.some(x => x.name === 'SENT' && x.at >= lastAttempt.at - 500);
+            if (!startedAfter && !sentAfter) {
                 attemptAlerted = true;
                 try { toastr?.error?.('發送疑似被插件吞掉，彈出診斷（可截圖）', '小白X'); } catch {}
                 showOverlay();
