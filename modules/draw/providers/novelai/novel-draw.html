@@ -1944,11 +1944,28 @@ document.addEventListener('error', (event) => {
     const fetchUrl = phoneAbsUrl(src);
     if (iframeSavedFallbackInflight.has(fetchUrl)) return;
     iframeSavedFallbackInflight.add(fetchUrl);
-    fetch(fetchUrl)
-        .then(resp => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); return resp.blob(); })
-        .then(blob => { img.src = URL.createObjectURL(blob); })
-        .catch(() => { img.classList.add('xb-saved-img-broken'); })
-        .finally(() => iframeSavedFallbackInflight.delete(fetchUrl));
+    (async () => {
+        // 依次嘗試 baseURI 補全後的絕對地址與原始地址，任一可達即可救活舊圖。
+        const candidates = [...new Set([fetchUrl, src])];
+        let lastError = '';
+        for (const candidate of candidates) {
+            try {
+                const resp = await fetch(candidate);
+                if (!resp.ok) { lastError = `HTTP ${resp.status}`; continue; }
+                const type = resp.headers.get('content-type') || '';
+                if (!type.startsWith('image/')) { lastError = `返回非圖片（${type || '未知類型'}）`; continue; }
+                img.src = URL.createObjectURL(await resp.blob());
+                return;
+            } catch (e) {
+                lastError = e?.message || String(e);
+            }
+        }
+        img.classList.add('xb-saved-img-broken');
+        if (!window.__xbOldImgWarned) {
+            window.__xbOldImgWarned = true;
+            alert(`舊圖無法從 ST 服務器讀取：${lastError}\n地址：${fetchUrl}\n這張本地原圖已被舊版清除，若服務器不可達就只能重新生成；新保存的圖不受影響。`);
+        }
+    })().finally(() => iframeSavedFallbackInflight.delete(fetchUrl));
 }, true);
 
 function getGalleryImageUrl(image = {}) {
