@@ -48,7 +48,7 @@ if (typeof document !== 'undefined') {
         img.dataset.xbSavedRetried = '1';
         if (savedUrlFallbackInflight.has(src)) return;
         savedUrlFallbackInflight.add(src);
-        fetch(src)
+        fetch(toAbsoluteMediaUrl(src))
             .then((resp) => {
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 return resp.blob();
@@ -64,6 +64,26 @@ if (typeof document !== 'undefined') {
 }
 
 function storageWriteError(tx) { return tx.error || new Error(DRAW_SLOT_COPY.storageWriteFailed); }
+
+// 相對路徑補全為絕對 URL。Tauritavern 把手機 UI 裝在 about:srcdoc 跨域 iframe 內：
+// <img src="/user/..."> 會以 srcdoc 為基準解析成無效地址而裂圖；document.baseURI
+// 在 srcdoc 中繼承父文檔真實 URL，不受跨域限制，故以它為基準；parent.location 僅兜底。
+export function toAbsoluteMediaUrl(path) {
+    const raw = String(path || '').trim();
+    if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
+    let base = '';
+    try {
+        if (typeof document !== 'undefined' && document.baseURI) base = document.baseURI;
+    } catch { /* srcdoc 跨域時 baseURI 仍可讀，極端情況下退化到 parent */ }
+    if (!base) {
+        try { base = String(window.parent?.location?.href || ''); } catch { /* 跨域封鎖 */ }
+    }
+    try {
+        return base ? new URL(raw, base).href : raw;
+    } catch {
+        return raw;
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 图片显示 URL
@@ -115,7 +135,7 @@ function blobToDataUrl(blob) {
 }
 
 async function savedUrlToDataUrl(savedUrl = '') {
-    const url = String(savedUrl || '').trim();
+    const url = toAbsoluteMediaUrl(savedUrl);
     if (!url) return '';
     if (/^data:[^;]+;base64,/i.test(url)) return url;
     if (/^blob:/i.test(url)) {
@@ -194,7 +214,7 @@ export function getPreviewDisplayUrl(preview = {}) {
     // 本地快取是完整原圖，優先使用：blob URL 同源且不受客戶端（如 Tauritavern
     // 自定義 origin）對 /user 路徑可達性的影響；savedUrl 僅在本地數據缺失時兜底。
     const parsed = parseBase64Image(preview?.base64);
-    if (!parsed?.data) return String(preview?.savedUrl || '').trim();
+    if (!parsed?.data) return toAbsoluteMediaUrl(preview?.savedUrl || '');
 
     if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function' || typeof atob !== 'function') {
         return `data:${parsed.mime};base64,${parsed.data}`;

@@ -1920,6 +1920,18 @@ function base64ToObjectUrl(base64, mime) {
     return URL.createObjectURL(new Blob(chunks, { type: mime }));
 }
 
+// 相對路徑補全為絕對 URL：TT 手機 UI 在 about:srcdoc 跨域 iframe 內，<img> 直連
+// /user 路徑會以 srcdoc 為基準解析成無效地址；document.baseURI 在 srcdoc 繼承父文檔
+// 真實 URL，不受跨域限制；parent.location 僅兜底。
+function phoneAbsUrl(path) {
+    const raw = String(path || '').trim();
+    if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
+    let base = '';
+    try { if (document.baseURI) base = document.baseURI; } catch {}
+    if (!base) { try { base = String(window.parent?.location?.href || ''); } catch {} }
+    try { return base ? new URL(raw, base).href : raw; } catch { return raw; }
+}
+
 // iframe 是獨立 document，需各自掛一份：/user/ 圖 <img> 直連失敗時用 fetch 轉 blob 自救。
 const iframeSavedFallbackInflight = new Set();
 document.addEventListener('error', (event) => {
@@ -1929,20 +1941,21 @@ document.addEventListener('error', (event) => {
     if (!src.includes('/user/')) return;
     if (img.dataset.xbSavedRetried === '1') return;
     img.dataset.xbSavedRetried = '1';
-    if (iframeSavedFallbackInflight.has(src)) return;
-    iframeSavedFallbackInflight.add(src);
-    fetch(src)
+    const fetchUrl = phoneAbsUrl(src);
+    if (iframeSavedFallbackInflight.has(fetchUrl)) return;
+    iframeSavedFallbackInflight.add(fetchUrl);
+    fetch(fetchUrl)
         .then(resp => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); return resp.blob(); })
         .then(blob => { img.src = URL.createObjectURL(blob); })
         .catch(() => { img.classList.add('xb-saved-img-broken'); })
-        .finally(() => iframeSavedFallbackInflight.delete(src));
+        .finally(() => iframeSavedFallbackInflight.delete(fetchUrl));
 }, true);
 
 function getGalleryImageUrl(image = {}) {
     // 本地快取優先：savedUrl 是根相對服務器路徑，在 Tauritavern 等自定義 origin
-    // 客戶端的 iframe 內不可達會裂圖；本地無數據時才回落 savedUrl。
+    // 客戶端的 iframe 內不可達會裂圖；本地無數據時才回落 savedUrl（補全為絕對 URL）。
     const parsed = parsePreviewBase64(image.base64);
-    if (!parsed?.data) return String(image.savedUrl || '').trim();
+    if (!parsed?.data) return phoneAbsUrl(image.savedUrl || '');
     if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function' || typeof atob !== 'function') {
         return `data:${parsed.mime};base64,${parsed.data}`;
     }
