@@ -1924,8 +1924,10 @@ function base64ToObjectUrl(base64, mime) {
 // /user 路徑會以 srcdoc 為基準解析成無效地址；document.baseURI 在 srcdoc 繼承父文檔
 // 真實 URL，不受跨域限制；parent.location 僅兜底。
 function phoneAbsUrl(path) {
-    const raw = String(path || '').trim();
+    let raw = String(path || '').trim();
     if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
+    // 舊數據可能存成無前導斜杠的 user/images/...，會被解析成相對於擴展目錄的錯誤地址。
+    raw = raw.replace(/^(?:\.\.[\\/])*(user[\\/])/i, '/$1');
     let base = '';
     try { if (document.baseURI) base = document.baseURI; } catch {}
     if (!base) { try { base = String(window.parent?.location?.href || ''); } catch {} }
@@ -1945,26 +1947,19 @@ document.addEventListener('error', (event) => {
     if (iframeSavedFallbackInflight.has(fetchUrl)) return;
     iframeSavedFallbackInflight.add(fetchUrl);
     (async () => {
-        // 依次嘗試 baseURI 補全後的絕對地址與原始地址，任一可達即可救活舊圖。
+        // 依次嘗試補全後的絕對地址與原始地址，任一可達即救活舊圖；都失敗則靜默降級。
         const candidates = [...new Set([fetchUrl, src])];
-        let lastError = '';
         for (const candidate of candidates) {
             try {
                 const resp = await fetch(candidate);
-                if (!resp.ok) { lastError = `HTTP ${resp.status}`; continue; }
+                if (!resp.ok) continue;
                 const type = resp.headers.get('content-type') || '';
-                if (!type.startsWith('image/')) { lastError = `返回非圖片（${type || '未知類型'}）`; continue; }
+                if (type && !type.startsWith('image/')) continue;
                 img.src = URL.createObjectURL(await resp.blob());
                 return;
-            } catch (e) {
-                lastError = e?.message || String(e);
-            }
+            } catch { /* 試下一個候選地址 */ }
         }
         img.classList.add('xb-saved-img-broken');
-        if (!window.__xbOldImgWarned) {
-            window.__xbOldImgWarned = true;
-            alert(`舊圖無法從 ST 服務器讀取：${lastError}\n地址：${fetchUrl}\n這張本地原圖已被舊版清除，若服務器不可達就只能重新生成；新保存的圖不受影響。`);
-        }
     })().finally(() => iframeSavedFallbackInflight.delete(fetchUrl));
 }, true);
 
