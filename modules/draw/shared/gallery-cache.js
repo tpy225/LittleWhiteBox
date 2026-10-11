@@ -34,6 +34,35 @@ const previewPreloadCache = new Map();
 const cacheChangeListeners = new Set();
 let cacheSyncChannel = null;
 
+// Tauritavern 等客戶端的 <img> 無法直連根相對 /user 路徑（自定義 origin），
+// 但其 fetch 可能走原生 HTTP 棧可達。監聽捕獲階段的圖片 error，僅對 /user/ 開頭的
+// 來源嘗試 fetch → blob 自救，救活存量已保存圖；不可達則快速失敗，不影響其他圖。
+const savedUrlFallbackInflight = new Set();
+if (typeof document !== 'undefined') {
+    document.addEventListener('error', (event) => {
+        const img = event.target;
+        if (!(img instanceof HTMLImageElement)) return;
+        const src = String(img.currentSrc || img.src || '');
+        if (!src.includes('/user/')) return;
+        if (img.dataset.xbSavedRetried === '1') return;
+        img.dataset.xbSavedRetried = '1';
+        if (savedUrlFallbackInflight.has(src)) return;
+        savedUrlFallbackInflight.add(src);
+        fetch(src)
+            .then((resp) => {
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                return resp.blob();
+            })
+            .then((blob) => {
+                img.src = URL.createObjectURL(blob);
+            })
+            .catch(() => {
+                img.classList.add('xb-saved-img-broken');
+            })
+            .finally(() => savedUrlFallbackInflight.delete(src));
+    }, true);
+}
+
 function storageWriteError(tx) { return tx.error || new Error(DRAW_SLOT_COPY.storageWriteFailed); }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -871,7 +900,8 @@ export async function updatePreviewSavedUrl(imgId, savedUrl) {
     if (!preview) return;
 
     preview.savedUrl = savedUrl;
-    preview.base64 = null;
+    // 保留本地原圖：Tauritavern 等自定義 origin 客戶端無法用 <img> 直連 /user 路徑，
+    // 清掉 base64 後已存圖在畫廊必裂；空間由快取過期清理負責，不在保存時主動剝離。
 
     return new Promise((resolve, reject) => {
         try {
