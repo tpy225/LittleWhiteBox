@@ -69,8 +69,11 @@ function storageWriteError(tx) { return tx.error || new Error(DRAW_SLOT_COPY.sto
 // <img src="/user/..."> 會以 srcdoc 為基準解析成無效地址而裂圖；document.baseURI
 // 在 srcdoc 中繼承父文檔真實 URL，不受跨域限制，故以它為基準；parent.location 僅兜底。
 export function toAbsoluteMediaUrl(path) {
-    const raw = String(path || '').trim();
+    let raw = String(path || '').trim();
     if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
+    // 舊數據可能存成無前導斜杠的 user/images/...，在 iframe 內會被解析成
+    // 相對於擴展目錄的錯誤地址；統一補成站點絕對路徑。
+    raw = raw.replace(/^(?:\.\.[\\/])*(user[\\/])/i, '/$1');
     let base = '';
     try {
         if (typeof document !== 'undefined' && document.baseURI) base = document.baseURI;
