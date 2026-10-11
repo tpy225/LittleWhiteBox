@@ -427,6 +427,17 @@ select.input { cursor: pointer; }
 }
 .gallery-modal-thumb:hover { opacity: 0.9; }
 .gallery-modal-thumb.active { border-color: var(--accent); opacity: 1; }
+.gallery-modal-loading {
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+    color: rgba(255,255,255,0.75); font-size: 13px; padding: 18px 12px;
+    min-width: 120px; flex: 1;
+}
+.gallery-modal-more {
+    flex-shrink: 0; align-self: center; padding: 8px 14px;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 8px; color: #fff; font-size: 12px; cursor: pointer;
+}
+.gallery-modal-more:active { background: rgba(255,255,255,0.22); }
 .gallery-modal-thumb.saved { border-color: var(--success); }
 .gallery-modal-actions { display: flex; gap: 12px; }
 .gallery-modal-info { font-size: 12px; color: rgba(255,255,255,0.6); text-align: center; }
@@ -2802,11 +2813,11 @@ function renderCharacterSlots(charName, slots) {
         return;
     }
     
-    slotEntries.sort((a, b) => (b[1][0]?.timestamp || 0) - (a[1][0]?.timestamp || 0));
-    
-    slotsContainer.innerHTML = slotEntries.map(([slotId, images]) => {
-        const latest = images[0];
-        const hasSaved = images.some(img => img.savedUrl);
+    slotEntries.sort((a, b) => (b[1].latest?.timestamp || 0) - (a[1].latest?.timestamp || 0));
+
+    slotsContainer.innerHTML = slotEntries.map(([slotId, meta]) => {
+        const latest = meta.latest;
+        const count = meta.count || 1;
         const imgSrc = getGalleryImageUrl(latest);
 
         return `
@@ -2822,8 +2833,8 @@ function renderCharacterSlots(charName, slots) {
             <div class="gallery-slot-info">
                 <span>${new Date(latest.timestamp).toLocaleDateString()}</span>
                 <div style="display:flex;gap:4px;">
-                    ${images.length > 1 ? `<span class="gallery-slot-badge count">${images.length} 版</span>` : ''}
-                    ${hasSaved ? '<span class="gallery-slot-badge saved">✓</span>' : ''}
+                    ${count > 1 ? `<span class="gallery-slot-badge count">${count} 版</span>` : ''}
+                    ${latest.savedUrl ? '<span class="gallery-slot-badge saved">✓</span>' : ''}
                 </div>
             </div>
         </div>`;
@@ -2837,33 +2848,63 @@ function renderCharacterSlots(charName, slots) {
     });
 }
 
+// 縮略條分批掛載：一個 slot 可能有上百版歷史，一次鋪滿會讓 WebView 為上百張原圖
+// 建 blob URL 並解碼而 OOM。首批 24 張，其餘靠「再顯示」追加，img 自身 lazy 加載。
+const MODAL_THUMB_PAGE = 24;
+let modalThumbVisible = MODAL_THUMB_PAGE;
+
 function openGalleryModalFromCache(charName, slotId) {
     const slots = loadedCharPreviews[charName];
     if (!slots || !slots[slotId]) return;
-    modalData = { slotId, images: slots[slotId], currentIndex: 0, charName };
+    // 列表只持有封面輕量索引，完整歷史向父端按需取；先開窗顯示載入態。
+    modalData = { slotId, images: [], currentIndex: 0, charName, loading: true };
+    modalThumbVisible = MODAL_THUMB_PAGE;
+    $('nd_modal_img').removeAttribute('src');
+    $('nd_modal_thumbs').innerHTML = '<div class="gallery-modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
+    $('nd_gallery_modal').classList.add('visible');
+    postToParent({ type: 'LOAD_SLOT_PREVIEWS', slotId });
+}
+
+function applySlotPreviewsToModal(slotId, images) {
+    if (!modalData.loading || modalData.slotId !== slotId) return;
+    modalData.images = Array.isArray(images) ? images : [];
+    modalData.loading = false;
+    modalData.currentIndex = 0;
+    modalThumbVisible = MODAL_THUMB_PAGE;
     renderModalThumbs();
     renderModalContent();
-    $('nd_gallery_modal').classList.add('visible');
 }
 
 function closeGalleryModal() {
     $('nd_gallery_modal').classList.remove('visible');
-    modalData = { slotId: null, images: [], currentIndex: 0, charName: null };
+    modalData = { slotId: null, images: [], currentIndex: 0, charName: null, loading: false };
 }
 
 function renderModalThumbs() {
     const { images, currentIndex } = modalData;
-    if (!images.length) return;
-    $('nd_modal_thumbs').innerHTML = images.map((img, i) => {
+    if (!images.length) {
+        $('nd_modal_thumbs').innerHTML = '<div class="gallery-modal-loading">暂无图片</div>';
+        return;
+    }
+    const visible = images.slice(0, modalThumbVisible);
+    $('nd_modal_thumbs').innerHTML = visible.map((img, i) => {
         const src = getGalleryImageUrl(img);
         const cls = ['gallery-modal-thumb'];
         if (i === currentIndex) cls.push('active');
         if (img.savedUrl) cls.push('saved');
-        return `<img class="${cls.join(' ')}" src="${escapeHtml(src)}" data-index="${i}">`;
-    }).join('');
-    
+        return `<img class="${cls.join(' ')}" src="${escapeHtml(src)}" data-index="${i}" loading="lazy" decoding="async">`;
+    }).join('') + (images.length > modalThumbVisible
+        ? '<button class="gallery-modal-more" type="button" id="nd_modal_more">再显示 '
+            + Math.min(MODAL_THUMB_PAGE, images.length - modalThumbVisible) + ' 张</button>'
+        : '');
+
     $('nd_modal_thumbs').querySelectorAll('img').forEach(t => {
         t.addEventListener('click', () => { modalData.currentIndex = parseInt(t.dataset.index); renderModalContent(); });
+    });
+    $('nd_modal_more')?.addEventListener('click', () => {
+        modalThumbVisible += MODAL_THUMB_PAGE;
+        renderModalThumbs();
+        updateModalThumbState();
     });
 }
 
@@ -4176,6 +4217,10 @@ window.addEventListener('message', event => {
             renderCharacterSlots(data.charName, data.slots);
             break;
 
+        case 'SLOT_PREVIEWS_LOADED':
+            applySlotPreviewsToModal(data.slotId, data.images);
+            break;
+
         case 'ENCODE_VIBE_RESULT': {
             const pending = vibePendingEncodes.get(data.requestId);
             if (!pending) break;
@@ -4239,44 +4284,37 @@ window.addEventListener('message', event => {
             break;
             
         case 'GALLERY_IMAGE_DELETED':
-            if (modalData.charName && loadedCharPreviews[modalData.charName]) {
-                const slots = loadedCharPreviews[modalData.charName];
-                for (const slotId in slots) {
-                    slots[slotId] = slots[slotId].filter(img => img.imgId !== data.imgId);
-                    if (slots[slotId].length === 0) delete slots[slotId];
-                }
-                if (Object.keys(slots).length === 0) {
-                    delete loadedCharPreviews[modalData.charName];
-                    delete gallerySummary[modalData.charName];
-                    renderGalleryView();
-                } else {
-                    renderCharacterSlots(modalData.charName, slots);
-                }
+            // 列表是輕量索引，刪除後準確的封面／張數需重取該角色索引（刪除是低頻操作）。
+            if (modalData.charName) {
+                postToParent({ type: 'LOAD_CHARACTER_PREVIEWS', charName: modalData.charName });
             }
-            if (modalData.slotId) {
+            if (modalData.slotId && !modalData.loading) {
                 modalData.images = modalData.images.filter(img => img.imgId !== data.imgId);
                 if (modalData.images.length === 0) closeGalleryModal();
                 else {
                     if (modalData.currentIndex >= modalData.images.length) modalData.currentIndex = modalData.images.length - 1;
+                    modalThumbVisible = Math.max(MODAL_THUMB_PAGE, Math.min(modalThumbVisible, modalData.images.length));
                     renderModalThumbs();
                     renderModalContent();
                 }
             }
             postToParent({ type: 'REFRESH_CACHE_STATS' });
             break;
-            
+
         case 'GALLERY_IMAGE_SAVED':
+            // 封面若正是被保存的圖，就地補 savedUrl；其餘歷史不在索引裡，無需改列表。
             if (modalData.charName && loadedCharPreviews[modalData.charName]) {
+                let coverChanged = false;
                 for (const slotId in loadedCharPreviews[modalData.charName]) {
-                    const img = loadedCharPreviews[modalData.charName][slotId].find(i => i.imgId === data.imgId);
-                    if (img) {
-                        img.savedUrl = data.savedUrl;
-                        renderCharacterSlots(modalData.charName, loadedCharPreviews[modalData.charName]);
-                        break;
+                    const meta = loadedCharPreviews[modalData.charName][slotId];
+                    if (meta.latest && meta.latest.imgId === data.imgId) {
+                        meta.latest.savedUrl = data.savedUrl;
+                        coverChanged = true;
                     }
                 }
+                if (coverChanged) renderCharacterSlots(modalData.charName, loadedCharPreviews[modalData.charName]);
             }
-            if (modalData.slotId) {
+            if (modalData.slotId && !modalData.loading) {
                 const img = modalData.images.find(i => i.imgId === data.imgId);
                 if (img) { img.savedUrl = data.savedUrl; renderModalThumbs(); renderModalContent(); }
             }

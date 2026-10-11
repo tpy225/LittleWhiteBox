@@ -27,7 +27,7 @@ import {
     clearExpiredCache,
     clearAllCache,
     getGallerySummary,
-    getCharacterPreviews,
+    getCharacterGalleryIndex,
     openGallery,
     closeGallery,
     destroyGalleryCache,
@@ -4455,13 +4455,28 @@ async function handleFrameMessage(event) {
             try {
                 const charName = data.charName;
                 if (!charName) break;
-                const slots = await getCharacterPreviews(charName);
+                // 只回每個 slot 的最新一張＋張數，完整歷史改由 LOAD_SLOT_PREVIEWS 按需取，
+                // 避免圖多時一次性把整個角色的原圖 base64 塞進 iframe 撐爆內存。
+                const slots = await getCharacterGalleryIndex(charName);
                 {
                     const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
                     if (iframe) postToIframe(iframe, { type: 'CHARACTER_PREVIEWS_LOADED', charName, slots }, 'LittleWhiteBox-NovelDraw');
                 }
             } catch (e) {
                 console.error('[NovelDraw] 加载预览失败:', e);
+            }
+            break;
+        }
+
+        case 'LOAD_SLOT_PREVIEWS': {
+            try {
+                const slotId = String(data.slotId || '');
+                if (!slotId) break;
+                const images = await getPreviewsBySlot(slotId);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'SLOT_PREVIEWS_LOADED', slotId, images }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] 加载 slot 历史失败:', e);
             }
             break;
         }

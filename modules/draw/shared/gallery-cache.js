@@ -1091,7 +1091,10 @@ export async function getThumbnailCandidates(presetId = '') {
     });
 }
 
-export async function getCharacterPreviews(charName) {
+// 畫廊分組輕量索引：圖多時不能把某角色全部原圖 base64 物化進內存（幾百張即數百 MB，
+// 移動端 WebView 會直接 OOM 重載）。統一走 cursor 逐條到達，每個 slot 只保留最新一張
+// 完整記錄做封面，其餘僅計數；slot 的完整歷史在打開燈箱時經 getPreviewsBySlot 按需取。
+export async function getCharacterGalleryIndex(charName) {
     const database = await openDB();
     return new Promise((resolve) => {
         try {
@@ -1103,25 +1106,15 @@ export async function getCharacterPreviews(charName) {
                 if (item.status === 'failed' || (!item.base64 && !item.savedUrl)) return;
 
                 const slotId = item.slotId || item.imgId;
-                if (!slots[slotId]) slots[slotId] = [];
-                slots[slotId].push(item);
-            };
-            const finish = () => {
-                for (const sid in slots) {
-                    slots[sid].sort((a, b) => b.timestamp - a.timestamp);
+                const entry = slots[slotId];
+                if (!entry) {
+                    slots[slotId] = { latest: item, count: 1 };
+                } else {
+                    entry.count += 1;
+                    if (Number(item.timestamp) > Number(entry.latest.timestamp)) entry.latest = item;
                 }
-                resolve(slots);
             };
-
-            if (store.indexNames.contains('characterName') && charName !== 'Unknown') {
-                const request = store.index('characterName').getAll(charName);
-                request.onsuccess = () => {
-                    (request.result || []).forEach(pushItem);
-                    finish();
-                };
-                request.onerror = () => resolve({});
-                return;
-            }
+            const finish = () => resolve(slots);
 
             store.openCursor().onsuccess = (event) => {
                 const cursor = event.target.result;
@@ -1129,8 +1122,7 @@ export async function getCharacterPreviews(charName) {
                     finish();
                     return;
                 }
-                const item = cursor.value;
-                pushItem(item);
+                pushItem(cursor.value);
                 cursor.continue();
             };
             tx.onerror = () => resolve({});
