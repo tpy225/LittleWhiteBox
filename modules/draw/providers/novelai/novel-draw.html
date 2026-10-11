@@ -1910,10 +1910,10 @@ function base64ToObjectUrl(base64, mime) {
 }
 
 function getGalleryImageUrl(image = {}) {
-    const savedUrl = String(image.savedUrl || '').trim();
-    if (savedUrl) return savedUrl;
+    // 本地快取優先：savedUrl 是根相對服務器路徑，在 Tauritavern 等自定義 origin
+    // 客戶端的 iframe 內不可達會裂圖；本地無數據時才回落 savedUrl。
     const parsed = parsePreviewBase64(image.base64);
-    if (!parsed?.data) return '';
+    if (!parsed?.data) return String(image.savedUrl || '').trim();
     if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function' || typeof atob !== 'function') {
         return `data:${parsed.mime};base64,${parsed.data}`;
     }

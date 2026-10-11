@@ -162,11 +162,10 @@ export function clearPreviewObjectUrls() {
 }
 
 export function getPreviewDisplayUrl(preview = {}) {
-    const savedUrl = String(preview?.savedUrl || '').trim();
-    if (savedUrl) return savedUrl;
-
+    // 本地快取是完整原圖，優先使用：blob URL 同源且不受客戶端（如 Tauritavern
+    // 自定義 origin）對 /user 路徑可達性的影響；savedUrl 僅在本地數據缺失時兜底。
     const parsed = parseBase64Image(preview?.base64);
-    if (!parsed?.data) return '';
+    if (!parsed?.data) return String(preview?.savedUrl || '').trim();
 
     if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function' || typeof atob !== 'function') {
         return `data:${parsed.mime};base64,${parsed.data}`;
