@@ -538,3 +538,25 @@ test('scene planner reports prompt expansion failures as their own category', ()
         ScenePlannerErrorCategory.PROMPT,
     );
 });
+
+test('orientation normalizes to landscape only on the legal value, portrait otherwise', () => {
+    const landscapeParameters = buildParameters();
+    landscapeParameters.images[0].orientation = 'landscape';
+    const landscapeParsed = parseSubmittedScenePlan(buildResult(landscapeParameters), parseOptions);
+    assert.equal(landscapeParsed.tasks[0].orientation, 'landscape');
+
+    const portraitParameters = buildParameters();
+    portraitParameters.images[0].orientation = 'portrait';
+    const portraitParsed = parseSubmittedScenePlan(buildResult(portraitParameters), parseOptions);
+    assert.equal(portraitParsed.tasks[0].orientation, 'portrait');
+
+    // 模型漏给 orientation 时回落竖幅，不中断整批计划。
+    const missingParsed = parseSubmittedScenePlan(buildResult(buildParameters()), parseOptions);
+    assert.equal(missingParsed.tasks[0].orientation, 'portrait');
+
+    // 协议外取值容忍式回落竖幅，避免中断整批计划。
+    const invalidParameters = buildParameters();
+    invalidParameters.images[0].orientation = 'square';
+    const invalidParsed = parseSubmittedScenePlan(buildResult(invalidParameters), parseOptions);
+    assert.equal(invalidParsed.tasks[0].orientation, 'portrait');
+});

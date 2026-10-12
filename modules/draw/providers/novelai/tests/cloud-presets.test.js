@@ -31,6 +31,7 @@ test('round-trips all current V2 parameter preset fields', () => {
             negativePrefix: 'bad',
             maxImages: 4,
             maxCharactersPerImage: 12,
+            overrideSize: 'auto',
             params: {
                 model: 'nai-diffusion-5-curated',
                 sampler: 'k_euler_ancestral',
