@@ -15,6 +15,8 @@ const DEFAULT_SHARED_DRAW_SETTINGS = {
     cacheDays: DEFAULT_SHARED_GALLERY_CACHE_DAYS,
     useWorldInfo: false,
     timeout: 120000,
+    // 回复中的绘图标签是否自动排队生图；关闭后改为楼层内手动点「生成」
+    autoGenerateImages: true,
     imageTitleMode: DEFAULT_IMAGE_TITLE_MODE,
     characterTags: [],
     danbooruLocalDB: false,
@@ -113,6 +115,7 @@ export function normalizeSharedDrawSettings(saved = {}) {
         timeout: Number.isFinite(timeout) && timeout > 0
             ? Math.min(600000, Math.max(10000, Math.floor(timeout)))
             : DEFAULT_SHARED_DRAW_SETTINGS.timeout,
+        autoGenerateImages: source.autoGenerateImages !== false,
         imageTitleMode: normalizeImageTitleMode(source.imageTitleMode),
         characterTags,
         danbooruLocalDB: source.danbooruLocalDB === true,

@@ -771,6 +771,10 @@ select.input { cursor: pointer; }
     display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: 10px;
     align-content: start;
+    /* 该 WebView 默认 stretch 行高会把未解码的 img 高度算成 0，卡片压成细线；
+       与画师串预设网格（.nd-preset-grid）已验证的修法对齐 */
+    grid-auto-rows: max-content;
+    align-items: start;
 }
 .nd-thumbpick-hint {
     grid-column: 1 / -1;
@@ -778,6 +782,7 @@ select.input { cursor: pointer; }
 }
 .nd-thumbpick-item {
     position: relative;
+    display: flex; flex-direction: column;
     border: 1.5px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
@@ -786,7 +791,7 @@ select.input { cursor: pointer; }
     transition: border-color 0.15s;
 }
 .nd-thumbpick-item:hover { border-color: var(--border-focus); }
-.nd-thumbpick-item img { width: 100%; height: 140px; object-fit: cover; display: block; }
+.nd-thumbpick-item img { width: 100%; height: 140px; min-height: 140px; flex: none; object-fit: cover; display: block; }
 .nd-thumbpick-item.is-other { opacity: 0.82; }
 .nd-thumbpick-badge {
     position: absolute; top: 4px; left: 4px;
@@ -954,9 +959,22 @@ select.input { cursor: pointer; }
 }
 .nd-vibe-row label { color: var(--text-muted); flex-shrink: 0; }
 .nd-vibe-row input[type="range"] { flex: 1; min-width: 0; }
-.nd-vibe-row .nd-vibe-val { width: 38px; text-align: right; color: var(--text); flex-shrink: 0; }
-.nd-vibe-info-row { display: flex; }
-.nd-vibe-info-sel { font-size: 11px; padding: 2px 6px; max-width: 110px; }
+/* 强度数值：可手填的数字框（滑块在窄屏被挤压时直接输入） */
+.nd-vibe-num {
+    width: 48px; flex-shrink: 0;
+    font-size: 12px; text-align: center;
+    padding: 2px 4px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-input); color: var(--text);
+}
+.nd-vibe-num:focus { border-color: var(--border-focus, #7c6ff0); outline: none; }
+.nd-vibe-num::-webkit-outer-spin-button,
+.nd-vibe-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* 第二行：信息提取下拉 + 编码状态 + 导出 / 删除（窄屏与「构图/色彩」同一行） */
+.nd-vibe-info-row { display: flex; align-items: center; gap: 6px; }
+.nd-vibe-info-row .nd-vibe-info-sel { flex: 0 1 110px; min-width: 0; max-width: none; font-size: 11px; padding: 2px 6px; }
+.nd-vibe-info-row .nd-vibe-badge { margin-right: auto; }
+.nd-vibe-info-row .nd-vibe-icon-btn { margin-top: 0; width: 28px; height: 28px; flex-shrink: 0; }
 .nd-vibe-badge {
     font-size: 10px;
     padding: 1px 7px;
@@ -983,6 +1001,14 @@ select.input { cursor: pointer; }
 }
 .nd-vibe-icon-btn:hover { background: rgba(124,111,240,0.18); color: var(--text); }
 .nd-vibe-icon-btn.danger:hover { background: var(--danger); color: #fff; }
+@media (max-width: 768px) {
+    .nd-vibe-item { gap: 8px; padding: 6px; }
+    .nd-vibe-main { gap: 4px; }
+    .nd-vibe-row { gap: 6px; }
+    .nd-vibe-info-row { gap: 4px; }
+    .nd-vibe-item img { width: 42px; height: 56px; }
+    .nd-vibe-enable { margin-top: 18px; }
+}
 </style>
 </head>
 
@@ -1143,6 +1169,12 @@ select.input { cursor: pointer; }
                                 <option value="none">不显示标题</option>
                             </select>
                             <p class="form-hint">标题由场景分析 AI 为每张图生成；所有绘图 Provider 共用此显示方式。</p>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="check-row"><input type="checkbox" id="nd_auto_generate_images" checked> 自动生图</label>
+                            <p class="form-hint">开启：回复里的绘图标签自动排队出图。关闭：标签只显示「生成」按钮，点击才出图（所有绘图 Provider 共用）。</p>
                         </div>
                     </div>
                     <div class="btn-group" style="margin-top: 16px;">
@@ -1863,17 +1895,22 @@ let state = {
     backendPluginStatus: null,
     messageFilterRules: [],
     imageTitleMode: 'overlay',
+    autoGenerateImages: true,
 };
 
 let gallerySummary = {};
 let loadedCharPreviews = {};
+// 画廊视图状态：父端保存/删除后会重发数据触发整体重建，需保留分组折叠与滚动位置
+const expandedGalleryChars = new Set();
+let galleryScrollEl = null;
+let galleryScrollTop = 0;
 let editingCharId = null;
 const saveBtnStates = new WeakMap();
 const promptTextDraftsByPreset = new Map();
 const modelGuideDraftsByPreset = new Map();
 let promptChainRequestId = 0;
 let charFilters = { query: '', type: 'all', status: 'all' };
-let modalData = { slotId: null, images: [], currentIndex: 0, charName: null };
+let modalData = { slotId: null, images: [], currentIndex: 0, charName: null, total: 0, hasMore: false, loadingMore: false };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 工具函数
@@ -1893,6 +1930,8 @@ function escapeHtml(str) {
     return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// blob 预览 URL 的 LRU 缓存上限：封面缩略图 + 弹窗当前页缩略图 + 主图的可见量级
+const PREVIEW_URL_LRU_MAX = 60;
 const previewObjectUrls = new Map();
 
 function parsePreviewBase64(value) {
@@ -1973,10 +2012,21 @@ function getGalleryImageUrl(image = {}) {
     }
     const key = String(image.imgId || '').trim() || `inline-${parsed.data.slice(0, 80)}`;
     const cached = previewObjectUrls.get(key);
-    if (cached) return cached;
+    if (cached) {
+        // LRU：命中时刷新淘汰顺序
+        previewObjectUrls.delete(key);
+        previewObjectUrls.set(key, cached);
+        return cached;
+    }
     try {
         const url = base64ToObjectUrl(parsed.data, parsed.mime);
         previewObjectUrls.set(key, url);
+        // 超过上限时回收最久未用的 blob，防止图多（约 100 张）时内存持续上涨导致闪退
+        while (previewObjectUrls.size > PREVIEW_URL_LRU_MAX) {
+            const oldestKey = previewObjectUrls.keys().next().value;
+            try { URL.revokeObjectURL(previewObjectUrls.get(oldestKey)); } catch {}
+            previewObjectUrls.delete(oldestKey);
+        }
         return url;
     } catch {
         return `data:${parsed.mime};base64,${parsed.data}`;
@@ -2815,9 +2865,9 @@ function renderGalleryView() {
         const charData = gallerySummary[charName];
         const slotCount = Object.keys(charData.slots || {}).length;
         const sizeMB = ((charData.totalSize || 0) / 1024 / 1024).toFixed(2);
-        
+
         return `
-        <div class="gallery-char-section collapsed" data-char="${escapeHtml(charName)}">
+        <div class="gallery-char-section ${expandedGalleryChars.has(charName) ? '' : 'collapsed'}" data-char="${escapeHtml(charName)}">
             <div class="gallery-char-header">
                 <div class="gallery-char-avatar">${getCharEmoji(charName)}</div>
                 <span class="gallery-char-name">${escapeHtml(charName)}</span>
@@ -2836,14 +2886,32 @@ function renderGalleryView() {
             const charName = section.dataset.char;
             const wasCollapsed = section.classList.contains('collapsed');
             section.classList.toggle('collapsed');
-            
-            if (wasCollapsed && !loadedCharPreviews[charName]) {
-                const slotsDiv = section.querySelector('.gallery-slots');
-                slotsDiv.innerHTML = '<div class="gallery-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
-                postToParent({ type: 'LOAD_CHARACTER_PREVIEWS', charName });
+
+            if (wasCollapsed) {
+                expandedGalleryChars.add(charName);
+                if (!loadedCharPreviews[charName]) {
+                    const slotsDiv = section.querySelector('.gallery-slots');
+                    slotsDiv.innerHTML = '<div class="gallery-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
+                    postToParent({ type: 'LOAD_CHARACTER_PREVIEWS', charName });
+                }
+            } else {
+                expandedGalleryChars.delete(charName);
             }
         });
     });
+
+    // 整体重建（如保存/删除后父端重发数据）后恢复已展开分组的内容与滚动位置
+    expandedGalleryChars.forEach(charName => {
+        if (loadedCharPreviews[charName]) {
+            renderCharacterSlots(charName, loadedCharPreviews[charName]);
+        } else {
+            postToParent({ type: 'LOAD_CHARACTER_PREVIEWS', charName });
+        }
+    });
+    try {
+        if (galleryScrollEl && galleryScrollEl.isConnected) galleryScrollEl.scrollTop = galleryScrollTop;
+        else window.scrollTo(0, galleryScrollTop);
+    } catch { /* 滚动恢复失败可忽略 */ }
 }
 
 function renderCharacterSlots(charName, slots) {
@@ -2891,36 +2959,65 @@ function renderCharacterSlots(charName, slots) {
     });
 }
 
-// 縮略條分批掛載：一個 slot 可能有上百版歷史，一次鋪滿會讓 WebView 為上百張原圖
-// 建 blob URL 並解碼而 OOM。首批 24 張，其餘靠「再顯示」追加，img 自身 lazy 加載。
+// 历史图分页：一个 slot 可能有上百版历史，一次性把全部原图 base64 经 postMessage
+// 传入 iframe 会产生克隆峰值并长期常驻内存。每页 24 张按需取，img 自身 lazy 加载。
 const MODAL_THUMB_PAGE = 24;
-let modalThumbVisible = MODAL_THUMB_PAGE;
 
 function openGalleryModalFromCache(charName, slotId) {
     const slots = loadedCharPreviews[charName];
     if (!slots || !slots[slotId]) return;
-    // 列表只持有封面輕量索引，完整歷史向父端按需取；先開窗顯示載入態。
-    modalData = { slotId, images: [], currentIndex: 0, charName, loading: true };
-    modalThumbVisible = MODAL_THUMB_PAGE;
+    // 列表仅持有封面轻量索引，完整历史按页向父端取；先开窗显示加载态。
+    modalData = { slotId, images: [], currentIndex: 0, charName, loading: true, total: 0, hasMore: false, loadingMore: false };
     $('nd_modal_img').removeAttribute('src');
     $('nd_modal_thumbs').innerHTML = '<div class="gallery-modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
     $('nd_gallery_modal').classList.add('visible');
-    postToParent({ type: 'LOAD_SLOT_PREVIEWS', slotId });
+    postToParent({ type: 'LOAD_SLOT_PREVIEWS', slotId, offset: 0, limit: MODAL_THUMB_PAGE });
 }
 
-function applySlotPreviewsToModal(slotId, images) {
+function applySlotPreviewsToModal(slotId, images, extra) {
     if (!modalData.loading || modalData.slotId !== slotId) return;
     modalData.images = Array.isArray(images) ? images : [];
     modalData.loading = false;
+    modalData.loadingMore = false;
+    modalData.total = Number(extra?.total) || modalData.images.length;
+    modalData.hasMore = Boolean(extra?.hasMore);
     modalData.currentIndex = 0;
-    modalThumbVisible = MODAL_THUMB_PAGE;
     renderModalThumbs();
     renderModalContent();
 }
 
+// 「再显示」追加一页（按已加载条数作为 offset）
+function appendSlotPreviewsToModal(slotId, images, extra) {
+    if (modalData.loading || modalData.slotId !== slotId) return;
+    if (Array.isArray(images) && images.length) {
+        // 删除等操作后 offset 可能与已加载页重叠，按 imgId 去重
+        const existedIds = new Set(modalData.images.map(img => img.imgId));
+        modalData.images.push(...images.filter(img => !existedIds.has(img.imgId)));
+    }
+    modalData.loadingMore = false;
+    if (typeof extra?.total === 'number') modalData.total = extra.total;
+    modalData.hasMore = Boolean(extra?.hasMore);
+    renderModalThumbs();
+    updateModalThumbState();
+}
+
+function requestMoreModalPreviews() {
+    if (modalData.loading || modalData.loadingMore || !modalData.hasMore) return;
+    modalData.loadingMore = true;
+    $('nd_modal_more')?.setAttribute('disabled', 'disabled');
+    postToParent({
+        type: 'LOAD_SLOT_PREVIEWS',
+        slotId: modalData.slotId,
+        offset: modalData.images.length,
+        limit: MODAL_THUMB_PAGE,
+        append: true,
+    });
+}
+
 function closeGalleryModal() {
     $('nd_gallery_modal').classList.remove('visible');
-    modalData = { slotId: null, images: [], currentIndex: 0, charName: null, loading: false };
+    // 释放已加载原图 base64 引用，关闭弹窗后可被 GC 回收
+    modalData = { slotId: null, images: [], currentIndex: 0, charName: null, loading: false, total: 0, hasMore: false, loadingMore: false };
 }
 
 function renderModalThumbs() {
@@ -2929,26 +3026,23 @@ function renderModalThumbs() {
         $('nd_modal_thumbs').innerHTML = '<div class="gallery-modal-loading">暂无图片</div>';
         return;
     }
-    const visible = images.slice(0, modalThumbVisible);
-    $('nd_modal_thumbs').innerHTML = visible.map((img, i) => {
+    $('nd_modal_thumbs').innerHTML = images.map((img, i) => {
         const src = getGalleryImageUrl(img);
         const cls = ['gallery-modal-thumb'];
         if (i === currentIndex) cls.push('active');
         if (img.savedUrl) cls.push('saved');
         return `<img class="${cls.join(' ')}" src="${escapeHtml(src)}" data-index="${i}" loading="lazy" decoding="async">`;
-    }).join('') + (images.length > modalThumbVisible
-        ? '<button class="gallery-modal-more" type="button" id="nd_modal_more">再显示 '
-            + Math.min(MODAL_THUMB_PAGE, images.length - modalThumbVisible) + ' 张</button>'
+    }).join('') + (modalData.hasMore
+        ? '<button class="gallery-modal-more" type="button" id="nd_modal_more">'
+            + (modalData.loadingMore ? '<i class="fa-solid fa-spinner fa-spin"></i> 加载中...'
+                : '再显示 ' + Math.min(MODAL_THUMB_PAGE, modalData.total - images.length) + ' 张')
+            + '</button>'
         : '');
 
     $('nd_modal_thumbs').querySelectorAll('img').forEach(t => {
         t.addEventListener('click', () => { modalData.currentIndex = parseInt(t.dataset.index); renderModalContent(); });
     });
-    $('nd_modal_more')?.addEventListener('click', () => {
-        modalThumbVisible += MODAL_THUMB_PAGE;
-        renderModalThumbs();
-        updateModalThumbState();
-    });
+    $('nd_modal_more')?.addEventListener('click', requestMoreModalPreviews);
 }
 
 function updateModalThumbState() {
@@ -2975,7 +3069,7 @@ function renderModalContent() {
         saveBtn.disabled = false;
     }
     
-    $('nd_modal_info').textContent = `${currentIndex + 1} / ${images.length} · ${new Date(current.timestamp).toLocaleString()}`;
+    $('nd_modal_info').textContent = `${currentIndex + 1} / ${modalData.total || images.length} · ${new Date(current.timestamp).toLocaleString()}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3163,6 +3257,7 @@ function applyStateToUI() {
         $('nd_image_title_mode').value = ['none', 'overlay', 'collapse'].includes(state.imageTitleMode)
             ? state.imageTitleMode
             : 'overlay';
+        $('nd_auto_generate_images').checked = state.autoGenerateImages !== false;
         $('nd_cache_count').textContent = state.cacheStats?.count || 0;
         $('nd_cache_size').textContent = (state.cacheStats?.sizeMB || 0) + ' MB';
 
@@ -3306,6 +3401,12 @@ function renderThumbCandidates(data) {
         imgEl.alt = '';
         imgEl.src = image.thumb;
         imgEl.loading = 'lazy';
+        // 内联固定高度：部分移动 WebView 会无视样式表把 grid 内图片压成细线
+        imgEl.style.width = '100%';
+        imgEl.style.height = '140px';
+        imgEl.style.minHeight = '140px';
+        imgEl.style.objectFit = 'cover';
+        imgEl.style.display = 'block';
         card.appendChild(imgEl);
         if (!image.matched) {
             const badge = document.createElement('span');
@@ -3542,9 +3643,14 @@ function renderVibeList(modelKey) {
         range.max = '1';
         range.step = '0.05';
         range.value = String(sel ? clampVibeStrength(sel.strength) : 0.6);
-        const val = document.createElement('span');
-        val.className = 'nd-vibe-val';
-        val.textContent = Number(range.value).toFixed(2);
+        const val = document.createElement('input');
+        val.type = 'number';
+        val.className = 'nd-vibe-num';
+        val.min = '0';
+        val.max = '1';
+        val.step = '0.05';
+        val.value = Number(range.value).toFixed(2);
+        val.title = '强度可手动输入（0 ~ 1）';
         // 拖强度本身就代表要使用此图：未入工作副本时自动勾选
         const ensureDraft = () => {
             let draft = vibeDraftSelections.find(s => s.id === item.id);
@@ -3556,9 +3662,18 @@ function renderVibeList(modelKey) {
         };
         range.addEventListener('input', () => {
             ensureDraft().strength = Number(range.value);
-            val.textContent = Number(range.value).toFixed(2);
+            val.value = Number(range.value).toFixed(2);
         });
         range.addEventListener('change', () => {
+            hintGroupEdited();
+            renderVibeList(modelKey);
+        });
+        // 数值框手填：clamp 后同步滑块并写入工作副本
+        val.addEventListener('change', () => {
+            const num = clampVibeStrength(Number(val.value));
+            val.value = num.toFixed(2);
+            range.value = String(num);
+            ensureDraft().strength = num;
             hintGroupEdited();
             renderVibeList(modelKey);
         });
@@ -3580,7 +3695,6 @@ function renderVibeList(modelKey) {
             badge.className = 'nd-vibe-badge pending';
             badge.textContent = '生成时编码';
         }
-        strengthRow.appendChild(badge);
         main.appendChild(strengthRow);
 
         // 信息提取烘焙进编码；修改后清空全部模型编码并重编当前模型
@@ -3610,11 +3724,11 @@ function renderVibeList(modelKey) {
             }
         });
         infoRow.appendChild(infoSel);
+        infoRow.appendChild(badge);
+        infoRow.appendChild(makeIconBtn('fa-solid fa-file-export', '导出此 Vibe（含原图与各模型编码）', () => exportVibeSingle(item.id)));
+        infoRow.appendChild(makeIconBtn('fa-solid fa-xmark', '从库删除（所有预设 / 组里的引用都会失效）', () => removeLibItem(item.id), true));
         main.appendChild(infoRow);
         row.appendChild(main);
-
-        row.appendChild(makeIconBtn('fa-solid fa-file-export', '导出此 Vibe（含原图与各模型编码）', () => exportVibeSingle(item.id)));
-        row.appendChild(makeIconBtn('fa-solid fa-xmark', '从库删除（所有预设 / 组里的引用都会失效）', () => removeLibItem(item.id), true));
 
         list.appendChild(row);
     });
@@ -4242,7 +4356,13 @@ window.addEventListener('message', event => {
             state = { ...state, ...data.settings, cacheStats: data.cacheStats || state.cacheStats };
             if (data.defaultPrompts) state._defaultPrompts = data.defaultPrompts;
             gallerySummary = data.gallerySummary || {};
-            loadedCharPreviews = {};
+            // 保留已展开分组的索引缓存以维持展开状态，仅清理已不存在的角色
+            Object.keys(loadedCharPreviews).forEach(charName => {
+                if (!gallerySummary[charName]) delete loadedCharPreviews[charName];
+            });
+            expandedGalleryChars.forEach(charName => {
+                if (!gallerySummary[charName]) expandedGalleryChars.delete(charName);
+            });
             applyStateToUI();
             shuffleCredits();
             break;
@@ -4261,7 +4381,11 @@ window.addEventListener('message', event => {
             break;
 
         case 'SLOT_PREVIEWS_LOADED':
-            applySlotPreviewsToModal(data.slotId, data.images);
+            if (data.append) {
+                appendSlotPreviewsToModal(data.slotId, data.images, data);
+            } else {
+                applySlotPreviewsToModal(data.slotId, data.images, data);
+            }
             break;
 
         case 'ENCODE_VIBE_RESULT': {
@@ -4332,11 +4456,12 @@ window.addEventListener('message', event => {
                 postToParent({ type: 'LOAD_CHARACTER_PREVIEWS', charName: modalData.charName });
             }
             if (modalData.slotId && !modalData.loading) {
+                const existed = modalData.images.some(img => img.imgId === data.imgId);
                 modalData.images = modalData.images.filter(img => img.imgId !== data.imgId);
-                if (modalData.images.length === 0) closeGalleryModal();
+                if (existed && modalData.total > 0) modalData.total -= 1;
+                if (modalData.images.length === 0 && !modalData.hasMore) closeGalleryModal();
                 else {
                     if (modalData.currentIndex >= modalData.images.length) modalData.currentIndex = modalData.images.length - 1;
-                    modalThumbVisible = Math.max(MODAL_THUMB_PAGE, Math.min(modalThumbVisible, modalData.images.length));
                     renderModalThumbs();
                     renderModalContent();
                 }
@@ -4420,6 +4545,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // 导航切换
     // ═══════════════════════════════════════════════════════════════════════
     $$('.nav-item, .mobile-nav-item').forEach(item => item.addEventListener('click', () => switchView(item.dataset.view)));
+
+    // 记录画廊页滚动位置，供整体重建后恢复（scroll 不冒泡，需用捕获阶段）
+    document.addEventListener('scroll', (event) => {
+        if (!$('view-gallery')?.classList.contains('active')) return;
+        // 弹窗内缩略条滚动不计入画廊页面位置
+        if (event.target?.closest?.('#nd_gallery_modal')) return;
+        galleryScrollEl = event.target === document ? document.documentElement : event.target;
+        galleryScrollTop = galleryScrollEl.scrollTop || 0;
+    }, true);
     
     // ═══════════════════════════════════════════════════════════════════════
     // 模式切换
@@ -4541,6 +4675,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const mode = $('nd_image_title_mode').value;
         state.imageTitleMode = mode;
         postToParent({ type: 'SAVE_IMAGE_TITLE_MODE', imageTitleMode: mode });
+    });
+
+    $('nd_auto_generate_images').addEventListener('change', () => {
+        const auto = $('nd_auto_generate_images').checked;
+        state.autoGenerateImages = auto;
+        postToParent({ type: 'SAVE_AUTO_GENERATE_IMAGES', autoGenerateImages: auto });
     });
 
     $('nd_test_api').addEventListener('click', () => postToParent({

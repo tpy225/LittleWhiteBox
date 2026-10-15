@@ -9,6 +9,7 @@ export function hasPreviewImage(record) {
 
 export const DRAW_SLOT_COPY = Object.freeze({
     waiting: '回复完成后绘图',
+    manualWaiting: '待手动生成',
     preparing: '准备绘图',
     generate: '生成',
     retry: '重试',

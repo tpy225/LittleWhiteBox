@@ -3399,6 +3399,7 @@ async function sendInitData() {
             requestDelay: settings.requestDelay,
             cacheDays: getSharedDrawSettings().cacheDays,
             imageTitleMode: getSharedDrawSettings().imageTitleMode,
+            autoGenerateImages: getSharedDrawSettings().autoGenerateImages !== false,
             selectedParamsPresetId: settings.selectedParamsPresetId,
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
@@ -3653,6 +3654,16 @@ async function handleFrameMessage(event) {
                 settings.imageTitleMode = nextMode;
             }, '已保存', { notify: false, silent: false });
             if (ok) renderAllDrawPreviews?.({ force: true });
+            break;
+        }
+
+        case 'SAVE_AUTO_GENERATE_IMAGES': {
+            const nextAuto = data.autoGenerateImages === true;
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.autoGenerateImages = nextAuto;
+            }, '已保存', { notify: false, silent: false });
+            const message = !ok ? '保存失败' : nextAuto ? '已开启自动生图' : '已关闭自动生图';
+            postStatus(ok ? 'success' : 'error', message, 'api');
             break;
         }
 
@@ -4472,9 +4483,22 @@ async function handleFrameMessage(event) {
             try {
                 const slotId = String(data.slotId || '');
                 if (!slotId) break;
-                const images = await getPreviewsBySlot(slotId);
+                // 分页返回：一次把上百张原图 base64 经 postMessage 克隆进 iframe 会产生内存峰值
+                const all = await getPreviewsBySlot(slotId);
+                const offset = Math.max(0, Number(data.offset) || 0);
+                const limit = Math.min(60, Math.max(1, Number(data.limit) || 24));
+                const images = all.slice(offset, offset + limit);
                 const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
-                if (iframe) postToIframe(iframe, { type: 'SLOT_PREVIEWS_LOADED', slotId, images }, 'LittleWhiteBox-NovelDraw');
+                if (iframe) postToIframe(iframe, {
+                    type: 'SLOT_PREVIEWS_LOADED',
+                    slotId,
+                    images,
+                    offset,
+                    limit,
+                    total: all.length,
+                    hasMore: offset + images.length < all.length,
+                    append: data.append === true,
+                }, 'LittleWhiteBox-NovelDraw');
             } catch (e) {
                 console.error('[NovelDraw] 加载 slot 历史失败:', e);
             }
