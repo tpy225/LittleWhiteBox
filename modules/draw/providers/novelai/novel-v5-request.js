@@ -132,11 +132,18 @@ export function buildNovelV5RequestBody({ scene, characterPrompts = [], negative
             throw new NovelV5RequestError(`NovelAI V5 第 ${index + 1} 个角色提示词必须是对象`);
         }
     });
+    // Medium Effort 是官方蒸馏模型：步数固定 14、采样器固定 Euler Ancestral、
+    // 不支持 CFG Rescale 与自定义 Undesired Content（锁定 heavy 预设）。
+    const isMediumEffort = model === NOVEL_MODEL_IDS.V5_FULL_MEDIUM;
     const width = normalizeNumber(params.width, 'width', 832, { integer: true, min: 1 });
     const height = normalizeNumber(params.height, 'height', 1216, { integer: true, min: 1 });
     const scale = normalizeNumber(params.scale, 'scale', 7, { min: 0 });
-    const steps = normalizeNumber(params.steps, 'steps', 23, { integer: true, min: 1 });
-    const cfgRescale = normalizeNumber(params.cfg_rescale, 'cfg_rescale', 0, { min: 0, max: 1 });
+    const steps = isMediumEffort
+        ? 14
+        : normalizeNumber(params.steps, 'steps', 23, { integer: true, min: 1 });
+    const cfgRescale = isMediumEffort
+        ? 0
+        : normalizeNumber(params.cfg_rescale, 'cfg_rescale', 0, { min: 0, max: 1 });
     const normalizedSeed = normalizeNumber(seed, 'seed', undefined, {
         integer: true,
         min: 0,
@@ -145,26 +152,32 @@ export function buildNovelV5RequestBody({ scene, characterPrompts = [], negative
     if (normalizedSeed === undefined) {
         throw new NovelV5RequestError('NovelAI V5 seed 不能为空');
     }
-    const sampler = normalizeRequiredText(params.sampler, 'sampler', 'k_euler_ancestral');
+    const sampler = isMediumEffort
+        ? 'k_euler_ancestral'
+        : normalizeRequiredText(params.sampler, 'sampler', 'k_euler_ancestral');
     const scheduler = normalizeRequiredText(params.scheduler, 'scheduler', 'karras');
     const qualityPresetId = normalizePresetId(
         params.v5QualityPresetId,
         V5_QUALITY_IDS,
         'standard',
     );
-    const ucPresetId = normalizePresetId(params.v5UcPresetId, V5_UC_IDS, 'heavy');
+    const ucPresetId = isMediumEffort
+        ? 'heavy'
+        : normalizePresetId(params.v5UcPresetId, V5_UC_IDS, 'heavy');
     const transparentBackground = params.transparentBackground === true;
     const basePrompt = appendV5AutomaticPrompt(scene, [
         transparentBackground ? 'transparent background' : '',
         V5_QUALITY_PRESETS[qualityPresetId],
     ]);
-    const shouldPrependNsfw = model === NOVEL_MODEL_IDS.V5_FULL
+    const isFullFamily = model === NOVEL_MODEL_IDS.V5_FULL || isMediumEffort;
+    const shouldPrependNsfw = isFullFamily
         && ucPresetId !== 'none'
         && !/\bnsfw\b/i.test(basePrompt);
     const fullNegativePrompt = joinPromptParts(
         shouldPrependNsfw ? 'nsfw' : '',
         V5_UC_PRESETS[ucPresetId],
-        negativePrompt,
+        // Medium Effort 不支持自定义 Undesired Content，仅用官方 heavy 预设
+        isMediumEffort ? '' : negativePrompt,
     );
     const centers = characterPrompts.map((character, index) => normalizeCharacterCenter(character.center, index));
     const charCaptions = characterPrompts.map((character, index) => ({
