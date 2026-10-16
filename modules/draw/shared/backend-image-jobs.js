@@ -1,5 +1,5 @@
-const JOBS_ENDPOINT = '/api/plugins/littlewhitebox-image-jobs/v1/jobs';
-const STATUS_ENDPOINT = '/api/plugins/littlewhitebox-image-jobs/status';
+const JOBS_ENDPOINT = '/api/plugins/littlewhitebox-server/v1/jobs';
+const STATUS_ENDPOINT = '/api/plugins/littlewhitebox-server/status';
 const DEFAULT_REQUEST_TIMEOUT = 15_000;
 const DEFAULT_MAX_CONSECUTIVE_RETRIES = 6;
 const DEFAULT_MAX_RETRY_DELAY = 10_000;

@@ -1134,7 +1134,7 @@ async function runComfyImageBatch({
         }
         if (!hasImageBackendJobsCapability(status)) {
             detachScope.dispose();
-            throw new Error('小白X后台批量任务不可用。请安装并启动 littlewhitebox-image-jobs，或关闭此选项后继续使用当前连接方式。');
+            throw new Error('小白X后台批量任务不可用。请安装并启动 littlewhitebox-server，或关闭此选项后继续使用当前连接方式。');
         }
         try {
             const backendRequest = compiledBatch
