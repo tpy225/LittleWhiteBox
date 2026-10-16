@@ -30,9 +30,9 @@ globalThis.fetch = async input => {
 // query construction and cache lifecycle are the actual production modules.
 const shims = {
     'extensions.js': 'export const getContext=()=>globalThis.__lexicalTestHost.context;',
-    'store.js': 'export const getSummaryStore=()=>globalThis.__lexicalTestHost.store;',
+    'store.js': 'export const getPublishedSummaryStore=()=>globalThis.__lexicalTestHost.store;',
     'chunk-store.js': 'export const getAllChunks=()=>globalThis.__lexicalTestHost.readChunks();',
-    'state-store.js': 'export const getStateAtoms=()=>globalThis.__lexicalTestHost.atoms;',
+    'state-store.js': 'export const getPublishedStateAtoms=()=>globalThis.__lexicalTestHost.atoms;',
     'config.js': 'export const getTextFilterRules=()=>globalThis.__lexicalTestHost.filterRules || [];',
     'debug-core.js': 'export const xbLog={info(){},warn(){},error(){},debug(){},isEnabled(){return false;}};',
     'embedder.js': 'export const getEngineFingerprint=()=>"test"; export const embed=async texts=>texts.map(()=>[1,0]);',
@@ -131,6 +131,16 @@ test('recall prose keeps tag contents after existing exclusion rules have remove
     const text = '<think>hidden thought</think><state>hidden state</state><x>visible story</x>[tts:voice]';
     assert.equal(mod.cleanRecallMessageText(text), 'visible story');
     assert.equal(mod.cleanRecallMessageText('visible story'), 'visible story');
+});
+
+test('recall query segments ignore functional controls but retain actual dialogue', () => {
+    const query = text => mod.buildQueryBundle([{ is_user: true, mes: text }]);
+    const expected = query('Alice found the key.\n  \n\nHello Bob.');
+    const actual = query('Alice found the key.\n[img:rain] [image:slot-1] [dice:check_1]\n'
+        + '[tts:emotion=happy]\n[voice:sad:Hello Bob.]');
+    for (const key of ['querySegments', 'rerankQuery', 'lexicalTerms', 'focusQuery', 'focusTerms']) {
+        assert.deepEqual(actual[key], expected[key]);
+    }
 });
 
 test('UI custom exclusions run before tag removal and query construction', () => {
@@ -255,6 +265,58 @@ test('a multilingual alias makes the chat spelling a direct event participant', 
     assert.deepEqual(bundle.focusCharacters, ['五条悟']);
 });
 
+test('query feedback retains only the first three memories from each source without changing the rerank query', () => {
+    const bundle = mod.buildQueryBundle([{ is_user: true, mes: '继续说下去。' }]);
+    const rerankQuery = bundle.rerankQuery;
+    const anchors = Array.from({ length: 5 }, (_, index) => ({ atom: { semantic: `scene-${index + 1}` } }));
+    const events = Array.from({ length: 5 }, (_, index) => ({ event: { summary: `episode-${index + 1} (#1)` } }));
+
+    mod.refineQueryBundle(bundle, anchors, events);
+
+    for (let index = 1; index <= 5; index++) {
+        assert.equal(bundle.hintsSegment.text.includes(`scene-${index}`), index <= 3);
+        assert.equal(bundle.hintsSegment.text.includes(`episode-${index}`), index <= 3);
+    }
+    assert.equal(bundle.rerankQuery, rerankQuery);
+});
+
+test('a multi-character alias retains its single-character identity through event recall', async () => {
+    const event = { id: 'memory', participants: ['魈'], summary: '魈收下了礼物。 (#1)' };
+    host.store.json.characters.main = ['魈'];
+    host.store.json.events = [event];
+    host.store.json.characterAliases = [{ from: '迦楼罗', to: '魈' }];
+    host.context.chat = [{ is_user: true, mes: '我抱住迦楼罗。' }];
+    host.scores = [{ eventId: event.id, similarity: 0.65 }];
+
+    const result = await mod.recallMemory([event], { enabled: true });
+    assert.deepEqual(result.focusCharacters, ['魈']);
+    const recalled = result.events.find(item => item.event.id === event.id);
+    assert.equal(recalled?._recallType, 'DIRECT');
+    assert.equal(recalled?._evidenceEligible, true);
+
+    host.store.json.characterAliases.length = 0;
+    assert.deepEqual(mod.buildQueryBundle(host.context.chat).focusCharacters, [], 'removing the alias removes its identity match');
+});
+
+test('single-character names remain unavailable as literal matches even with known aliases', () => {
+    host.store.json.characters.main = ['白', '魈'];
+    host.store.json.characterAliases = [{ from: '白先生', to: '白' }, { from: '迦楼罗', to: '魈' }];
+    const query = text => mod.buildQueryBundle([{ is_user: true, mes: text }]);
+
+    assert.deepEqual(query('我明白了。魈').focusTerms, []);
+    assert.deepEqual(query('我明白了。魈').focusCharacters, []);
+    assert.deepEqual(query('白先生来了。').focusCharacters, ['白']);
+});
+
+test('aliases to single-character identities still exclude USER and blacklisted people', () => {
+    host.store.json.characterAliases = [{ from: '迦楼罗', to: '魈' }, { from: '面具人', to: '你' }];
+    const message = [{ is_user: true, mes: '迦楼罗与面具人到了。' }];
+    for (const name1 of ['魈', '迦楼罗']) {
+        host.context.name1 = name1;
+        assert.deepEqual(mod.buildQueryBundle(message).focusCharacters, []);
+    }
+});
+
 test('canonical and alias queries find historical prose without double-counting aliases', async () => {
     host.store.json.characters.main = ['雪照宁', '黑衣人'];
     host.chunks = [chunk('old-alias', '黑衣人来到城里')];
@@ -302,6 +364,43 @@ test('writes and removals during the initial build are included before it is pub
     assert.deepEqual(result.eventIds, ['new-event']);
     mod.removeEventDocuments(['new-event']);
     assert.deepEqual(mod.searchLexicalIndex(await mod.getLexicalIndex(), ['Alice']).eventIds, []);
+});
+
+test('local edit, suffix retirement and L2 reconciliation retain a warm corpus without rereading chunks', async () => {
+    host.chunks = [chunk('prefix', 'Alice retained', 0), chunk('edit', 'Bob obsolete', 1), chunk('tail', 'Carol removed', 2)];
+    const event = { id: 'l2', summary: 'Alice historical event' };
+    host.store.json.events = [event];
+    await mod.getLexicalIndex();
+    mod.removeDocumentsByFloor(1);
+    mod.addChunkDocuments([chunk('replacement', 'Bob corrected', 1)]);
+    let index = await mod.getLexicalIndex();
+    assert.deepEqual(hits(index, ['Alice']), ['prefix']);
+    assert.deepEqual(hits(index, ['Bob']), ['replacement']);
+    assert.deepEqual(hits(index, ['Carol']), ['tail']);
+    mod.removeDocumentsFromFloor(2);
+    mod.replaceEventDocuments([event]);
+    index = await mod.getLexicalIndex();
+    assert.deepEqual(hits(index, ['Carol']), []);
+    assert.deepEqual(mod.searchLexicalIndex(index, ['Alice']).eventIds, ['l2']);
+    assert.deepEqual(hits(index, ['Alice']), ['prefix']);
+    assert.equal(host.reads, 1);
+});
+
+test('suffix removal during cold build removes queued old additions but retains later replacements and L2', async () => {
+    const gate = Promise.withResolvers();
+    host.chunks = [chunk('prefix', 'Alice prefix', 0), chunk('obsolete', 'Alice obsolete', 2)];
+    host.readChunks = async function () { this.reads++; await gate.promise; return this.chunks; };
+    host.store.json.events = [{ id: 'l2', summary: 'Alice historical' }];
+    const pending = mod.getLexicalIndex();
+    await Promise.resolve();
+    mod.addChunkDocuments([chunk('queued-old', 'Alice old', 3)]);
+    mod.removeDocumentsFromFloor(2);
+    mod.addChunkDocuments([chunk('latest', 'Alice latest', 2)]);
+    gate.resolve();
+    const result = mod.searchLexicalIndex(await pending, ['Alice']);
+    assert.deepEqual(result.chunkIds.sort(), ['latest', 'prefix']);
+    assert.deepEqual(result.eventIds, ['l2']);
+    assert.equal(host.reads, 1);
 });
 
 test('a name learned during a pending build is searchable when that build finishes', async () => {
@@ -590,6 +689,10 @@ test('batch folding preserves sequential clear, move, replacement and deletion s
     const originals = [moving, other, event];
     const commands = [
         { floor: 0 },
+        { fromFloor: 1 },
+        { fromFloor: 0, docs: [{ ...moving, floor: 2 }] },
+        { clearEvents: true },
+        { clearEvents: true, docs: [event] },
         { floor: 1, docs: [{ ...moving, floor: 1, text: 'alpha gamma' }] },
         { docs: [moving] },
         { clearChunks: true },
@@ -604,10 +707,10 @@ test('batch folding preserves sequential clear, move, replacement and deletion s
         // or batch planning is involved in deciding the expected final sources.
         const expected = new Map(originals.map(doc => [doc.id, doc]));
         for (const update of updates) {
-            if (update.clearChunks || update.floor !== undefined) {
-                for (const [id, doc] of expected) {
-                    if (doc.type === 'chunk' && (update.clearChunks || doc.floor === update.floor)) expected.delete(id);
-                }
+            for (const [id, doc] of expected) {
+                if (doc.type === 'event' && update.clearEvents) expected.delete(id);
+                if (doc.type === 'chunk' && (update.clearChunks || doc.floor === update.floor
+                    || (update.fromFloor !== undefined && doc.floor >= update.fromFloor))) expected.delete(id);
             }
             for (const id of update.removeIds || []) expected.delete(id);
             for (const doc of update.docs || []) {

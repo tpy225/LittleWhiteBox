@@ -61,6 +61,7 @@ function createHarness(prepare, options = {}) {
         clearTimeout: scheduler.clearTimeout,
         now: scheduler.now,
         onJoinedCancel: options.onJoinedCancel,
+        createRetryNotice: options.createRetryNotice,
     });
     return { context, coordinator, scheduler };
 }
@@ -69,6 +70,86 @@ async function flushMicrotasks() {
     await Promise.resolve();
     await Promise.resolve();
 }
+
+test('long query waiting can join prefetch; remaining preparation budget resumes without resetting', async () => {
+    let finishQuery;
+    const { context, coordinator, scheduler } = createHarness(async (_type, _signal, _diagnostics, withQueryEmbedding) => {
+        scheduler.advanceBy(40);
+        await withQueryEmbedding(() => new Promise(resolve => { finishQuery = resolve; }));
+        return new Promise(() => {});
+    });
+    coordinator.startWatching({ chatId: context.chatId, initialLength: 0 });
+    const user = { is_user: true, mes: 'fixture' };
+    context.chat.push(user);
+    scheduler.advanceBy(16);
+    await flushMicrotasks();
+    scheduler.advanceBy(60_000);
+    const { slot, path } = coordinator.join({ chatId: context.chatId, type: 'normal', focusRef: user });
+    assert.equal(path, 'prefetch');
+    assert.equal(slot.controller.signal.aborted, false);
+    finishQuery();
+    await flushMicrotasks();
+    scheduler.advanceBy(59);
+    assert.equal(slot.controller.signal.aborted, false);
+    scheduler.advanceBy(1);
+    assert.equal(slot.cancelReason, RECALL_TIMEOUT_REASONS.compute);
+    assert.equal(slot.controller.signal.aborted, true);
+    assert.equal(scheduler.pendingCount(), 0);
+});
+
+for (const reason of ['generation-stopped', 'chat-changed', 'recall-config-changed', 'unregistered']) {
+    test(`${reason} immediately cancels a joined long query and clears its notice`, async () => {
+        let finishQuery;
+        let visible = false;
+        const { context, coordinator, scheduler } = createHarness(async (_type, _signal, _diagnostics, withQueryEmbedding) => {
+            await withQueryEmbedding(() => new Promise(resolve => { finishQuery = resolve; }));
+            return { text: 'late' };
+        }, { createRetryNotice: () => ({ show() { visible = true; }, clear() { visible = false; } }) });
+        const { slot } = coordinator.join({ chatId: context.chatId, type: 'normal' });
+        await flushMicrotasks();
+        scheduler.advanceBy(30_000);
+        assert.equal(visible, true);
+        const pending = coordinator.waitForOutcome(slot);
+        coordinator.cancel(reason);
+        await assert.rejects(pending, { name: 'AbortError' });
+        assert.equal(visible, false);
+        finishQuery();
+        await slot.outcome;
+        assert.equal(coordinator.getCurrent(), null);
+        assert.equal(scheduler.pendingCount(), 0);
+    });
+}
+
+for (const alreadyRunning of [false, true]) {
+    test(`a retained stop cannot be counted as interrupted work on later edits (existing=${alreadyRunning})`, () => {
+        const { coordinator, context } = createHarness(() => assert.fail('stopped preparation must not start'));
+        if (alreadyRunning) {
+            const run = coordinator.startWatching({ chatId: context.chatId, initialLength: 0 });
+            assert.equal(coordinator.getActive(), run);
+        }
+        const stopped = coordinator.cancel('generation-stopped', { retainForJoin: true, chatId: context.chatId });
+        assert.equal(coordinator.getCurrent(), stopped);
+        assert.equal(coordinator.getActive(), null);
+        for (const reason of ['recall-config-changed', 'summary-edited', 'cache-cleared']) {
+            assert.equal(coordinator.getActive(), null);
+            coordinator.cancel(reason);
+        }
+        const next = coordinator.startWatching({ chatId: context.chatId, initialLength: 0 });
+        assert.equal(coordinator.getActive(), next);
+        coordinator.cancel('summary-edited');
+        assert.equal(coordinator.getActive(), null);
+    });
+}
+
+test('prepared recall remains interruptible until adopted; completed recall is no longer active', async () => {
+    const { coordinator, context } = createHarness(async () => ({ text: 'memory' }));
+    const { slot } = coordinator.join({ chatId: context.chatId, type: 'normal' });
+    assert.equal(coordinator.getActive(), slot);
+    await coordinator.waitForOutcome(slot);
+    assert.equal(coordinator.getActive(), slot);
+    coordinator.finish(slot);
+    assert.equal(coordinator.getActive(), null);
+});
 
 test('cancellation publishes once at cancellation time, before late work can affect a newer run', async () => {
     const cancellations = [];
@@ -115,6 +196,8 @@ test('dry-run is ignored without superseding a real run, while real non-user gen
     );
     assert.equal(getRecallPrefetchStartAction('swipe', {}, false), 'cancel-only');
     assert.equal(getRecallPrefetchStartAction('normal', {}, false), 'watch');
+    assert.equal(getRecallPrefetchStartAction('quiet', {}, false), 'ignore');
+    assert.equal(getRecallPrefetchStartAction('impersonate', {}, false), 'cancel-only');
 });
 
 test('prefetch waits for a real USER object and reuses that exact object at join', async () => {
@@ -233,7 +316,7 @@ test('waiting for the host without starting recall reports host waiting, not a r
     assert.equal(coordinator.getCurrent(), null);
 });
 
-test('an object-reference mismatch aborts the prefetched run and recomputes once', async () => {
+test('a local source replacement retains the running recall without another request', async () => {
     let releaseFirst;
     const firstPending = new Promise(resolve => { releaseFirst = resolve; });
     const signals = [];
@@ -262,21 +345,20 @@ test('an object-reference mismatch aborts the prefetched run and recomputes once
     });
     await flushMicrotasks();
 
-    assert.equal(joined.path, 'fallback');
-    assert.equal(prefetched.controller.signal.aborted, true);
-    assert.equal(signals[0].aborted, true);
-    assert.equal(calls, 2);
+    assert.equal(joined.path, 'prefetch');
+    assert.equal(joined.slot, prefetched);
+    assert.equal(signals[0].aborted, false);
+    assert.equal(calls, 1);
+    releaseFirst({ text: 'existing memory' });
     assert.deepEqual(await joined.slot.outcome, {
         ok: true,
-        value: { text: 'current' },
+        value: { text: 'existing memory' },
     });
-
-    releaseFirst({ text: 'stale' });
-    assert.equal((await prefetched.outcome).ok, true);
     assert.equal(coordinator.getCurrent(), joined.slot);
+    coordinator.finish(joined.slot);
 });
 
-test('moving the captured USER object to another floor invalidates the prefetch', async () => {
+test('moving the captured USER to another floor retains this generation recall', async () => {
     let calls = 0;
     const { context, coordinator, scheduler } = createHarness(() => {
         calls++;
@@ -305,9 +387,10 @@ test('moving the captured USER object to another floor invalidates the prefetch'
     });
     await flushMicrotasks();
 
-    assert.equal(joined.path, 'fallback');
-    assert.equal(prefetched.controller.signal.aborted, true);
-    assert.equal(calls, 2);
+    assert.equal(joined.path, 'prefetch');
+    assert.equal(prefetched.controller.signal.aborted, false);
+    assert.equal(calls, 1);
+    coordinator.finish(joined.slot);
 });
 
 test('joining pending recall keeps its computation deadline without counting the earlier host wait', async () => {
@@ -417,12 +500,11 @@ test('waiting for USER nearly exhausts the host budget but leaves a full recall 
     coordinator.finish(joined.slot);
 });
 
-test('replacing the source of a ready result computes new memory with a fresh budget', async () => {
+test('replacing the source of a ready result retains the successful memory even after its old deadline', async () => {
     let calls = 0;
-    let release;
     const { context, coordinator, scheduler } = createHarness(() => {
         calls++;
-        return calls === 1 ? { text: 'old' } : new Promise(resolve => { release = resolve; });
+        return { text: 'existing memory' };
     });
     const userMessage = { is_user: true, mes: 'old source' };
     const old = coordinator.startWatching({ chatId: context.chatId, initialLength: 0 });
@@ -436,11 +518,11 @@ test('replacing the source of a ready result computes new memory with a fresh bu
     const joined = coordinator.join({ chatId: context.chatId, type: 'normal', focusRef: replacement });
     await flushMicrotasks();
     scheduler.advanceBy(99);
-    assert.equal(old.controller.signal.aborted, true);
+    assert.equal(joined.slot, old);
+    assert.equal(old.controller.signal.aborted, false);
     assert.equal(joined.slot.controller.signal.aborted, false);
-    assert.equal(calls, 2);
-    const expected = { text: 'current memory' };
-    release(expected);
+    assert.equal(calls, 1);
+    const expected = { text: 'existing memory' };
     assert.deepEqual(await coordinator.waitForOutcome(joined.slot), { ok: true, value: expected });
     coordinator.finish(joined.slot);
 });

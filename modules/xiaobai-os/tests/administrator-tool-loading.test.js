@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { administratorHarness, settled } from './administrator-harness.js';
+import { administratorHarness, settled, COMMON_TOOL_NAMES as common } from './administrator-harness.js';
 import { createAdministratorToolExecutor } from '../apps/administrator/agent/tool-executor.js';
 import { createAdministratorChatReader } from '../apps/administrator/host/chat-reader.js';
-import { TOOLS_LOAD } from '../apps/administrator/agent/tool-loader.js';
+import { administratorLoadedApps, TOOLS_LOAD } from '../apps/administrator/agent/tool-loader.js';
 import { OpenAICompatibleAdapter } from '../../agent-core/adapters/openai-compatible.js';
 import { GoogleAdapter } from '../../agent-core/adapters/google.js';
 import { administratorContext, contextUsage } from '../apps/administrator/agent/history.js';
@@ -11,31 +11,46 @@ import { ADMINISTRATOR_PROMPT } from '../apps/administrator/agent/prompt.js';
 import { administratorReferenceMessage } from '../apps/administrator/agent/reference-data.js';
 
 const names = tools => tools.map(tool => tool.function.name);
-const common = [TOOLS_LOAD, 'ChatSearch', 'ChatRead', 'OSInspect', 'ToolResultRead'];
 const call = (name, args = {}) => ({ toolCalls: [{ id: 'call', name, arguments: JSON.stringify(args) }] });
 const result = (messages, name) => JSON.parse(messages.findLast(message => message.role === 'tool' && message.toolName === name).content);
 
-async function executorFixture(h, saveReceipts = async () => { assert.fail('loading cannot save business data'); }) {
+async function executorFixture(h, saveReceipts = async () => { assert.fail('loading cannot save business data'); }, loadedApps = []) {
     const abort = new AbortController(), operations = [];
     const reader = createAdministratorChatReader(h.capture, () => abort.signal);
     const executor = await createAdministratorToolExecutor({ registry: h.registry,
-        reader, readEnvironment: h.readEnvironment,
+        reader, readEnvironment: h.readEnvironment, loadedApps,
         operations, guard: reader.isCurrent, onChange() {}, saveReceipts });
     let sequence = 0;
     return { executor, operations, abort, call: (name, args = {}) => executor.execute(name, args, String(++sequence), sequence) };
 }
 
-test('one load supplies a complete registered APP package and common tools without business activity', async () => {
+test('story search and reading work immediately while APP reads and writes still require selection', async () => {
+    const h = await administratorHarness(), f = await executorFixture(h);
+    const writes = h.state.writes.length;
+    assert.equal((await f.call('MapAtlasRead', { mode: 'summary' })).code, 'tool_not_loaded');
+    assert.equal((await f.call('WorldEdit', { overview: 'must not save' })).code, 'tool_not_loaded');
+    const search = await f.call('ChatSearch', { query: 'floor-55' });
+    assert.equal(search.status, 'read');
+    assert.deepEqual(search.data.items.map(item => item.floor), [55]);
+    const read = await f.call('ChatRead', { from: search.data.items[0].floor });
+    assert.equal(read.status, 'read');
+    assert.equal(read.data.items[0].text, h.state.messages[55].mes);
+    assert.deepEqual(names(f.executor.getTools()), common);
+    assert.equal(h.state.writes.length, writes);
+    assert.equal(f.operations.length, 2);
+});
+
+test('one load adds a complete registered APP package to the common tools without business activity', async () => {
     const h = await administratorHarness(), f = await executorFixture(h);
     const expected = (await h.registry.get('map').open()).tools.map(tool => tool.definition);
     const initial = f.executor.getTools(), data = structuredClone(f.executor.data);
     const writes = h.state.writes.length, reads = h.state.environmentReads.length;
-    assert.deepEqual(names(initial), [TOOLS_LOAD]);
+    assert.deepEqual(names(initial), common);
     assert.equal((await f.call('MapAtlasRead', { mode: 'summary' })).code, 'tool_not_loaded');
     const loaded = await f.call(TOOLS_LOAD, { apps: ['map'] });
     assert.deepEqual(f.executor.getTools().slice(common.length), expected);
     assert.deepEqual(loaded.data, { apps: ['map'], tools: [...common, ...names(expected)] });
-    assert.deepEqual(names(initial), [TOOLS_LOAD]);
+    assert.deepEqual(names(initial), common);
     assert.deepEqual(f.executor.data, data);
     const snapshot = f.executor.getTools();
     assert.deepEqual((await f.call(TOOLS_LOAD, { apps: ['map', 'map'] })).data, loaded.data);
@@ -55,7 +70,7 @@ test('invalid loads are atomic, initial read failures retain their package, and 
     for (const args of [null, [], { apps: null }, { apps: 'map' }, { apps: [1] }, { apps: [{ toString: null }] },
         { apps: [], extra: true }, { apps: ['map', 'unknown'] }]) {
         assert.equal((await f.call(TOOLS_LOAD, args)).status, 'failed');
-        assert.deepEqual(names(f.executor.getTools()), [TOOLS_LOAD]);
+        assert.deepEqual(names(f.executor.getTools()), common);
     }
     assert.equal((await f.call(TOOLS_LOAD, { apps: ['unavailable'] })).status, 'read');
     assert.deepEqual(f.executor.data.readErrors.map(error => error.code), ['storage_read_failed']);
@@ -64,10 +79,10 @@ test('invalid loads are atomic, initial read failures retain their package, and 
     assert.deepEqual((await f.call(TOOLS_LOAD, { apps: [] })).data, { apps: ['unavailable'], tools: common });
     const after = await executorFixture(h);
     assert.deepEqual(after.executor.data.readErrors, []);
-    assert.deepEqual(names(after.executor.getTools()), [TOOLS_LOAD]);
+    assert.deepEqual(names(after.executor.getTools()), common);
 });
 
-test('new APP registration joins loading without administrator-specific routing, and removal leaves no package', async () => {
+test('restored APP selections use current registered definitions and executors; removed packages stay unavailable', async () => {
     const h = await administratorHarness(); let executed = 0;
     const tools = [{ effect: 'read', label: 'Probe', target: () => '', definition: {
             type: 'function', function: { name: 'ProbeRead', description: 'Read probe.', parameters: { type: 'object', properties: {} } },
@@ -80,9 +95,36 @@ test('new APP registration joins loading without administrator-specific routing,
     assert.equal(executed, 0);
     assert.equal((await f.call('ProbeRead')).data, 7); assert.equal(executed, 1);
     remove();
-    const next = await executorFixture(h);
+    const next = await executorFixture(h, undefined, ['probe']);
     assert.equal((await next.call(TOOLS_LOAD, { apps: ['probe'] })).code, 'management_unavailable');
-    assert.deepEqual(names(next.executor.getTools()), [TOOLS_LOAD]);
+    assert.deepEqual(names(next.executor.getTools()), common);
+    const currentTools = tools.map(tool => ({ ...tool, definition: structuredClone(tool.definition) }));
+    currentTools[0].definition.function.parameters.properties = { version: { const: 2 } };
+    h.registry.register({ id: 'probe', label: 'Probe', prompt: '', tools: currentTools, async open() { return {
+        prompt: '', initial: {}, tools: currentTools, async execute() { return { ok: true, status: 'read', data: 8 }; },
+    }; } });
+    const restored = await executorFixture(h, undefined, ['probe']);
+    assert.deepEqual(restored.executor.getTools().slice(common.length), currentTools.map(tool => tool.definition));
+    assert.equal((await restored.call('ProbeRead', { version: 2 })).data, 8);
+    assert.equal(executed, 1);
+});
+
+test('selection follows confirmed call arguments, including paged results and reused provider call IDs', () => {
+    const group = (apps, outcome) => [
+        { role: 'assistant', content: '', toolCalls: [
+            { id: 'read', name: 'ChatRead', arguments: '{"from":0}' }, ...call(TOOLS_LOAD, { apps }).toolCalls,
+        ] },
+        { role: 'tool', toolName: 'ChatRead', toolCallId: 'read', content: '{"ok":true,"status":"read"}' },
+        { role: 'tool', toolName: TOOLS_LOAD, toolCallId: 'call', content: JSON.stringify(outcome) },
+    ];
+    const turns = [{ toolMessages: [
+        ...group(['world'], { ok: false, status: 'failed', code: 'tool_not_executed' }),
+        ...group(['tasks'], { ok: false, status: 'unconfirmed', code: 'tool_result_unconfirmed' }),
+        ...group(['map', 'world'], { ok: true, status: 'read', data: { reference: 'page', text: 'partial result' } }),
+        ...group(['tasks', 'missing'], { ok: false, status: 'failed', code: 'management_unavailable' }),
+    ] }, { toolMessages: group(['world'], { ok: true, status: 'read' }) }];
+    assert.deepEqual(administratorLoadedApps(turns), ['map', 'world']);
+    assert.deepEqual(administratorLoadedApps([]), []);
 });
 
 test('changed story floors block only the attempted write until all changed evidence is reread', async () => {
@@ -154,7 +196,7 @@ test('loading and loaded writes are cancelled on chat switch or stop without cha
     }
 });
 
-test('a tool loaded in the same batch cannot run until the next request; later turns and regeneration start fresh', async () => {
+test('a newly loaded tool needs the next model request; later turns retain it but regenerating its first load resets it', async () => {
     const h = await administratorHarness(); let step = 0;
     h.state.generate = async request => {
         if (++step === 1) { return { toolCalls: [call(TOOLS_LOAD, { apps: ['world'] }).toolCalls[0],
@@ -166,10 +208,101 @@ test('a tool loaded in the same batch cannot run until the next request; later t
     const sent = await h.request('send', { text: 'check world' }); await settled(h.runtime);
     assert.equal(h.world.readCurrent().world.overview, '');
     assert.equal(h.repository.read().turns[0].operations.length, 1);
-    h.state.generate = async request => { assert.deepEqual(names(request.tools), [TOOLS_LOAD]); return { text: 'fresh' }; };
+    h.state.generate = async request => { assert.ok(names(request.tools).includes('WorldEdit')); return { text: 'continued' }; };
     await h.request('send', { text: 'next question' }); await settled(h.runtime);
+    assert.equal(h.repository.read().turns.at(-1).status, 'finished', h.runtime.error());
+    h.state.generate = async request => { assert.deepEqual(names(request.tools), common); return { text: 'fresh' }; };
     await h.request('regenerate', { turnId: sent.turnId }); await settled(h.runtime);
     assert.equal(h.repository.read().turns[0].status, 'finished');
+});
+
+test('reopening and cold reload retain directly usable tools, summaries preserve selection, and clearing resets it', async () => {
+    const h = await administratorHarness(), initialTools = h.runtime.context().tools;
+    let step = 0;
+    h.state.generate = async () => [call(TOOLS_LOAD, { apps: ['world'] }), call('WorldRead'), { text: 'done' }][step++];
+    await h.request('send', { text: 'read world' }); await settled(h.runtime);
+    assert.equal(h.repository.read().turns[0].status, 'finished', h.runtime.error());
+    const saved = structuredClone(h.repository.read());
+    const selectedTools = h.runtime.context().tools;
+    assert.ok(selectedTools > initialTools);
+    h.controller.deactivate();
+    await h.controller.activate({ isCurrent: () => true, activationToken: 'reopened', post: () => true });
+    assert.deepEqual(h.repository.read(), saved);
+    assert.equal(h.runtime.context().tools, selectedTools);
+
+    async function readDirectly(target) {
+        const before = target.state.requests.length;
+        let step = 0;
+        target.state.generate = async request => {
+            assert.ok(names(request.tools).includes('WorldRead'));
+            if (++step === 1) { return call('WorldRead'); }
+            assert.equal(result(request.messages, 'WorldRead').ok, true);
+            return { text: 'done' };
+        };
+        await target.request('send', { text: 'read again' }); await settled(target.runtime);
+        const turn = target.repository.read().turns.at(-1);
+        assert.equal(turn.status, 'finished', target.runtime.error());
+        assert.equal(target.state.requests.length - before, 2);
+        assert.deepEqual(turn.toolMessages.flatMap(message => message.toolCalls ?? []).map(call => call.name), ['WorldRead']);
+    }
+    await readDirectly(h);
+    const summarized = structuredClone(h.conversation.read());
+    summarized.summary = { text: 'earlier facts', throughId: summarized.turns.at(-1).id, throughToolMessage: null };
+    await h.conversation.save(summarized, () => true);
+    const reload = await administratorHarness(h.state.persisted.partitions);
+    assert.equal(reload.runtime.context().tools, selectedTools);
+    assert.equal(reload.state.requests.length, 0);
+    assert.equal(administratorContext(reload.repository.read()).messages.some(message => message.role === 'tool'), false);
+    await readDirectly(reload);
+    await reload.request('clear');
+    assert.deepEqual(reload.repository.read().turns, []);
+    assert.equal(reload.runtime.context().tools, initialTools);
+    reload.state.generate = async request => { assert.deepEqual(names(request.tools), common); return { text: 'new conversation' }; };
+    await reload.request('send', { text: 'start over' }); await settled(reload.runtime);
+    assert.equal(reload.repository.read().turns[0].status, 'finished', reload.runtime.error());
+});
+
+test('regeneration inherits only preceding selections and deleting their reply removes those selections', async () => {
+    const h = await administratorHarness();
+    for (const app of ['world', 'map']) {
+        let step = 0;
+        h.state.generate = async () => ++step === 1 ? call(TOOLS_LOAD, { apps: [app] }) : { text: 'done' };
+        await h.request('send', { text: app }); await settled(h.runtime);
+        assert.equal(h.repository.read().turns.at(-1).status, 'finished', h.runtime.error());
+    }
+    const [first, second] = h.repository.read().turns;
+    h.state.generate = async request => {
+        assert.ok(names(request.tools).includes('WorldRead'));
+        assert.equal(names(request.tools).includes('MapAtlasRead'), false);
+        return { text: 'regenerated' };
+    };
+    await h.request('regenerate', { turnId: second.id }); await settled(h.runtime);
+    assert.equal(h.repository.read().turns.at(-1).status, 'finished', h.runtime.error());
+    await h.request('delete', { turnId: first.id, role: 'assistant', revision: h.repository.read().revision });
+    h.state.generate = async request => { assert.deepEqual(names(request.tools), common); return { text: 'done' }; };
+    await h.request('send', { text: 'continue' }); await settled(h.runtime);
+    assert.equal(h.repository.read().turns.at(-1).status, 'finished', h.runtime.error());
+});
+
+test('switching to an empty chat resets selection and returning restores only that chat history', async () => {
+    const h = await administratorHarness(), initialTools = h.runtime.context().tools;
+    let step = 0;
+    h.state.generate = async () => ++step === 1 ? call(TOOLS_LOAD, { apps: ['world'] }) : { text: 'done' };
+    await h.request('send', { text: 'world' }); await settled(h.runtime);
+    assert.equal(h.repository.read().turns[0].status, 'finished', h.runtime.error());
+    const original = structuredClone(h.state.capture), selectedTools = h.runtime.context().tools;
+    h.state.capture = { ...original, identityKey: 'other-chat', binding: { ...original.binding, chatId: 'other' }, reference: null };
+    await h.controller.handleChatChanged();
+    await h.controller.activate({ isCurrent: () => true, activationToken: 'other', post: () => true });
+    assert.deepEqual(h.repository.read().turns, []);
+    assert.equal(h.runtime.context().tools, initialTools);
+    h.state.capture = original;
+    await h.controller.handleChatChanged();
+    await h.controller.activate({ isCurrent: () => true, activationToken: 'original', post: () => true });
+    assert.equal(h.runtime.context().tools, selectedTools);
+    h.state.generate = async request => { assert.ok(names(request.tools).includes('WorldRead')); return { text: 'continued' }; };
+    await h.request('send', { text: 'continue' }); await settled(h.runtime);
+    assert.equal(h.repository.read().turns.at(-1).status, 'finished', h.runtime.error());
 });
 
 test('context estimates charge only the loaded definitions, with unchanged reference data', async t => {
@@ -185,7 +318,8 @@ test('context estimates charge only the loaded definitions, with unchanged refer
     const map = measure(f.executor.getTools());
     await f.call(TOOLS_LOAD, { apps: ['tasks', 'world'] });
     const all = measure(f.executor.getTools()), eager = measure(f.executor.getTools().filter(tool => tool.function.name !== TOOLS_LOAD));
-    assert.ok(initial.tools < commonOnly.tools && commonOnly.tools < map.tools && map.tools < all.tools);
+    assert.deepEqual(initial, commonOnly);
+    assert.ok(initial.tools < map.tools && map.tools < all.tools);
     assert.deepEqual(f.executor.data, reference);
     assert.ok(initial.used < eager.used);
     t.diagnostic(JSON.stringify({ estimatorOnly: true, initial, commonOnly, map, all, eager }));
@@ -242,7 +376,7 @@ for (const transport of ['native', 'tagged-json', 'google']) {
         const turn = h.repository.read().turns[0];
         assert.equal(turn.status, 'finished', h.runtime.error());
         assert.equal(step, script.length);
-        assert.deepEqual(names(requests[0].tools), [TOOLS_LOAD]);
+        assert.deepEqual(names(requests[0].tools), common);
         const expected = [...common, ...names((await h.registry.get('map').open()).tools.map(tool => tool.definition))];
         for (const request of requests.slice(1)) { assert.deepEqual(names(request.tools), expected); }
         assert.equal(new Set(requests.map(request => request.systemPrompt)).size, 1);
@@ -260,14 +394,14 @@ for (const transport of ['native', 'tagged-json', 'google']) {
         assert.equal(businessChanges, 1);
         if (transport === 'google') {
             assert.equal(creations.length, 2);
-            assert.deepEqual(creations[0].config.tools[0].functionDeclarations.map(tool => tool.name), [TOOLS_LOAD]);
+            assert.deepEqual(creations[0].config.tools[0].functionDeclarations.map(tool => tool.name), common);
             assert.deepEqual(creations[1].config.tools[0].functionDeclarations.map(tool => tool.name), expected);
             assert.equal(requests[1].toolResponses, undefined);
             assert.equal(result(requests[1].messages, TOOLS_LOAD).status, 'read');
             assert.equal(creations[1].history.flatMap(message => message.parts).find(part => part.functionCall)?.thoughtSignature, 'fixture-signature');
             assert.ok(requests.slice(2).every(request => request.toolResponses && !request.messages.length));
         } else if (transport === 'native') {
-            assert.deepEqual(names(wire[0].tools), [TOOLS_LOAD]);
+            assert.deepEqual(names(wire[0].tools), common);
             assert.ok(wire.slice(1).every(body => names(body.tools).join() === expected.join()));
             assert.ok(wire[1].messages.some(message => message.role === 'tool'));
         } else {
