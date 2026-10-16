@@ -631,6 +631,24 @@ async function resolveRenderPreviewForSlot(message, messageId, slotId) {
     return display;
 }
 
+// 关闭自动生图后：LLM 已规划好该图位的 TAG，但尚未提交 NAI。卡片上的「生成」
+// 复用 retry-image → redrawImageCard 单槽提交流程。
+export function buildManualPlaceholderHtml({ slotId, imgId = '', messageId, tags = '', title = '', positive = '' }) {
+    const escapedTags = escapeHtml(tags);
+    const escapedPositive = escapeHtml(positive);
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${escapeHtml(imgId)}" data-tags="${escapedTags}" data-title="${escapeHtml(String(title || ''))}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="manual" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:rgba(127,127,127,0.12);border:1px dashed rgba(212,165,116,0.55);border-radius:10px;padding:10px 12px;color:inherit;font-size:13px;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+<span style="font-size:13px;opacity:.85;">🎨 ${DRAW_SLOT_COPY.manualWaiting}</span>
+<div class="xb-nd-failed-btns">
+    <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:6px 14px;border-radius:8px;font-size:13px;">${DRAW_SLOT_COPY.generate}</button>
+    <button class="xb-nd-edit-btn" data-action="edit-tags" style="padding:6px 10px;border-radius:8px;" title="${DRAW_SLOT_COPY.editTags}">✎</button>
+    <button class="xb-nd-remove-btn" data-action="remove-placeholder" style="padding:6px 10px;border-radius:8px;" title="移除">✕</button>
+</div>
+</div>
+${buildTagEditor(tags, true)}
+</div>`;
+}
+
 export function buildFailedPlaceholderHtml({ slotId, imgId = '', messageId, tags, title = '', positive, errorType, errorMessage, historyCount = 0 }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
@@ -775,6 +793,15 @@ async function renderPreviewsForMessageNow(messageId, {
                     index: (activity || pendingSlot).index + 1,
                     total: (activity || pendingSlot).total,
                     label: activity?.label || (pendingSlot.state === PendingJobState.CANCELLING ? '正在取消' : DRAW_SLOT_COPY.generating),
+                });
+            } else if (displayData.isManual) {
+                replacementHtml = buildManualPlaceholderHtml({
+                    slotId,
+                    imgId: displayData.preview?.imgId,
+                    messageId,
+                    tags: displayData.failedInfo?.tags || '',
+                    positive: displayData.failedInfo?.positive || '',
+                    title: displayData.preview?.title || '',
                 });
             } else if (displayData.isFailed) {
                 const interrupted = displayData.isPending

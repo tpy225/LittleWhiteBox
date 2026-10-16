@@ -89,6 +89,55 @@ export function toAbsoluteMediaUrl(path) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 持久化缩略图
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 画廊分组封面只用 256px 缩略图（对齐 chatu8）：避免把整角色的原图 base64 经
+// postMessage 克隆进 iframe 造成内存峰值。缩略图随记录持久化，旧记录首次被
+// 索引时懒补建。任何失败都返回 null，绝不阻断主流程。
+const THUMB_MAX_DIM = 256;
+
+function normalizeImageDataUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return raw.startsWith('data:') ? raw : `data:image/jpeg;base64,${raw}`;
+}
+
+export function createThumbnailDataUrl(base64) {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const dataUrl = normalizeImageDataUrl(base64);
+    if (!dataUrl) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+        img.onload = () => {
+            try {
+                const w0 = img.naturalWidth || img.width;
+                const h0 = img.naturalHeight || img.height;
+                if (!w0 || !h0) return finish(null);
+                const scale = Math.min(1, THUMB_MAX_DIM / Math.max(w0, h0));
+                const w = Math.max(1, Math.round(w0 * scale));
+                const h = Math.max(1, Math.round(h0 * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                // JPEG 无 alpha 通道，先铺白底防止透明 PNG 变黑
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(img, 0, 0, w, h);
+                finish(canvas.toDataURL('image/jpeg', 0.7));
+            } catch {
+                finish(null);
+            }
+        };
+        img.onerror = () => finish(null);
+        img.src = dataUrl;
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 图片显示 URL
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -666,34 +715,45 @@ export async function storePreview(opts) {
     const resolvedCharacterName = String(characterName || getChatCharacterName());
     const resolvedSlotId = slotId || imgId;
 
+    // 有新原图时顺手生成持久化缩略图；无原图的状态更新保留旧缩略图
+    let thumbBase64 = base64 ? await createThumbnailDataUrl(base64) : null;
+
     return new Promise((resolve, reject) => {
         try {
             const tx = database.transaction(DB_STORE, 'readwrite');
-            tx.objectStore(DB_STORE).put({
-                imgId,
-                slotId: resolvedSlotId,
-                messageId,
-                chatId: resolvedChatId,
-                characterName: resolvedCharacterName,
-                source,
-                bookId,
-                bookTitle,
-                chapterPath,
-                chapterTitle,
-                base64,
-                tags,
-                title: String(title || ''),
-                positive,
-                savedUrl,
-                status,
-                errorType,
-                errorMessage,
-                characterPrompts,
-                negativePrompt,
-                presetId: String(presetId || ''),
-                presetName: String(presetName || ''),
-                timestamp: Date.now()
-            });
+            const store = tx.objectStore(DB_STORE);
+            const getReq = store.get(imgId);
+            getReq.onsuccess = () => {
+                const previous = getReq.result;
+                if (!thumbBase64 && previous?.thumbBase64) thumbBase64 = previous.thumbBase64;
+                store.put({
+                    imgId,
+                    slotId: resolvedSlotId,
+                    messageId,
+                    chatId: resolvedChatId,
+                    characterName: resolvedCharacterName,
+                    source,
+                    bookId,
+                    bookTitle,
+                    chapterPath,
+                    chapterTitle,
+                    base64,
+                    thumbBase64,
+                    tags,
+                    title: String(title || ''),
+                    positive,
+                    savedUrl,
+                    status,
+                    errorType,
+                    errorMessage,
+                    characterPrompts,
+                    negativePrompt,
+                    presetId: String(presetId || ''),
+                    presetName: String(presetName || ''),
+                    timestamp: Date.now()
+                });
+            };
+            getReq.onerror = () => reject(getReq.error);
             tx.oncomplete = () => {
                 invalidateCache(resolvedSlotId);
                 publishCacheChange([resolvedSlotId]);
@@ -825,6 +885,12 @@ export async function getDisplayPreviewForSlot(slotId) {
     });
 
     if (successPreviews.length === 0) {
+        const manual = previews.find(p => p?.status === PreviewStatus.MANUAL);
+        if (manual) {
+            return { preview: manual, selectedImgId, historyCount: 0, hasData: false,
+                isFailed: false, isManual: true,
+                failedInfo: { tags: manual.tags || '', positive: manual.positive || '' } };
+        }
         return asFailure(failedPreviews[0]);
     }
 
@@ -1146,43 +1212,88 @@ export async function getThumbnailCandidates(presetId = '') {
 
 // 畫廊分組輕量索引：圖多時不能把某角色全部原圖 base64 物化進內存（幾百張即數百 MB，
 // 移動端 WebView 會直接 OOM 重載）。統一走 cursor 逐條到達，每個 slot 只保留最新一張
-// 完整記錄做封面，其餘僅計數；slot 的完整歷史在打開燈箱時經 getPreviewsBySlot 按需取。
-export async function getCharacterGalleryIndex(charName) {
+// 做封面，返回時剝離原圖只帶 256px 縮略圖；slot 的完整歷史在打開燈箱時按需取。
+// 安静地把补建好的缩略图写回记录（不走 updatePreviewRecord，避免逐张触发缓存变更事件）
+async function persistThumbnailQuiet(imgId, thumbBase64) {
     const database = await openDB();
     return new Promise((resolve) => {
         try {
-            const tx = database.transaction(DB_STORE, 'readonly');
+            const tx = database.transaction(DB_STORE, 'readwrite');
             const store = tx.objectStore(DB_STORE);
-            const slots = {};
-            const pushItem = (item) => {
-                if ((item.characterName || 'Unknown') !== charName) return;
-                if (item.status === 'failed' || (!item.base64 && !item.savedUrl)) return;
-
-                const slotId = item.slotId || item.imgId;
-                const entry = slots[slotId];
-                if (!entry) {
-                    slots[slotId] = { latest: item, count: 1 };
-                } else {
-                    entry.count += 1;
-                    if (Number(item.timestamp) > Number(entry.latest.timestamp)) entry.latest = item;
-                }
+            const req = store.get(imgId);
+            req.onsuccess = () => {
+                const record = req.result;
+                if (!record) { resolve(false); return; }
+                record.thumbBase64 = thumbBase64;
+                store.put(record);
             };
-            const finish = () => resolve(slots);
-
-            store.openCursor().onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (!cursor) {
-                    finish();
-                    return;
-                }
-                pushItem(cursor.value);
-                cursor.continue();
-            };
-            tx.onerror = () => resolve({});
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = tx.onabort = () => resolve(false);
         } catch {
-            resolve({});
+            resolve(false);
         }
     });
+}
+
+// 只返回分组封面所需的轻量索引：256px 缩略图或已保存路径，绝不带原图 base64。
+// 旧记录缺缩略图时在此串行补建并持久化（每个 slot 只处理最新一张）。
+export async function getCharacterGalleryIndex(charName) {
+    const database = await openDB();
+    const latestBySlot = await new Promise((resolve) => {
+        try {
+            const tx = database.transaction(DB_STORE, 'readonly');
+            const store = tx.objectStore(DB_STORE);
+            const slots = new Map();
+            store.openCursor().onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor) { resolve(slots); return; }
+                const item = cursor.value;
+                if ((item.characterName || 'Unknown') === charName
+                    && item.status !== 'failed' && item.status !== PreviewStatus.MANUAL
+                    && (item.base64 || item.savedUrl)) {
+                    const slotId = item.slotId || item.imgId;
+                    const entry = slots.get(slotId);
+                    if (!entry) slots.set(slotId, { latest: item, count: 1 });
+                    else {
+                        entry.count += 1;
+                        if (Number(item.timestamp) > Number(entry.latest.timestamp)) entry.latest = item;
+                    }
+                }
+                cursor.continue();
+            };
+            tx.onerror = () => resolve(new Map());
+        } catch {
+            resolve(new Map());
+        }
+    });
+
+    // 旧记录懒补建缩略图（串行，单角色 slot 量级，256px 单次约 10ms）
+    for (const entry of latestBySlot.values()) {
+        const record = entry.latest;
+        if (record.base64 && !record.thumbBase64) {
+            const thumb = await createThumbnailDataUrl(record.base64);
+            if (thumb) {
+                await persistThumbnailQuiet(record.imgId, thumb);
+                record.thumbBase64 = thumb;
+            }
+        }
+    }
+
+    // 剥离原图，封面只带缩略图/服务器路径
+    const slots = {};
+    for (const [slotId, entry] of latestBySlot) {
+        const record = entry.latest;
+        slots[slotId] = {
+            count: entry.count,
+            latest: {
+                imgId: record.imgId,
+                timestamp: record.timestamp,
+                savedUrl: record.savedUrl || null,
+                thumbBase64: record.thumbBase64 || null,
+            },
+        };
+    }
+    return slots;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

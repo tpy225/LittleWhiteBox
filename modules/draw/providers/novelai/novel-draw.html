@@ -1173,8 +1173,7 @@ select.input { cursor: pointer; }
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="check-row"><input type="checkbox" id="nd_auto_generate_images" checked> 自动生图</label>
-                            <p class="form-hint">开启：回复里的绘图标签自动排队出图。关闭：标签只显示「生成」按钮，点击才出图（所有绘图 Provider 共用）。</p>
+                            <label class="check-row"><input type="checkbox" id="nd_auto_generate_images" checked> 自动排队<span class="form-hint" style="margin-left:6px;">关闭后 TAG 仍照常生成，每张图需手动点「生成」才扣点数，不合适的画面可跳过</span></label>
                         </div>
                     </div>
                     <div class="btn-group" style="margin-top: 16px;">
@@ -2003,6 +2002,19 @@ document.addEventListener('error', (event) => {
     })().finally(() => iframeSavedFallbackInflight.delete(fetchUrl));
 }, true);
 
+function isPreviewUrlInUse(url) {
+    if (!url) return false;
+    const images = document.images;
+    for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        if (!img.isConnected || img.src !== url) continue;
+        // 已关闭弹窗里的缩略图仍连着 DOM（仅 display:none），不算使用中
+        if (img.closest('#nd_gallery_modal:not(.visible)')) continue;
+        return true;
+    }
+    return false;
+}
+
 function getGalleryImageUrl(image = {}) {
     // 本地快取優先：savedUrl 是根相對服務器路徑，在 Tauritavern 等自定義 origin
     // 客戶端的 iframe 內不可達會裂圖；本地無數據時才回落 savedUrl（補全為絕對 URL）。
@@ -2022,11 +2034,19 @@ function getGalleryImageUrl(image = {}) {
     try {
         const url = base64ToObjectUrl(parsed.data, parsed.mime);
         previewObjectUrls.set(key, url);
-        // 超过上限时回收最久未用的 blob，防止图多（约 100 张）时内存持续上涨导致闪退
-        while (previewObjectUrls.size > PREVIEW_URL_LRU_MAX) {
+        // 超上限时从最久未用开始回收，但仍被页面上 <img> 引用的（如分组封面）
+        // 绝不能 revoke，否则图片直接裂开；一轮扫描都在使用中就停止，随弹窗关闭再清。
+        let guard = 0;
+        while (previewObjectUrls.size > PREVIEW_URL_LRU_MAX && guard < previewObjectUrls.size) {
             const oldestKey = previewObjectUrls.keys().next().value;
-            try { URL.revokeObjectURL(previewObjectUrls.get(oldestKey)); } catch {}
+            const oldestUrl = previewObjectUrls.get(oldestKey);
             previewObjectUrls.delete(oldestKey);
+            if (isPreviewUrlInUse(oldestUrl)) {
+                previewObjectUrls.set(oldestKey, oldestUrl); // 仍在用：移到队尾
+            } else {
+                try { URL.revokeObjectURL(oldestUrl); } catch {}
+            }
+            guard++;
         }
         return url;
     } catch {
@@ -2930,7 +2950,12 @@ function renderCharacterSlots(charName, slots) {
     slotsContainer.innerHTML = slotEntries.map(([slotId, meta]) => {
         const latest = meta.latest;
         const count = meta.count || 1;
-        const imgSrc = getGalleryImageUrl(latest);
+        // 封面只有 256px 持久化缩略图（data URL，十几 KB），无缩略才回落服务器路径；
+        // 不经过原图 blob LRU，大图在弹窗内才按需取。
+        const rawThumb = String(latest.thumbBase64 || '');
+        const imgSrc = rawThumb
+            ? (rawThumb.startsWith('data:') ? rawThumb : `data:image/jpeg;base64,${rawThumb}`)
+            : phoneAbsUrl(latest.savedUrl || '');
 
         return `
         <div class="gallery-slot" data-slot="${slotId}" data-char="${escapeHtml(charName)}">
@@ -3019,6 +3044,14 @@ function closeGalleryModal() {
     $('nd_gallery_modal').classList.remove('visible');
     // 释放已加载原图 base64 引用，关闭弹窗后可被 GC 回收
     modalData = { slotId: null, images: [], currentIndex: 0, charName: null, loading: false, total: 0, hasMore: false, loadingMore: false };
+    // 弹窗里的缩略图/主图已随 DOM 移除，顺带清掉不再被引用的 blob URL，
+    // 让后续翻页有 LRU 空间；仍在分组封面上引用的一律保留。
+    previewObjectUrls.forEach((url, key) => {
+        if (!isPreviewUrlInUse(url)) {
+            try { URL.revokeObjectURL(url); } catch {}
+            previewObjectUrls.delete(key);
+        }
+    });
 }
 
 function renderModalThumbs() {
@@ -4370,14 +4403,20 @@ window.addEventListener('message', event => {
                 JSON.stringify((data.settings?.promptPresets || []).map(p => p.name)));
             state = { ...state, ...data.settings, cacheStats: data.cacheStats || state.cacheStats };
             if (data.defaultPrompts) state._defaultPrompts = data.defaultPrompts;
-            gallerySummary = data.gallerySummary || {};
-            // 保留已展开分组的索引缓存以维持展开状态，仅清理已不存在的角色
-            Object.keys(loadedCharPreviews).forEach(charName => {
-                if (!gallerySummary[charName]) delete loadedCharPreviews[charName];
-            });
-            expandedGalleryChars.forEach(charName => {
-                if (!gallerySummary[charName]) expandedGalleryChars.delete(charName);
-            });
+            // sendInitData 会先发一个 gallerySummary 为空的 INIT_DATA（真实数据随后由
+            // CACHE_DATA 送达）。空载荷绝不能当作「画廊已空」，否则保存/删除触发的
+            // 重发会清空展开集合，导致分组全部塌回折叠状态。
+            const incomingSummary = data.gallerySummary || {};
+            if (Object.keys(incomingSummary).length) {
+                gallerySummary = incomingSummary;
+                // 保留已展开分组的索引缓存以维持展开状态，仅清理已不存在的角色
+                Object.keys(loadedCharPreviews).forEach(charName => {
+                    if (!gallerySummary[charName]) delete loadedCharPreviews[charName];
+                });
+                expandedGalleryChars.forEach(charName => {
+                    if (!gallerySummary[charName]) expandedGalleryChars.delete(charName);
+                });
+            }
             applyStateToUI();
             shuffleCredits();
             break;

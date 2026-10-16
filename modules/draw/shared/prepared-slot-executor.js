@@ -8,8 +8,16 @@ import { ImageRequestOutcome } from './image-request-outcome.js';
 // placement; providers own transport; neither may acknowledge an unstored image.
 export async function executePreparedSlots({ items, backend, store, remove, select, commit,
     run, resolveTarget, render, activity, signal, classifyError, onStateChange,
-    nativeMessage = false, onPrepared, clearSelection,
+    nativeMessage = false, onPrepared, clearSelection, manual = false,
     onRenderError = error => console.error(DRAW_SLOT_COPY.renderFailed, error) }) {
+    // 手动模式：只把槽位写进正文、把规划好的 TAG 落库成 manual 记录，不提交任何绘图请求。
+    // 用户点卡片上的「生成」时走 redrawImageCard 单槽提交。
+    if (manual) {
+        for (const item of items) await store({ ...item, status: PreviewStatus.MANUAL });
+        await commit();
+        await render();
+        return { success: 0, total: items.length, manual: true, results: [] };
+    }
     const results = new Map();
     const deliveryErrors = new Set();
     let committed = false;

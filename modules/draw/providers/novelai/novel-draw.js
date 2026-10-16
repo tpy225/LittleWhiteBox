@@ -3079,7 +3079,8 @@ async function runPreparedNovelSlots(input) {
     try {
         const settings = input.settings || cloneSettingsObject(getRuntimeSettings());
         const preset = input.preset || cloneSettingsObject(getActiveParamsPreset());
-        const vibeReferences = await ensurePresetVibeReady(settings, preset, {
+        // 手动模式不立即出图，跳过 Vibe 预编码，等用户点该槽位「生成」时再走正常流程
+        const vibeReferences = input.manual ? [] : await ensurePresetVibeReady(settings, preset, {
             signal: job.controller.signal,
         });
         const recipe = createNovelGenerationRecipe({
@@ -3094,7 +3095,7 @@ async function runPreparedNovelSlots(input) {
         const monitorGeneration = backendJobMonitors.captureGeneration();
         return await submitPreparedChatImages({
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
-            presetId: preset.id, presetName: preset.name,
+            presetId: preset.id, presetName: preset.name, manual: input.manual === true,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: resolveNovelImageTransport(settings) === 'backend-job',
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,
@@ -3147,7 +3148,11 @@ async function generateAndInsertImages({
                 bodyText: sceneSource.content,
             });
 
-        if (isNovelImageBackendJobEnabled(settings)) {
+        // 手动生图：即使开了后端任务模式，规划也走浏览器侧，只落槽位不提交；
+        // 后端 Draw Run 无法只规划不执行。
+        const manualSlots = getSharedDrawSettings().autoGenerateImages === false;
+
+        if (!manualSlots && isNovelImageBackendJobEnabled(settings)) {
             job.phase = 'submitting';
             // Vibe 编码在浏览器侧完成（/ai/encode-vibe 直连），编码结果随 recipe 一起提交给后端
             const vibeReferences = await ensurePresetVibeReady(settings, preset, { signal });
@@ -3218,8 +3223,12 @@ async function generateAndInsertImages({
                 knownNames: presentCharacters.map(character => character.name),
             });
         }
-
         assertSceneSourceUnchanged(normalizeMessageSceneSourceText(message.mes), sceneSource.sourceHash);
+        if (manualSlots) {
+            // 只把规划好的槽位和 TAG 落入正文与图库，不提交 NAI；每张由用户点击生成
+            return await runPreparedNovelSlots({ ctx, message, messageId, sourceText: message.mes,
+                tasks, settings, preset, job, onStateChange, manual: true });
+        }
         return await runPreparedNovelSlots({ ctx, message, messageId, sourceText: message.mes,
             tasks, settings, preset, job, onStateChange });
     } catch (error) {
@@ -3236,6 +3245,8 @@ async function generateAndInsertImages({
 
 async function autoGenerateForLastAI() {
     const s = getSettings();
+    // 关闭「自动生图」只影响 NAI 提交阶段：自动模式下回复结束仍照常 call LLM
+    // 规划并摆好槽位（generateAndInsertImages 内的 manual 分支），逐张由用户点击。
     if (!isModuleEnabled() || s.mode !== 'auto') return;
 
     const ctx = getContext();
@@ -3662,7 +3673,7 @@ async function handleFrameMessage(event) {
             const ok = await updateSharedDrawSettingsPersistent((settings) => {
                 settings.autoGenerateImages = nextAuto;
             }, '已保存', { notify: false, silent: false });
-            const message = !ok ? '保存失败' : nextAuto ? '已开启自动生图' : '已关闭自动生图';
+            const message = !ok ? '保存失败' : nextAuto ? '已开启自动排队' : '已关闭自动排队，需逐张手动生成';
             postStatus(ok ? 'success' : 'error', message, 'api');
             break;
         }
@@ -4546,6 +4557,8 @@ async function handleFrameMessage(event) {
                     postStatus('success', '提交后台完成，可关闭页面');
                 } else if (result?.status === 'uncertain') {
                     postStatus('loading', '后台任务确认中，请勿重复提交');
+                } else if (result?.manual) {
+                    postStatus('success', `已规划 ${result.total} 张，逐张点击「生成」出图`);
                 } else {
                     postStatus('success', `完成! ${result.success} 张`);
                 }

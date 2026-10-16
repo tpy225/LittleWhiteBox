@@ -1,9 +1,11 @@
 // A preview is also the durable input of an image attempt. Progress is not a
 // record state: only a live operation/backend job may claim to be generating.
-export const PreviewStatus = Object.freeze({ PENDING: 'pending', UNKNOWN: 'unknown', SUCCESS: 'success', FAILED: 'failed' });
+// manual：关闭自动生图后，LLM 已规划但尚未提交 NAI 的槽位，等用户逐张点「生成」
+export const PreviewStatus = Object.freeze({ PENDING: 'pending', UNKNOWN: 'unknown', SUCCESS: 'success', FAILED: 'failed', MANUAL: 'manual' });
 
 export function hasPreviewImage(record) {
-    return record?.status !== PreviewStatus.FAILED && record?.status !== PreviewStatus.PENDING && record?.status !== PreviewStatus.UNKNOWN
+    return record?.status !== PreviewStatus.FAILED && record?.status !== PreviewStatus.PENDING
+        && record?.status !== PreviewStatus.UNKNOWN && record?.status !== PreviewStatus.MANUAL
         && Boolean(record?.base64 || record?.savedUrl);
 }
 

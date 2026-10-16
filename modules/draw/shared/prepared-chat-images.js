@@ -69,7 +69,7 @@ export function placePreparedImageSlots(source, tasks, ids) {
 // batch runner. This is the only owner of pre-request chat placement for them.
 export async function submitPreparedChatImages({ ctx, message, messageId, sourceText,
     tasks, metadata, backend, run, signal, onStateChange, onPlacement, nativeMessage = false, onPrepared, placementSource,
-    swipeIndex = message.swipe_id ?? 0, presetId = '', presetName = '' }) {
+    swipeIndex = message.swipe_id ?? 0, presetId = '', presetName = '', manual = false }) {
     const chatId = String(ctx.chatId);
     const ids = tasks.map(task => ({ ...createImageIdentifiers(),
         ...(task.placement?.mode === 'existing' ? { slotId: task.placement.slotId } : {}) }));
@@ -115,7 +115,7 @@ export async function submitPreparedChatImages({ ctx, message, messageId, source
             || isMessageBeingEdited(liveId)) throw new Error(DRAW_SLOT_COPY.sourceChanged);
         signal?.throwIfAborted();
     };
-    return executePreparedSlots({ items, backend, nativeMessage, onPrepared,
+    return executePreparedSlots({ items, backend, nativeMessage, onPrepared, manual,
         store: storePreview, remove: deletePreview, clearSelection: clearSlotSelection,
         select: async (slotId, imgId) => {
             await setSlotSelection(slotId, imgId);
