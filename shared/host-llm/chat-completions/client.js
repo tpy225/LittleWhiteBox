@@ -12,6 +12,7 @@ export const HOST_CHAT_COMPLETIONS_GENERATE_ENDPOINT = '/api/backends/chat-compl
 export const HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY = Object.freeze({
     [HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE]: 'https://api.anthropic.com/v1',
     [HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE]: 'https://generativelanguage.googleapis.com',
+    [HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI]: 'https://us-central1-aiplatform.googleapis.com',
 });
 
 const requestHeadersProvider = getHostRequestHeaders;
