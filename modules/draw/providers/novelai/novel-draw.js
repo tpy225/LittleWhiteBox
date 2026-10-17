@@ -3856,9 +3856,55 @@ async function handleFrameMessage(event) {
             break;
         }
 
-        case 'OPEN_BATCH_MANAGE': {
-            const { openGalleryBatchManage } = await import('../../shared/gallery-cache.js');
-            openGalleryBatchManage(null);
+        case 'BATCH_LOAD_PREVIEWS': {
+            const { getAllPreviewsLight } = await import('../../shared/gallery-cache.js');
+            try {
+                const previews = await getAllPreviewsLight();
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_PREVIEWS_LOADED', previews }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] batch load failed:', e);
+            }
+            break;
+        }
+
+        case 'BATCH_DELETE': {
+            const { deletePreview } = await import('../../shared/gallery-cache.js');
+            const ids = Array.isArray(data.ids) ? data.ids : [];
+            try {
+                for (const id of ids) await deletePreview(id);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DELETED', ok: true, count: ids.length }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] batch delete failed:', e);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DELETED', ok: false, message: e?.message || String(e) }, 'LittleWhiteBox-NovelDraw');
+            }
+            break;
+        }
+
+        case 'BATCH_DOWNLOAD': {
+            const { getPreview, getPreviewDisplayUrl } = await import('../../shared/gallery-cache.js');
+            const { saveBase64AsFile } = await import('../../../../../../../utils.js');
+            const ids = Array.isArray(data.ids) ? data.ids : [];
+            try {
+                let saved = 0, failed = 0;
+                for (const id of ids) {
+                    const p = await getPreview(id);
+                    const url = p ? getPreviewDisplayUrl(p) : null;
+                    if (!url) { failed++; continue; }
+                    const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
+                    const ext = p.base64?.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+                    await saveBase64AsFile(url, `image-${p.imgId}-${ts}.${ext}`);
+                    saved++;
+                }
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DOWNLOADED', ok: true, saved, failed }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] batch download failed:', e);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DOWNLOADED', ok: false, message: e?.message || String(e) }, 'LittleWhiteBox-NovelDraw');
+            }
             break;
         }
 

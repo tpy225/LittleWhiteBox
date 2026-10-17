@@ -854,6 +854,32 @@ export async function getPreview(imgId) {
     });
 }
 
+/** 取所有預覽的輕量版本（僅 imgId + thumbBase64 + timestamp），用於批量管理網格 */
+export async function getAllPreviewsLight() {
+    const database = await openDB();
+    return new Promise((resolve, reject) => {
+        try {
+            const tx = database.transaction(DB_STORE, 'readonly');
+            const store = tx.objectStore(DB_STORE);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const all = (request.result || [])
+                    .filter((r) => r && r.imgId)
+                    .map((r) => ({
+                        imgId: String(r.imgId),
+                        thumbBase64: r.thumbBase64 || null,
+                        timestamp: Number(r.timestamp) || 0,
+                    }))
+                    .sort((a, b) => b.timestamp - a.timestamp);
+                resolve(all);
+            };
+            request.onerror = () => reject(request.error);
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
 export async function getPreviewsBySlot(slotId) {
     const cached = getCachedPreviews(slotId);
     if (cached) return cached;
