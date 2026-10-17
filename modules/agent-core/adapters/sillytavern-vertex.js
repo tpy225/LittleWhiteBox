@@ -1,6 +1,7 @@
 import {
     HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
 } from '../../../shared/host-llm/chat-completions/client.js';
+import { getHostRequestHeaders } from '../../../shared/host-request-headers.js';
 import { SillyTavernGoogleAdapter } from './sillytavern-google.js';
 
 // module-level cache：同一個 ST 伺服器（同一個 baseUrl + SA）的 token 共用，
@@ -72,19 +73,31 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
         }
 
         const spUrl = this._serverPluginUrl;
-        let data;
+        let resp;
+        let rawText = '';
+        let data = {};
         try {
-            const resp = await this.fetch(`${spUrl}/vertex-exchange-token`, {
+            const stHeaders = await getHostRequestHeaders().catch(() => ({}));
+            resp = await this.fetch(`${spUrl}/vertex-exchange-token`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...stHeaders,
+                },
                 body: JSON.stringify({ serviceAccountJson: saJson }),
             });
-            data = await resp.json().catch(() => ({}));
+            rawText = await resp.text().catch(() => '');
+            try { data = rawText ? JSON.parse(rawText) : {}; } catch { data = {}; }
         } catch (err) {
+            console.warn('[SillyTavernVertex] token exchange fetch failed:', spUrl, err);
             throw new Error(`換取 Vertex OAuth token 失敗：無法連接小白X server-plugin（${err.message}）。請確認小白X server-plugin 已安裝並重啟 ST。`);
         }
+        console.warn('[SillyTavernVertex] token exchange', { url: `${spUrl}/vertex-exchange-token`, status: resp?.status, ok: resp?.ok, body: rawText.slice(0, 500) });
+        if (!resp?.ok) {
+            throw new Error(`換取 Vertex OAuth token 失敗：HTTP ${resp?.status || 0} ${resp?.statusText || ''} — ${rawText.slice(0, 200)}`);
+        }
         if (!data.ok) {
-            throw new Error(`換取 Vertex OAuth token 失敗：${data.error || '未知錯誤'}`);
+            throw new Error(`換取 Vertex OAuth token 失敗：${data.error || rawText.slice(0, 200) || '未知錯誤'}`);
         }
         const expiresAt = data.expiresAt || (now + 3500);
         TOKEN_CACHE.set(key, {
