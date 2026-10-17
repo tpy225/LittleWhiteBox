@@ -16,9 +16,14 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
     provider = 'sillytavern-vertex';
     source = HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI;
 
-    constructor(config, hostClient, fetchImpl = typeof fetch !== 'undefined' ? fetch : undefined) {
+    constructor(config, hostClient, fetchImpl) {
         super(config, hostClient);
-        this.fetch = fetchImpl;
+        // fetch 必須包在 arrow 裡，避免 Illegal invocation（裸引用 fetch 在某些 bundle context 會丟 this）
+        this.fetch = fetchImpl
+            ? (...args) => fetchImpl(...args)
+            : (typeof globalThis !== 'undefined' && globalThis.fetch
+                ? (...args) => globalThis.fetch(...args)
+                : null);
     }
 
     get _serverPluginUrl() {

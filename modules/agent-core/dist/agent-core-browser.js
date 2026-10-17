@@ -21749,8 +21749,8 @@ function Jb(e, t) {
 var Kb = class extends Hm {
   provider = "sillytavern-vertex";
   source = Fm;
-  constructor(e, t, n = typeof fetch < "u" ? fetch : void 0) {
-    super(e, t), this.fetch = n;
+  constructor(e, t, n) {
+    super(e, t), this.fetch = n ? (...r) => n(...r) : typeof globalThis < "u" && globalThis.fetch ? (...r) => globalThis.fetch(...r) : null;
   }
   get _serverPluginUrl() {
     const e = String(this.config?.baseUrl || "").trim(), t = "/api/plugins/littlewhitebox-server";
