@@ -3491,6 +3491,8 @@ async function sendInitData() {
             cacheDays: getSharedDrawSettings().cacheDays,
             imageTitleMode: getSharedDrawSettings().imageTitleMode,
             autoGenerateImages: getSharedDrawSettings().autoGenerateImages !== false,
+            saveAsJpeg: getSharedDrawSettings().saveAsJpeg === true,
+            jpegQuality: getSharedDrawSettings().jpegQuality,
             selectedParamsPresetId: settings.selectedParamsPresetId,
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
@@ -3837,6 +3839,26 @@ async function handleFrameMessage(event) {
             }, '已保存', { notify: false, silent: false });
             postStatus(ok ? 'success' : 'error', ok ? '已保存' : '保存失败', 'gallery');
             if (ok) sendInitData();
+            break;
+        }
+
+        case 'SAVE_JPEG': {
+            const nextJpeg = data.saveAsJpeg === true;
+            const nextQuality = Math.max(0.1, Math.min(1, Number(data.jpegQuality) || 0.8));
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.saveAsJpeg = nextJpeg;
+                settings.jpegQuality = nextQuality;
+            }, '已保存', { notify: false, silent: false });
+            postStatus(ok ? 'success' : 'error',
+                ok ? (nextJpeg ? `已启用 JPEG（品質 ${nextQuality}）` : '已关闭 JPEG 转换') : '保存失败',
+                'gallery');
+            if (ok) sendInitData();
+            break;
+        }
+
+        case 'OPEN_BATCH_MANAGE': {
+            const { openGalleryBatchManage } = await import('../../shared/gallery-cache.js');
+            openGalleryBatchManage(null);
             break;
         }
 
