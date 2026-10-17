@@ -33,6 +33,8 @@ const NOVEL_DRAW_PROVIDER_SETTING_KEYS = new Set([
     'sendMode',
     'useImageBackendJobs',
     'insecureTLS',
+    'apiPresets',
+    'selectedApiPresetId',
     'selectedParamsPresetId',
     'paramsPresets',
     'requestDelay',

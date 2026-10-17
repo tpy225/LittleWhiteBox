@@ -1103,6 +1103,15 @@ select.input { cursor: pointer; }
                     <h2 class="view-title">API 配置</h2>
                     <p class="view-desc">NovelAI 服务连接设置</p>
                 </div>
+                <div class="preset-bar">
+                    <select id="nd_api_preset" class="input"></select>
+                    <div class="btn-group">
+                        <button id="nd_api_preset_add" class="btn btn-icon" title="新建"><i class="fa-solid fa-plus"></i></button>
+                        <button id="nd_api_preset_save" class="btn btn-primary" title="保存到当前预设"><i class="fa-solid fa-floppy-disk"></i></button>
+                        <button id="nd_api_preset_del" class="btn btn-danger btn-icon" title="删除"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                    <div id="nd_api_preset_status" class="status-text inline-status"></div>
+                </div>
                 <div class="card">
                     <div class="form-group">
                         <label class="form-label">NovelAI API Key</label>
@@ -1875,6 +1884,9 @@ let state = {
     sendMode: 'frontend',
     useImageBackendJobs: false,
     insecureTLS: false,
+    apiPresets: [],
+    selectedApiPresetId: 'official',
+    officialApiPreset: { id: 'official', name: '官方', builtin: true },
     timeout: DEFAULTS.timeout,
     requestDelay: { ...DEFAULTS.requestDelay },
     cacheDays: DEFAULTS.cacheDays,
@@ -3283,6 +3295,13 @@ function applyStateToUI() {
         $('nd_use_backend_jobs').checked = state.useImageBackendJobs === true;
         updateSendModeUI(state.sendMode === 'backend' ? 'backend' : 'frontend');
         $('nd_insecure_tls').checked = state.insecureTLS === true;
+        // API 预设下拉：内置「官方」动态置顶（不存 apiPresets），后接自订预设
+        const aSel = $('nd_api_preset');
+        const officialApi = state.officialApiPreset || { id: 'official', name: '官方', builtin: true };
+        aSel.innerHTML = [officialApi, ...(state.apiPresets || [])]
+            .map(p => `<option value="${p.id}">${escapeHtml(p.name || p.id)}</option>`)
+            .join('');
+        aSel.value = state.selectedApiPresetId || officialApi.id;
         $('nd_timeout').value = Math.round((state.timeout > 0 ? state.timeout : DEFAULTS.timeout) / 1000);
         const dMin = state.requestDelay?.min > 0 ? state.requestDelay.min : DEFAULTS.requestDelay.min;
         const dMax = state.requestDelay?.max > 0 ? state.requestDelay.max : DEFAULTS.requestDelay.max;
@@ -4488,6 +4507,8 @@ window.addEventListener('message', event => {
             }
             if (data.target === 'api') {
                 updateStatus($('nd_api_status'), data.state, data.text);
+            } else if (data.target === 'api-preset') {
+                updateStatus($('nd_api_preset_status'), data.state, data.text);
             } else if (data.target === 'params') {
                 updateStatus($('nd_params_status'), data.state, data.text);
             } else if (data.target === 'prompt-preset') {
@@ -4723,6 +4744,37 @@ document.addEventListener('DOMContentLoaded', () => {
             timeout: Number($('nd_timeout').value) * 1000 || 180000,
             requestDelay: parseDelay($('nd_delay').value)
         });
+    });
+
+    // ── 多套 API 预设：切换 / 保存 / 新增 / 删除 ──
+    $('nd_api_preset').addEventListener('change', () => {
+        postToParent({ type: 'SWITCH_API_PRESET', id: $('nd_api_preset').value });
+    });
+
+    $('nd_api_preset_save').addEventListener('click', () => {
+        setSavingState($('nd_api_preset_save'));
+        postToParent({
+            type: 'SAVE_API_PRESET',
+            id: state.selectedApiPresetId || 'official',
+            apiKey: $('nd_api_key').value.trim(),
+            apiBaseUrl: $('nd_api_base_url').value.trim(),
+            sendMode: getSendMode(),
+            useImageBackendJobs: $('nd_use_backend_jobs').checked,
+            insecureTLS: $('nd_insecure_tls').checked,
+        });
+    });
+
+    $('nd_api_preset_add').addEventListener('click', () => {
+        const name = prompt('输入预设名称：', '');
+        if (!name || !name.trim()) return;
+        postToParent({ type: 'ADD_API_PRESET', name: name.trim() });
+    });
+
+    $('nd_api_preset_del').addEventListener('click', () => {
+        const id = state.selectedApiPresetId;
+        if (!id || id === 'official') { alert('官方预设不可删除'); return; }
+        const p = (state.apiPresets || []).find(x => x.id === id);
+        if (confirm(`确定删除预设「${p?.name || '未命名'}」？`)) postToParent({ type: 'DEL_API_PRESET', id });
     });
     
     $('nd_image_title_mode').addEventListener('change', () => {
