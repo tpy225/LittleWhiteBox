@@ -21746,10 +21746,8 @@ var Bm = class {
 };
 function Hb() {
   try {
-    const e = typeof parent < "u" && parent ? parent : typeof window < "u" ? window : null;
-    if (!e) return {};
-    const t = e.oai_settings;
-    return t && typeof t == "object" ? t : {};
+    const e = globalThis.SillyTavern?.getContext?.()?.oai_settings ?? globalThis.oai_settings ?? globalThis.parent?.oai_settings;
+    return e && typeof e == "object" ? e : {};
   } catch {
     return {};
   }
