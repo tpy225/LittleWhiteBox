@@ -349,16 +349,19 @@ export async function pullModelsForProvider(providerConfig, options = {}) {
     }
 
     if (provider === 'sillytavern-vertex') {
+        const silentFallback = !baseUrl && !apiKey;
         try {
-            return filterModels(await fetchHostChatCompletionsModels(
+            const models = filterModels(await fetchHostChatCompletionsModels(
                 providerConfig,
                 HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
                 { signal: options.signal },
             ));
+            if (models.length || !silentFallback) return models;
+            // ST 未配置 Vertex 時會回 HTTP 200 + data: []，不 throw；此時在「跟隨酒館」
+            // 模式下改回內建清單，保住下拉可用。
+            return [...SILLYTAVERN_VERTEX_FALLBACK_MODELS];
         } catch (error) {
-            // A filled base URL or key means the user expected this listing to reach a real
-            // endpoint, so a failure there is worth surfacing rather than masking.
-            if (baseUrl || apiKey) throw error;
+            if (!silentFallback) throw error;
             return [...SILLYTAVERN_VERTEX_FALLBACK_MODELS];
         }
     }
