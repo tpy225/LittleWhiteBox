@@ -3299,7 +3299,10 @@ function renderBatchGrid(previews) {
             </div>
             <div class="batch-group-grid">
                 ${list.map((p) => {
-                    const src = p.thumbBase64 || '';
+                    const rawThumb = String(p.thumbBase64 || '');
+                    const src = rawThumb
+                        ? (rawThumb.startsWith('data:') ? rawThumb : `data:image/jpeg;base64,${rawThumb}`)
+                        : phoneAbsUrl(p.savedUrl || '');
                     return `<div class="batch-item" data-imgid="${escapeHtml(p.imgId)}"><img src="${escapeHtml(src)}" alt="" loading="lazy"></div>`;
                 }).join('')}
             </div>
