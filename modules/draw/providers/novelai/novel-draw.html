@@ -441,32 +441,24 @@ select.input { cursor: pointer; }
 .gallery-modal-thumb.saved { border-color: var(--success); }
 .gallery-modal-actions { display: flex; gap: 12px; }
 .gallery-modal-info { font-size: 12px; color: rgba(255,255,255,0.6); text-align: center; }
-.gallery-modal-prompt {
-    margin-top: 8px;
-    background: rgba(0,0,0,0.45);
+/* 提示词弹窗 */
+.prompt-modal-content {
+    max-width: min(720px, 92vw); max-height: 82vh;
+    display: flex; flex-direction: column;
+    background: var(--bg-secondary, #1b1c22);
     border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 8px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    padding: 20px;
+    overflow: hidden;
+}
+.prompt-modal-fields {
+    flex: 1; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
     text-align: left;
-    color: rgba(255,255,255,0.85);
-    max-height: 32vh;
-    overflow: auto;
+    color: rgba(255,255,255,0.9);
+    padding-right: 4px;
 }
-.gallery-modal-prompt summary {
-    cursor: pointer;
-    font-size: 12px;
-    color: rgba(255,255,255,0.7);
-    list-style: none;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.gallery-modal-prompt summary::-webkit-details-marker { display: none; }
-.gallery-modal-prompt summary i { transition: transform .2s; font-size: 10px; }
-.gallery-modal-prompt[open] summary i { transform: rotate(180deg); }
-.gallery-modal-prompt-body { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.gallery-modal-prompt-item { display: flex; flex-direction: column; gap: 4px; }
+.prompt-modal-item { display: flex; flex-direction: column; gap: 4px; }
 .gallery-modal-prompt-label {
     font-size: 11px;
     font-weight: 600;
@@ -482,24 +474,67 @@ select.input { cursor: pointer; }
     margin: 0;
     color: rgba(255,255,255,0.9);
     font-family: inherit;
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    padding: 8px 10px;
 }
-.gallery-modal-prompt-item:has(.gallery-modal-prompt-text:empty) { display: none; }
-.batch-modal { display: none; flex-direction: column; padding: 24px; }
-.batch-modal.visible { display: flex; }
+.prompt-modal-item:has(.gallery-modal-prompt-text:empty) { display: none; }
+/* 批量管理 */
+.batch-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 1200;
+    align-items: stretch; justify-content: center;
+}
+.batch-overlay.visible { display: flex; }
+.batch-panel {
+    display: flex; flex-direction: column;
+    width: min(960px, 100%);
+    margin: 24px 12px;
+    background: var(--bg-secondary, #1b1c22);
+    border: 1px solid var(--border, rgba(255,255,255,0.1));
+    border-radius: 12px;
+    overflow: hidden;
+}
 .batch-head {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 16px; gap: 12px; flex-wrap: wrap;
+    gap: 10px; flex-wrap: wrap;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border, rgba(255,255,255,0.1));
 }
-.batch-head h3 { margin: 0; font-size: 16px; color: #fff; }
+.batch-head h3 { margin: 0; font-size: 15px; }
 .batch-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.batch-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 8px;
-    overflow-y: auto;
-    flex: 1;
-    padding: 4px;
+.batch-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    display: flex; flex-direction: column; gap: 4px;
+    min-height: 200px;
 }
+.batch-group { border-radius: 8px; overflow: hidden; }
+.batch-group-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-input, rgba(255,255,255,0.05));
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600; font-size: 13px;
+}
+.batch-group-head:hover { background: rgba(255,255,255,0.1); }
+.batch-group-head .batch-group-arrow {
+    transition: transform .2s; font-size: 10px; opacity: .6;
+    margin-left: auto;
+}
+.batch-group.open .batch-group-head .batch-group-arrow { transform: rotate(180deg); }
+.batch-group-count {
+    font-size: 11px; opacity: .6; font-weight: 400;
+}
+.batch-group-grid {
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+    padding: 10px 12px 12px;
+}
+.batch-group.open .batch-group-grid { display: grid; }
 .batch-item {
     position: relative;
     aspect-ratio: 1;
@@ -507,34 +542,28 @@ select.input { cursor: pointer; }
     overflow: hidden;
     cursor: pointer;
     border: 2px solid transparent;
+    background: var(--bg-input, rgba(255,255,255,0.05));
     transition: border-color .15s;
 }
 .batch-item img {
-    width: 100%; height: 100%; object-fit: cover;
-    display: block;
+    width: 100%; height: 100%; object-fit: cover; display: block;
 }
-.batch-item.checked {
-    border-color: var(--accent, #4a9eff);
-}
+.batch-item.checked { border-color: var(--accent, #4a9eff); }
 .batch-item.checked::after {
     content: '✓';
-    position: absolute;
-    top: 6px; right: 6px;
-    width: 22px; height: 22px;
+    position: absolute; top: 4px; right: 4px;
+    width: 20px; height: 20px;
     background: var(--accent, #4a9eff);
-    color: #fff;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
+    color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
 }
 .batch-count {
-    margin-top: 12px;
+    padding: 10px 16px;
     text-align: center;
     font-size: 13px;
-    color: rgba(255,255,255,0.7);
+    border-top: 1px solid var(--border, rgba(255,255,255,0.1));
+    color: var(--text-secondary, rgba(255,255,255,0.6));
 }
 .mobile-nav {
     display: none; position: fixed; bottom: 0; left: 0; right: 0;
@@ -1922,50 +1951,57 @@ select.input { cursor: pointer; }
             <img class="gallery-modal-img" id="nd_modal_img" src="" alt="">
             <div class="gallery-modal-thumbs" id="nd_modal_thumbs"></div>
             <div class="gallery-modal-actions">
-                <button class="btn btn-primary" id="nd_modal_use"><i class="fa-solid fa-check"></i> 使用此图</button>
+                <button class="btn" id="nd_modal_prompt"><i class="fa-solid fa-file-lines"></i> 提示词</button>
+                <button class="btn btn-primary" id="nd_modal_use"><i class="fa-solid fa-check"></i> 使用</button>
                 <button class="btn" id="nd_modal_save"><i class="fa-solid fa-floppy-disk"></i> 保存到服务器</button>
-                <button class="btn btn-danger" id="nd_modal_delete"><i class="fa-solid fa-trash"></i> 删除</button>
+                <button class="btn btn-danger btn-icon" id="nd_modal_delete" title="删除"><i class="fa-solid fa-trash"></i></button>
             </div>
             <div class="gallery-modal-info" id="nd_modal_info"></div>
-            <details class="gallery-modal-prompt" id="nd_modal_prompt">
-                <summary><i class="fa-solid fa-chevron-down"></i> 完整提示词</summary>
-                <div class="gallery-modal-prompt-body">
-                    <div class="gallery-modal-prompt-item" data-field="tags">
-                        <div class="gallery-modal-prompt-label">Tags</div>
-                        <pre class="gallery-modal-prompt-text" id="nd_modal_tags"></pre>
-                    </div>
-                    <div class="gallery-modal-prompt-item" data-field="positive">
-                        <div class="gallery-modal-prompt-label">正向</div>
-                        <pre class="gallery-modal-prompt-text" id="nd_modal_positive"></pre>
-                    </div>
-                    <div class="gallery-modal-prompt-item" data-field="character">
-                        <div class="gallery-modal-prompt-label">角色</div>
-                        <pre class="gallery-modal-prompt-text" id="nd_modal_character"></pre>
-                    </div>
-                    <div class="gallery-modal-prompt-item" data-field="negative">
-                        <div class="gallery-modal-prompt-label">負向</div>
-                        <pre class="gallery-modal-prompt-text" id="nd_modal_negative"></pre>
-                    </div>
+        </div>
+    </div>
+
+    <!-- 提示词弹窗 -->
+    <div id="nd_prompt_modal" class="gallery-modal" role="dialog" aria-modal="true" aria-label="提示词">
+        <button class="gallery-modal-close" id="nd_prompt_close" aria-label="关闭">✕</button>
+        <div class="prompt-modal-content">
+            <h3 style="margin:0 0 12px;font-size:15px;color:#fff;">完整提示词</h3>
+            <div class="prompt-modal-fields">
+                <div class="prompt-modal-item" data-field="tags">
+                    <div class="gallery-modal-prompt-label">Tags</div>
+                    <pre class="gallery-modal-prompt-text" id="nd_modal_tags"></pre>
                 </div>
-            </details>
+                <div class="prompt-modal-item" data-field="positive">
+                    <div class="gallery-modal-prompt-label">正向</div>
+                    <pre class="gallery-modal-prompt-text" id="nd_modal_positive"></pre>
+                </div>
+                <div class="prompt-modal-item" data-field="character">
+                    <div class="gallery-modal-prompt-label">角色</div>
+                    <pre class="gallery-modal-prompt-text" id="nd_modal_character"></pre>
+                </div>
+                <div class="prompt-modal-item" data-field="negative">
+                    <div class="gallery-modal-prompt-label">負向</div>
+                    <pre class="gallery-modal-prompt-text" id="nd_modal_negative"></pre>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- 批量管理 -->
-    <div id="nd_batch_modal" class="gallery-modal batch-modal" role="dialog" aria-modal="true" aria-label="批量管理">
-        <button class="gallery-modal-close" id="nd_batch_close" aria-label="关闭">✕</button>
-        <div class="batch-head">
-            <h3 id="nd_batch_title">批量管理</h3>
-            <div class="batch-actions">
-                <button class="btn btn-sm" id="nd_batch_select_all">全選</button>
-                <button class="btn btn-sm" id="nd_batch_select_none">取消全選</button>
-                <button class="btn btn-sm btn-primary" id="nd_batch_download"><i class="fa-solid fa-download"></i> 下載</button>
-                <button class="btn btn-sm btn-danger" id="nd_batch_delete"><i class="fa-solid fa-trash"></i> 批量刪除</button>
-                <button class="btn btn-sm" id="nd_batch_done">完成</button>
+    <div id="nd_batch_modal" class="batch-overlay" role="dialog" aria-modal="true" aria-label="批量管理">
+        <div class="batch-panel">
+            <div class="batch-head">
+                <h3 id="nd_batch_title">批量管理</h3>
+                <div class="batch-actions">
+                    <button class="btn btn-sm" id="nd_batch_select_all">全選</button>
+                    <button class="btn btn-sm" id="nd_batch_select_none">取消全選</button>
+                    <button class="btn btn-sm btn-primary" id="nd_batch_download"><i class="fa-solid fa-download"></i> 下載</button>
+                    <button class="btn btn-sm btn-danger" id="nd_batch_delete"><i class="fa-solid fa-trash"></i> 批量刪除</button>
+                    <button class="btn btn-sm" id="nd_batch_done">完成</button>
+                </div>
             </div>
+            <div class="batch-body" id="nd_batch_body"></div>
+            <div class="batch-count" id="nd_batch_count">點選圖片開始挑選</div>
         </div>
-        <div class="batch-grid" id="nd_batch_grid"></div>
-        <div class="batch-count" id="nd_batch_count">點選圖片開始挑選</div>
     </div>
 
 </div>
@@ -3214,10 +3250,12 @@ function closeGalleryModal() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 let batchPreviews = [];
+let batchExpanded = new Set(); // 已展開的角色分組
 
 function openBatchManage() {
     batchPreviews = [];
-    $('nd_batch_grid').innerHTML = '<div class="gallery-modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
+    batchExpanded = new Set();
+    $('nd_batch_body').innerHTML = '<div class="gallery-modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
     $('nd_batch_count').textContent = '加载中...';
     $('nd_batch_title').textContent = '批量管理';
     $('nd_batch_modal').classList.add('visible');
@@ -3227,23 +3265,51 @@ function openBatchManage() {
 function closeBatchManage() {
     $('nd_batch_modal').classList.remove('visible');
     batchPreviews = [];
+    batchExpanded = new Set();
 }
 
 function renderBatchGrid(previews) {
     batchPreviews = previews || [];
-    const grid = $('nd_batch_grid');
+    const body = $('nd_batch_body');
     if (!batchPreviews.length) {
-        grid.innerHTML = '<div class="gallery-modal-loading">暂无图片</div>';
+        body.innerHTML = '<div class="gallery-modal-loading">暂无图片</div>';
         $('nd_batch_count').textContent = '';
         $('nd_batch_title').textContent = '批量管理（共 0 張）';
         return;
     }
-    const reversed = batchPreviews.slice().reverse();
-    grid.innerHTML = reversed.map((p) => {
-        const src = p.thumbBase64 || p.base64 || '';
-        return `<div class="batch-item" data-imgid="${escapeHtml(p.imgId)}"><img src="${escapeHtml(src)}" alt="" loading="lazy"></div>`;
+    // 按角色分組（新→舊）
+    const groups = new Map();
+    for (const p of batchPreviews) {
+        const name = p.characterName || '未分組';
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(p);
+    }
+    body.innerHTML = [...groups.entries()].map(([name, list]) => {
+        const open = batchExpanded.has(name) ? ' open' : '';
+        return `<div class="batch-group${open}" data-name="${escapeHtml(name)}">
+            <div class="batch-group-head">
+                <span>${escapeHtml(name)}</span>
+                <span class="batch-group-count">${list.length} 張</span>
+                <i class="fa-solid fa-chevron-down batch-group-arrow"></i>
+            </div>
+            <div class="batch-group-grid">
+                ${list.map((p) => {
+                    const src = p.thumbBase64 || '';
+                    return `<div class="batch-item" data-imgid="${escapeHtml(p.imgId)}"><img src="${escapeHtml(src)}" alt="" loading="lazy"></div>`;
+                }).join('')}
+            </div>
+        </div>`;
     }).join('');
-    grid.querySelectorAll('.batch-item').forEach((el) => {
+
+    body.querySelectorAll('.batch-group').forEach((group) => {
+        group.querySelector('.batch-group-head').addEventListener('click', () => {
+            const name = group.dataset.name;
+            group.classList.toggle('open');
+            if (group.classList.contains('open')) batchExpanded.add(name);
+            else batchExpanded.delete(name);
+        });
+    });
+    body.querySelectorAll('.batch-item').forEach((el) => {
         el.addEventListener('click', () => {
             el.classList.toggle('checked');
             updateBatchCount();
@@ -3254,7 +3320,7 @@ function renderBatchGrid(previews) {
 }
 
 function getBatchSelectedIds() {
-    return [...$('nd_batch_grid').querySelectorAll('.batch-item.checked')]
+    return [...$('nd_batch_body').querySelectorAll('.batch-item.checked')]
         .map((el) => el.dataset.imgid)
         .filter(Boolean);
 }
@@ -3265,7 +3331,8 @@ function updateBatchCount() {
 }
 
 function setBatchChecked(checked) {
-    $('nd_batch_grid').querySelectorAll('.batch-item').forEach((el) => el.classList.toggle('checked', checked));
+    // 只勾選已展開分組裡的圖片
+    $('nd_batch_body').querySelectorAll('.batch-group.open .batch-item').forEach((el) => el.classList.toggle('checked', checked));
     updateBatchCount();
 }
 
@@ -3319,8 +3386,11 @@ function renderModalContent() {
     }
     
     $('nd_modal_info').textContent = `${currentIndex + 1} / ${modalData.total || images.length} · ${new Date(current.timestamp).toLocaleString()}`;
+}
 
-    // 完整提示词
+/** 填入提示词弹窗内容 */
+function fillPromptModal(current) {
+    if (!current) return;
     const tagsEl = $('nd_modal_tags');
     const posEl = $('nd_modal_positive');
     const charEl = $('nd_modal_character');
@@ -5378,7 +5448,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // 批量管理按鈕
-    $('nd_batch_close').addEventListener('click', closeBatchManage);
     $('nd_batch_done').addEventListener('click', closeBatchManage);
     $('nd_batch_select_all').addEventListener('click', () => setBatchChecked(true));
     $('nd_batch_select_none').addEventListener('click', () => setBatchChecked(false));
@@ -5400,6 +5469,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('nd_batch_modal').addEventListener('click', e => {
         if (e.target.id === 'nd_batch_modal') closeBatchManage();
+    });
+
+    // 提示词弹窗
+    $('nd_modal_prompt').addEventListener('click', () => {
+        const c = modalData.images[modalData.currentIndex];
+        if (!c) return;
+        fillPromptModal(c);
+        $('nd_prompt_modal').classList.add('visible');
+    });
+    $('nd_prompt_close').addEventListener('click', () => $('nd_prompt_modal').classList.remove('visible'));
+    $('nd_prompt_modal').addEventListener('click', e => {
+        if (e.target.id === 'nd_prompt_modal') $('nd_prompt_modal').classList.remove('visible');
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && $('nd_prompt_modal').classList.contains('visible')) $('nd_prompt_modal').classList.remove('visible');
     });
 
     $('nd_modal_use').addEventListener('click', () => {

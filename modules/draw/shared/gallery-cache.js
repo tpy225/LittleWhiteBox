@@ -868,6 +868,8 @@ export async function getAllPreviewsLight() {
                     .map((r) => ({
                         imgId: String(r.imgId),
                         thumbBase64: r.thumbBase64 || null,
+                        characterName: String(r.characterName || ''),
+                        slotId: String(r.slotId || ''),
                         timestamp: Number(r.timestamp) || 0,
                     }))
                     .sort((a, b) => b.timestamp - a.timestamp);
