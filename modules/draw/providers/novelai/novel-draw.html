@@ -396,6 +396,13 @@ select.input { cursor: pointer; }
 }
 .gallery-slot-badge.count { background: var(--accent-soft); color: var(--accent); }
 .gallery-slot-badge.saved { background: rgba(63, 185, 80, 0.15); color: var(--success); }
+.gallery-slot.batch-checked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.gallery-modal-thumb.batch-checked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.gallery-modal-thumb .batch-cb {
+    position: absolute; top: 4px; left: 4px; z-index: 2;
+    width: 18px; height: 18px; cursor: pointer;
+    accent-color: var(--accent); background: rgba(0,0,0,0.6); border-radius: 3px;
+}
 .gallery-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
 .gallery-empty i { font-size: 48px; margin-bottom: 16px; opacity: 0.4; display: block; }
 .gallery-empty p { font-size: 13px; margin-top: 8px; }
@@ -421,9 +428,13 @@ select.input { cursor: pointer; }
     border-radius: 12px; max-width: 100%; overflow-x: auto;
 }
 .gallery-modal-thumb {
-    width: 60px; height: 60px; border-radius: 8px; object-fit: cover;
+    width: 60px; height: 60px; border-radius: 8px;
     cursor: pointer; border: 2px solid transparent; opacity: 0.6;
     transition: all 0.15s; flex-shrink: 0;
+    position: relative; overflow: hidden; background: var(--bg-tertiary);
+}
+.gallery-modal-thumb img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
 }
 .gallery-modal-thumb:hover { opacity: 0.9; }
 .gallery-modal-thumb.active { border-color: var(--accent); opacity: 1; }
@@ -1753,7 +1764,7 @@ select.input { cursor: pointer; }
                         </div>
                         <div id="nd_gallery_status" class="status-text" style="width:100%;margin-top:0;"></div>
                         <div style="display:flex;gap:8px;align-items:center;">
-                        <button id="nd_batch" class="btn btn-sm"><i class="fa-solid fa-list-check"></i> 批量管理</button>
+                        <button id="nd_batch" class="btn btn-sm"><i class="fa-solid fa-list-check"></i> 批量</button>
                         <button id="nd_clear_expired" class="btn btn-sm"><i class="fa-solid fa-broom"></i> 清理过期</button>
                         <button id="nd_clear_all" class="btn btn-sm btn-danger"><i class="fa-solid fa-trash"></i> 清空全部</button>
                         <button id="nd_refresh_stats" class="btn btn-sm btn-icon"><i class="fa-solid fa-arrows-rotate"></i></button>
@@ -1988,21 +1999,15 @@ select.input { cursor: pointer; }
         </div>
     </div>
 
-    <!-- 批量管理 -->
-    <div id="nd_batch_modal" class="batch-overlay" role="dialog" aria-modal="true" aria-label="批量管理">
-        <div class="batch-panel">
-            <div class="batch-head">
-                <h3 id="nd_batch_title">批量管理</h3>
-                <div class="batch-actions">
-                    <button class="btn btn-sm" id="nd_batch_select_all">全選</button>
-                    <button class="btn btn-sm" id="nd_batch_select_none">取消全選</button>
-                    <button class="btn btn-sm btn-primary" id="nd_batch_download"><i class="fa-solid fa-download"></i> 下載</button>
-                    <button class="btn btn-sm btn-danger" id="nd_batch_delete"><i class="fa-solid fa-trash"></i> 批量刪除</button>
-                    <button class="btn btn-sm" id="nd_batch_done">完成</button>
-                </div>
-            </div>
-            <div class="batch-body" id="nd_batch_body"></div>
-            <div class="batch-count" id="nd_batch_count">點選圖片開始挑選</div>
+    <!-- 批量模式底部操作欄 -->
+    <div id="nd_batch_bar" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:rgba(20,20,25,0.97);backdrop-filter:blur(10px);border-top:1px solid var(--border);padding:10px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+        <span id="nd_batch_count" style="font-size:13px;color:var(--text-secondary);"></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn btn-sm" id="nd_batch_select_all">全選</button>
+            <button class="btn btn-sm" id="nd_batch_select_none">取消</button>
+            <button class="btn btn-sm btn-primary" id="nd_batch_download"><i class="fa-solid fa-download"></i> 下載</button>
+            <button class="btn btn-sm btn-danger" id="nd_batch_delete"><i class="fa-solid fa-trash"></i> 刪除</button>
+            <button class="btn btn-sm" id="nd_batch_done">完成</button>
         </div>
     </div>
 
@@ -3148,15 +3153,18 @@ function renderCharacterSlots(charName, slots) {
     slotsContainer.innerHTML = slotEntries.map(([slotId, meta]) => {
         const latest = meta.latest;
         const count = meta.count || 1;
-        // 封面只有 256px 持久化缩略图（data URL，十几 KB），无缩略才回落服务器路径；
-        // 不经过原图 blob LRU，大图在弹窗内才按需取。
         const rawThumb = String(latest.thumbBase64 || '');
         const imgSrc = rawThumb
             ? (rawThumb.startsWith('data:') ? rawThumb : `data:image/jpeg;base64,${rawThumb}`)
             : phoneAbsUrl(latest.savedUrl || '');
+        const isChecked = batchMode && batchSelectedIds.has(latest.imgId);
+        const checkboxHtml = batchMode
+            ? `<input type="checkbox" class="batch-cb" ${isChecked ? 'checked' : ''} style="position:absolute;top:6px;left:6px;z-index:2;width:20px;height:20px;cursor:pointer;background:rgba(0,0,0,0.6);border-radius:4px;">`
+            : '';
 
         return `
-        <div class="gallery-slot" data-slot="${slotId}" data-char="${escapeHtml(charName)}">
+        <div class="gallery-slot${isChecked ? ' batch-checked' : ''}" data-slot="${slotId}" data-char="${escapeHtml(charName)}" data-imgid="${escapeHtml(latest.imgId)}" style="position:relative;">
+            ${checkboxHtml}
             <img class="gallery-slot-img" src="${escapeHtml(imgSrc)}" loading="lazy" decoding="async">
             <div class="gallery-slot-overlay">
                 <div class="gallery-slot-actions">
@@ -3176,10 +3184,33 @@ function renderCharacterSlots(charName, slots) {
     }).join('');
     
     slotsContainer.querySelectorAll('[data-action="view"]').forEach(btn => {
-        btn.addEventListener('click', e => { e.stopPropagation(); openGalleryModalFromCache(btn.dataset.char, btn.dataset.slot); });
+        btn.addEventListener('click', e => {
+            if (batchMode) return; // 批量模式下不從 slot overlay 打開彈窗（让用户从 checkbox 勾或点 slot 进弹窗选历史图）
+            e.stopPropagation();
+            openGalleryModalFromCache(btn.dataset.char, btn.dataset.slot);
+        });
     });
     slotsContainer.querySelectorAll('.gallery-slot').forEach(slot => {
-        slot.addEventListener('click', e => { if (!e.target.closest('[data-action]')) openGalleryModalFromCache(slot.dataset.char, slot.dataset.slot); });
+        // checkbox 變更事件
+        slot.querySelectorAll('.batch-cb').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                e.stopPropagation();
+                const imgId = slot.dataset.imgid;
+                if (!imgId) return;
+                if (cb.checked) batchSelectedIds.add(imgId);
+                else batchSelectedIds.delete(imgId);
+                slot.classList.toggle('batch-checked', cb.checked);
+                updateBatchCount();
+            });
+        });
+        slot.addEventListener('click', e => {
+            if (batchMode) {
+                if (e.target.closest('.batch-cb')) return;
+                openGalleryModalFromCache(slot.dataset.char, slot.dataset.slot);
+                return;
+            }
+            if (!e.target.closest('[data-action]')) openGalleryModalFromCache(slot.dataset.char, slot.dataset.slot);
+        });
     });
 }
 
@@ -3256,94 +3287,112 @@ function closeGalleryModal() {
 // 批量管理
 // ═══════════════════════════════════════════════════════════════════════════
 
-let batchPreviews = [];
-let batchExpanded = new Set(); // 已展開的角色分組
+// 批量模式：不打開獨立彈窗，在 slot 和彈窗歷史圖上疊 checkbox
+let batchMode = false;
+const batchSelectedIds = new Set();
 
-function openBatchManage() {
-    batchPreviews = [];
-    batchExpanded = new Set();
-    $('nd_batch_body').innerHTML = '<div class="gallery-modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
-    $('nd_batch_count').textContent = '加载中...';
-    $('nd_batch_title').textContent = '批量管理';
-    $('nd_batch_modal').classList.add('visible');
-    postToParent({ type: 'BATCH_LOAD_PREVIEWS' });
-}
-
-function closeBatchManage() {
-    $('nd_batch_modal').classList.remove('visible');
-    batchPreviews = [];
-    batchExpanded = new Set();
-}
-
-function renderBatchGrid(previews) {
-    batchPreviews = previews || [];
-    const body = $('nd_batch_body');
-    if (!batchPreviews.length) {
-        body.innerHTML = '<div class="gallery-modal-loading">暂无图片</div>';
-        $('nd_batch_count').textContent = '';
-        $('nd_batch_title').textContent = '批量管理（共 0 張）';
-        return;
+function toggleBatchMode() {
+    batchMode = !batchMode;
+    const bar = $('nd_batch_bar');
+    const btn = $('nd_batch');
+    if (batchMode) {
+        bar.style.display = 'flex';
+        btn.classList.add('btn-primary');
+        btn.querySelector('i').className = 'fa-solid fa-check';
+        renderGalleryView();
+    } else {
+        bar.style.display = 'none';
+        btn.classList.remove('btn-primary');
+        btn.querySelector('i').className = 'fa-solid fa-list-check';
+        batchSelectedIds.clear();
+        renderGalleryView();
     }
-    // 按角色分組（新→舊）
-    const groups = new Map();
-    for (const p of batchPreviews) {
-        const name = p.characterName || '未分組';
-        if (!groups.has(name)) groups.set(name, []);
-        groups.get(name).push(p);
-    }
-    body.innerHTML = [...groups.entries()].map(([name, list]) => {
-        const open = batchExpanded.has(name) ? ' open' : '';
-        return `<div class="batch-group${open}" data-name="${escapeHtml(name)}">
-            <div class="batch-group-head">
-                <span>${escapeHtml(name)}</span>
-                <span class="batch-group-count">${list.length} 張</span>
-                <i class="fa-solid fa-chevron-down batch-group-arrow"></i>
-            </div>
-            <div class="batch-group-grid">
-                ${list.map((p) => {
-                    const rawThumb = String(p.thumbBase64 || '');
-                    const src = rawThumb
-                        ? (rawThumb.startsWith('data:') ? rawThumb : `data:image/jpeg;base64,${rawThumb}`)
-                        : phoneAbsUrl(p.savedUrl || '');
-                    return `<div class="batch-item" data-imgid="${escapeHtml(p.imgId)}"><img src="${escapeHtml(src)}" alt="" loading="lazy"></div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }).join('');
-
-    body.querySelectorAll('.batch-group').forEach((group) => {
-        group.querySelector('.batch-group-head').addEventListener('click', () => {
-            const name = group.dataset.name;
-            group.classList.toggle('open');
-            if (group.classList.contains('open')) batchExpanded.add(name);
-            else batchExpanded.delete(name);
-        });
-    });
-    body.querySelectorAll('.batch-item').forEach((el) => {
-        el.addEventListener('click', () => {
-            el.classList.toggle('checked');
-            updateBatchCount();
-        });
-    });
-    $('nd_batch_title').textContent = `批量管理（共 ${batchPreviews.length} 張）`;
     updateBatchCount();
 }
 
-function getBatchSelectedIds() {
-    return [...$('nd_batch_body').querySelectorAll('.batch-item.checked')]
-        .map((el) => el.dataset.imgid)
-        .filter(Boolean);
+function toggleSlotBatch(slotEl) {
+    const slotId = slotEl.dataset.slot;
+    const charName = slotEl.dataset.char;
+    // slot 封面只代表最新一張，需要打開彈窗才能看到歷史圖
+    // 但批量模式下，點 slot 直接打開彈窗（已有邏輯），裡面疊 checkbox
+    // 這裡改為：slot 本身不勾選，彈窗裡才有選擇
+}
+
+function collectSlotImgIds(charName, slotId) {
+    const loaded = loadedCharPreviews[charName];
+    if (!loaded || !loaded[slotId]) return [];
+    return [loaded[slotId].latest.imgId].filter(Boolean);
+}
+
+function toggleModalThumbBatch(imgId) {
+    if (batchSelectedIds.has(imgId)) batchSelectedIds.delete(imgId);
+    else batchSelectedIds.add(imgId);
+    // 更新 checkbox UI
+    document.querySelectorAll(`.gallery-modal-thumb[data-imgid="${CSS.escape(imgId)}"]`).forEach(el => {
+        el.classList.toggle('batch-checked', batchSelectedIds.has(imgId));
+        const cb = el.querySelector(':scope > .batch-cb');
+        if (cb) cb.checked = batchSelectedIds.has(imgId);
+    });
+    updateBatchCount();
 }
 
 function updateBatchCount() {
-    const count = getBatchSelectedIds().length;
-    $('nd_batch_count').textContent = count ? `已選 ${count} 張` : '點選圖片開始挑選';
+    const count = batchSelectedIds.size;
+    const el = $('nd_batch_count');
+    if (!el) return;
+    el.textContent = batchMode
+        ? (count ? `已選 ${count} 張` : '點選圖片開始挑選（可進入角色彈窗選歷史圖）')
+        : '';
 }
 
-function setBatchChecked(checked) {
-    // 只勾選已展開分組裡的圖片
-    $('nd_batch_body').querySelectorAll('.batch-group.open .batch-item').forEach((el) => el.classList.toggle('checked', checked));
+function setBatchCheckedAll(checked) {
+    if (!batchMode) return;
+    if (!checked) {
+        batchSelectedIds.clear();
+    } else {
+        // 全選：收集所有已展開角色 slot 的 latest imgId + 彈窗歷史圖
+        // 這裡做最保守的：只選當前 DOM 可見的
+        document.querySelectorAll('.gallery-slot').forEach(slot => {
+            const charName = slot.dataset.char;
+            const slotId = slot.dataset.slot;
+            const ids = collectSlotImgIds(charName, slotId);
+            ids.forEach(id => batchSelectedIds.add(id));
+        });
+        // 彈窗歷史圖
+        document.querySelectorAll('.gallery-modal-thumb[data-imgid]').forEach(thumb => {
+            batchSelectedIds.add(thumb.dataset.imgid);
+        });
+    }
+    // 刷新 UI
+    document.querySelectorAll('.gallery-slot').forEach(slot => {
+        const charName = slot.dataset.char;
+        const slotId = slot.dataset.slot;
+        const ids = collectSlotImgIds(charName, slotId);
+        const slotIdSelected = ids.length > 0 && ids.every(id => batchSelectedIds.has(id));
+        slot.classList.toggle('batch-checked', slotIdSelected);
+        const cb = slot.querySelector(':scope > .batch-cb');
+        if (cb) cb.checked = slotIdSelected;
+    });
+    document.querySelectorAll('.gallery-modal-thumb[data-imgid]').forEach(thumb => {
+        const selected = batchSelectedIds.has(thumb.dataset.imgid);
+        thumb.classList.toggle('batch-checked', selected);
+        const cb = thumb.querySelector(':scope > .batch-cb');
+        if (cb) cb.checked = selected;
+    });
     updateBatchCount();
+}
+
+function batchDeleteSelected() {
+    if (!batchSelectedIds.size) return;
+    if (!confirm(`確定刪除 ${batchSelectedIds.size} 張圖片？此操作不可恢復。`)) return;
+    const ids = [...batchSelectedIds];
+    postToParent({ type: 'BATCH_DELETE', ids });
+}
+
+function batchDownloadSelected() {
+    if (!batchSelectedIds.size) return;
+    const ids = [...batchSelectedIds];
+    postToParent({ type: 'BATCH_DOWNLOAD', ids });
 }
 
 function renderModalThumbs() {
@@ -3352,12 +3401,17 @@ function renderModalThumbs() {
         $('nd_modal_thumbs').innerHTML = '<div class="gallery-modal-loading">暂无图片</div>';
         return;
     }
+    const showCheckbox = batchMode;
     $('nd_modal_thumbs').innerHTML = images.map((img, i) => {
         const src = getGalleryImageUrl(img);
         const cls = ['gallery-modal-thumb'];
         if (i === currentIndex) cls.push('active');
         if (img.savedUrl) cls.push('saved');
-        return `<img class="${cls.join(' ')}" src="${escapeHtml(src)}" data-index="${i}" loading="lazy" decoding="async">`;
+        if (showCheckbox && batchSelectedIds.has(img.imgId)) cls.push('batch-checked');
+        const checkboxHtml = showCheckbox
+            ? `<input type="checkbox" class="batch-cb" ${batchSelectedIds.has(img.imgId) ? 'checked' : ''}>`
+            : '';
+        return `<div class="${cls.join(' ')}" data-imgid="${escapeHtml(img.imgId)}" data-index="${i}">${checkboxHtml}<img src="${escapeHtml(src)}" loading="lazy" decoding="async"></div>`;
     }).join('') + (modalData.hasMore
         ? '<button class="gallery-modal-more" type="button" id="nd_modal_more">'
             + (modalData.loadingMore ? '<i class="fa-solid fa-spinner fa-spin"></i> 加载中...'
@@ -3365,14 +3419,31 @@ function renderModalThumbs() {
             + '</button>'
         : '');
 
-    $('nd_modal_thumbs').querySelectorAll('img').forEach(t => {
-        t.addEventListener('click', () => { modalData.currentIndex = parseInt(t.dataset.index); renderModalContent(); });
+    $('nd_modal_thumbs').querySelectorAll('.gallery-modal-thumb').forEach(thumb => {
+        thumb.addEventListener('click', (e) => {
+            if (batchMode && e.target.closest('.batch-cb')) return; // checkbox 自己處理
+            if (batchMode) {
+                // 批量模式下點 thumb 切換選中
+                const imgId = thumb.dataset.imgid;
+                if (batchSelectedIds.has(imgId)) batchSelectedIds.delete(imgId);
+                else batchSelectedIds.add(imgId);
+                thumb.classList.toggle('batch-checked', batchSelectedIds.has(imgId));
+                const cb = thumb.querySelector('.batch-cb');
+                if (cb) cb.checked = batchSelectedIds.has(imgId);
+                updateBatchCount();
+                e.stopPropagation();
+                return;
+            }
+            const idx = parseInt(thumb.dataset.index);
+            modalData.currentIndex = idx;
+            renderModalContent();
+        });
     });
     $('nd_modal_more')?.addEventListener('click', requestMoreModalPreviews);
 }
 
 function updateModalThumbState() {
-    $('nd_modal_thumbs').querySelectorAll('img').forEach(t => {
+    $('nd_modal_thumbs').querySelectorAll('.gallery-modal-thumb').forEach(t => {
         const active = parseInt(t.dataset.index) === modalData.currentIndex;
         t.classList.toggle('active', active);
         if (active) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -4781,18 +4852,14 @@ window.addEventListener('message', event => {
             }
             break;
 
-        case 'BATCH_PREVIEWS_LOADED':
-            renderBatchGrid(data.previews || []);
-            break;
-
         case 'BATCH_DELETED':
             if (data.ok) {
+                batchSelectedIds.clear();
                 $('nd_batch_count').textContent = `已刪除 ${data.count} 張`;
-                // 留在批量管理頁，重新載入列表（保留分組展開狀態）
-                postToParent({ type: 'BATCH_LOAD_PREVIEWS' });
+                renderGalleryView();
+                updateBatchCount();
             } else {
                 alert('刪除失敗：' + (data.message || '未知錯誤'));
-                $('nd_batch_count').textContent = '刪除失敗';
             }
             break;
 
@@ -4801,7 +4868,6 @@ window.addEventListener('message', event => {
                 $('nd_batch_count').textContent = `已下載 ${data.saved} 張${data.failed ? `，${data.failed} 張失敗` : ''}`;
             } else {
                 alert('下載失敗：' + (data.message || '未知錯誤'));
-                $('nd_batch_count').textContent = '下載失敗';
             }
             break;
 
@@ -5457,9 +5523,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    $('nd_batch').addEventListener('click', () => {
-        openBatchManage();
-    });
+    $('nd_batch').addEventListener('click', toggleBatchMode);
     
     $('nd_clear_expired').addEventListener('click', () => postToParent({ type: 'CLEAR_EXPIRED_CACHE' }));
     
@@ -5482,28 +5546,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.id === 'nd_gallery_modal') closeGalleryModal();
     });
     
-    // 批量管理按鈕
-    $('nd_batch_done').addEventListener('click', closeBatchManage);
-    $('nd_batch_select_all').addEventListener('click', () => setBatchChecked(true));
-    $('nd_batch_select_none').addEventListener('click', () => setBatchChecked(false));
-    $('nd_batch_delete').addEventListener('click', () => {
-        const ids = getBatchSelectedIds();
-        if (!ids.length) { alert('未選圖片'); return; }
-        if (!confirm(`確認刪除 ${ids.length} 張圖片？此操作不可撤銷。`)) return;
-        $('nd_batch_count').textContent = '刪除中...';
-        postToParent({ type: 'BATCH_DELETE', ids });
-    });
-    $('nd_batch_download').addEventListener('click', () => {
-        const ids = getBatchSelectedIds();
-        if (!ids.length) { alert('未選圖片'); return; }
-        $('nd_batch_count').textContent = '下載中...';
-        postToParent({ type: 'BATCH_DOWNLOAD', ids });
-    });
+    // 批量模式底部操作欄
+    $('nd_batch_done').addEventListener('click', toggleBatchMode);
+    $('nd_batch_select_all').addEventListener('click', () => setBatchCheckedAll(true));
+    $('nd_batch_select_none').addEventListener('click', () => setBatchCheckedAll(false));
+    $('nd_batch_delete').addEventListener('click', batchDeleteSelected);
+    $('nd_batch_download').addEventListener('click', batchDownloadSelected);
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && $('nd_batch_modal').classList.contains('visible')) closeBatchManage();
-    });
-    $('nd_batch_modal').addEventListener('click', e => {
-        if (e.target.id === 'nd_batch_modal') closeBatchManage();
+        if (e.key === 'Escape' && batchMode) toggleBatchMode();
     });
 
     // 提示词弹窗
