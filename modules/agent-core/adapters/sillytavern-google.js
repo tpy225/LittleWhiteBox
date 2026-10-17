@@ -274,6 +274,16 @@ function createGoogleStreamAccumulator(task, effectiveReasoning, config = {}, pr
                 role: 'model',
                 parts: parts.length ? parts : (text ? [{ text }] : []),
             });
+            if (!finishReason) {
+                console.warn('[SillyTavernGoogle] 流式回應未含 finishReason，事件與累積內容如下', {
+                    provider,
+                    model,
+                    text,
+                    partsCount: parts.length,
+                    toolCallsCount: toolCalls.length,
+                    thoughtsCount: thoughts.length,
+                });
+            }
             return {
                 text,
                 toolCalls,
