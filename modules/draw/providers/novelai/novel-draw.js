@@ -3465,7 +3465,18 @@ function hideOverlay() {
     window.removeEventListener('message', handleFrameMessage);
 }
 
+let _sendInitDataTimer = null;
 async function sendInitData() {
+    // Debounce: Termux/WebView 類環境會在設置 form 值時錯誤觸發 change 事件，
+    // 多個 SAVE_* 處理器同時調 sendInitData 造成無限循環 + 配置文件瘋狂上傳。
+    if (_sendInitDataTimer) { clearTimeout(_sendInitDataTimer); }
+    _sendInitDataTimer = setTimeout(async () => {
+        _sendInitDataTimer = null;
+        await _doSendInitData();
+    }, 300);
+}
+
+async function _doSendInitData() {
     console.log('[NovelDraw] sendInitData called');
     const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
     if (!iframe?.contentWindow) { console.warn('[NovelDraw] sendInitData: no iframe'); return; }
