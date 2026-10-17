@@ -9,7 +9,7 @@ var Vm = Object.create, sd = Object.defineProperty, Jm = Object.getOwnPropertyDe
 }, Xm = (e, t, n) => (n = e != null ? Vm(Wm(e)) : {}, Ym(t || !e || !e.__esModule ? sd(n, "default", {
   value: e,
   enumerable: !0
-}) : n, e)), ad = "littlewhitebox-server", zb = `/api/plugins/${ad}`, $s = Object.freeze([{
+}) : n, e)), ad = "littlewhitebox-server", Yb = `/api/plugins/${ad}`, $s = Object.freeze([{
   id: "tavily",
   label: "Tavily",
   baseUrl: "https://api.tavily.com"
@@ -17,7 +17,7 @@ var Vm = Object.create, sd = Object.defineProperty, Jm = Object.getOwnPropertyDe
   id: "exa",
   label: "Exa",
   baseUrl: "https://api.exa.ai"
-}]), ld = "tavily", Yb = Object.freeze({
+}]), ld = "tavily", Xb = Object.freeze({
   provider: "联网渠道（全局）",
   key: "API Key",
   show: "显示",
@@ -38,7 +38,7 @@ function vo(e = {}, t = {}) {
     ...Object.fromEntries($s.flatMap(({ id: n }) => [[`${n}ApiKey`, ud(e[`${n}ApiKey`] ?? t[`${n}ApiKey`])], [`${n}BaseUrl`, On(e[`${n}BaseUrl`] ?? t[`${n}BaseUrl`], n)]]))
   };
 }
-var Xb = Object.freeze([
+var Qb = Object.freeze([
   Object.freeze({
     value: "inherit",
     label: "跟随模型默认"
@@ -124,7 +124,7 @@ function Bo(e, t) {
     }
   };
 }
-var Ao = "x-api-key", Qb = Object.freeze([{
+var Ao = "x-api-key", Zb = Object.freeze([{
   value: Ao,
   label: "x-api-key"
 }, {
@@ -138,13 +138,13 @@ function ng(e) {
   return e === "bearer" ? e : Ao;
 }
 var dd = "openai-compatible", Us = "默认", fd = "default", rg = "deny", Xe = 32e3;
-var Zb = Object.freeze([{
+var jb = Object.freeze([{
   value: "default",
   label: "默认权限"
 }, {
   value: "full",
   label: "完全权限"
-}]), jb = Object.freeze([{
+}]), eR = Object.freeze([{
   value: "deny",
   label: "禁止"
 }, {
@@ -367,7 +367,7 @@ function Ad(e = {}, t, n) {
     tavilyBaseUrl: ig(e, t, n)
   };
 }
-function eR(e = {}, t = {}) {
+function tR(e = {}, t = {}) {
   const { defaultWorkspaceFileName: n = "", normalizeWorkspaceName: r = (p) => String(p || "") } = t, o = ut(e.currentPresetName || e.presetName || "默认"), i = gd(e, o), s = _d(i, e.currentPresetName), u = yd(i, e.delegatePresetName, s), c = i[u] || i[s] || Et(), d = Bs(e.delegateConfig, c), h = vd(e, i, s, u), f = vo(e, Ad(e, o, s));
   return {
     workspaceFileName: r(e.workspaceFileName || n),
@@ -574,7 +574,7 @@ function Vs(e = {}) {
       return qs;
   }
 }
-function tR(e = qs) {
+function nR(e = qs) {
   const t = new Set(e.modes || ["inherit"]);
   return [
     {
@@ -594,7 +594,7 @@ function tR(e = qs) {
     }
   ];
 }
-function nR(e = qs) {
+function rR(e = qs) {
   return e.intensity?.kind !== "effort" ? [] : e.intensity.values.map((t) => ({
     value: t,
     label: lg[t] || t
@@ -663,7 +663,7 @@ function j(e = "", t = {}, n = {}, r = {}) {
 function gr(e = {}, t = {}) {
   return Vs(e).temperatureOmitModes.includes(t.mode);
 }
-var rR = 900 * 1e3, oR = Object.freeze([{
+var oR = 900 * 1e3, iR = Object.freeze([{
   value: "native",
   label: "原生 Tool Calling"
 }, {
@@ -703,7 +703,7 @@ var rR = 900 * 1e3, oR = Object.freeze([{
     label: "Google AI"
   }
 ]);
-function iR(e = "") {
+function sR(e = "") {
   return e === "sillytavern-openai-compatible" || e === "sillytavern-claude" || e === "sillytavern-google" || e === "sillytavern-vertex";
 }
 function Cd(e, t = 1) {
@@ -716,14 +716,14 @@ function Ui(e = {}) {
 function za(e = {}) {
   return Ui(e) ? Cd(e.temperature, 1) : void 0;
 }
-function sR(e = "", t = {}) {
+function aR(e = "", t = {}) {
   return t && typeof t == "object" && t[e] ? t[e] : Ag.find((n) => n.value === e)?.label || e || "未配置";
 }
-function aR(e = {}) {
+function lR(e = {}) {
   const t = String(e.provider || "").trim();
   return t === "openai-compatible" || t === "sillytavern-openai-compatible" ? e.toolMode === "tagged-json" ? "Tagged JSON 兼容模式" : "原生 Tool Calling" : "Provider 原生工具";
 }
-function lR(e = {}, t = {}) {
+function uR(e = {}, t = {}) {
   const n = sg(e || {});
   if (t.role === "delegate" && n.delegateConfig) {
     const d = n.delegateConfig.provider || "openai-compatible", h = (n.delegateConfig.modelConfigs || jt())[d] || jt()[d] || {}, f = {
@@ -20781,7 +20781,7 @@ async function O0(e, t) {
   u && s(u);
 }
 var ks = null;
-function uR(e) {
+function cR(e) {
   ks = typeof e == "function" ? e : null;
 }
 async function Um() {
@@ -21747,7 +21747,14 @@ var Hm = class {
 function Vb(e, t) {
   return `${e || ""}::${t || ""}`;
 }
-var Jb = class extends Hm {
+function Jb(e) {
+  try {
+    return new URL(e, document.baseURI || window.location.href).toString();
+  } catch {
+    return e;
+  }
+}
+var Kb = class extends Hm {
   provider = "sillytavern-vertex";
   source = bt;
   constructor(e, t) {
@@ -21771,27 +21778,30 @@ var Jb = class extends Hm {
     }
     const n = Math.floor(Date.now() / 1e3), r = Vb(this._region, t), o = id.get(r);
     if (o && o.expiresAt > n) return o.accessToken;
-    const i = await Um().catch(() => ({})), s = await fetch("/api/plugins/littlewhitebox-server/vertex-exchange-token", {
+    const i = Jb("/api/plugins/littlewhitebox-server/vertex-exchange-token"), s = await Um().catch(() => ({}));
+    console.debug("[VertexAdapter] fetching token", i);
+    const u = await fetch(i, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...i
+        ...s
       },
       body: JSON.stringify({ serviceAccountJson: e })
-    }), u = await s.text().catch(() => "");
-    let c = {};
+    }), c = await u.text().catch(() => "");
+    let d = {};
     try {
-      c = u ? JSON.parse(u) : {};
+      d = c ? JSON.parse(c) : {};
     } catch {
-      c = {};
+      d = {};
     }
-    if (!s.ok) throw new Error(`換取 Vertex OAuth token 失敗：HTTP ${s.status} — ${u.slice(0, 200)}`);
-    if (!c.ok || !c.accessToken) throw new Error(`換取 Vertex OAuth token 失敗：${c.error || u.slice(0, 200) || "未知錯誤"}`);
-    const d = c.expiresAt || n + 3500;
+    if (!u.ok)
+      throw u.status === 404 ? new Error("換取 Vertex OAuth token 失敗：server-plugin 未啟用（HTTP 404）。請確認已安裝 littlewhitebox-server、config.yaml 開啟 enableServerPlugins、並重啟 SillyTavern。") : new Error(`換取 Vertex OAuth token 失敗：HTTP ${u.status} — ${c.slice(0, 200)}`);
+    if (!d.ok || !d.accessToken) throw new Error(`換取 Vertex OAuth token 失敗：${d.error || c.slice(0, 200) || "未知錯誤"}`);
+    const h = d.expiresAt || n + 3500;
     return id.set(r, {
-      accessToken: c.accessToken,
-      expiresAt: d
-    }), c.accessToken;
+      accessToken: d.accessToken,
+      expiresAt: h
+    }), d.accessToken;
   }
   async chat(e) {
     const t = await this._ensureToken();
@@ -21807,7 +21817,7 @@ var Jb = class extends Hm {
 function ro(e, t, n) {
   return Object.hasOwn(n, "hostClient") ? new e(t, li(n.hostClient)) : new e(t);
 }
-function cR(e = {}, t = {}) {
+function dR(e = {}, t = {}) {
   switch (Ed(e.reasoning || {}), e.provider) {
     case "sillytavern-openai-compatible":
       return ro(Hm, e, t);
@@ -21816,7 +21826,7 @@ function cR(e = {}, t = {}) {
     case "sillytavern-google":
       return ro(Bb, e, t);
     case "sillytavern-vertex":
-      return ro(Jb, e, t);
+      return ro(Kb, e, t);
     case "openai-responses":
       return new F0(e);
     case "anthropic":
@@ -21827,7 +21837,7 @@ function cR(e = {}, t = {}) {
       return new b0(e);
   }
 }
-function Kb(e = {}) {
+function Wb(e = {}) {
   const t = String(e?.name || "").trim();
   if (typeof e?.arguments == "string") {
     const n = e.arguments;
@@ -21850,12 +21860,12 @@ function Ds(e = [], t = {}) {
     return {
       id: String(o?.id || r(i) || `${n}-${i + 1}`),
       name: String(o?.name || "").trim(),
-      arguments: Kb(o),
+      arguments: Wb(o),
       ...s ? { providerId: String(o?.providerId || "") } : {}
     };
   }).filter((o) => o.name);
 }
-function Wb(e, t = {}) {
+function zb(e, t = {}) {
   return (Array.isArray(e?.googleContent?.parts) ? e.googleContent.parts : []).filter((n) => n?.functionCall?.name).map((n, r) => {
     const o = String(n.functionCall.id || "").trim();
     return {
@@ -21866,11 +21876,11 @@ function Wb(e, t = {}) {
     };
   }).filter((n) => n.name);
 }
-function dR(e = {}, t = {}, n = {}) {
+function fR(e = {}, t = {}, n = {}) {
   const r = Ds(e?.toolCalls, n);
-  return r.length ? r : String(e?.provider || t?.provider || "").toLowerCase() !== "google" ? [] : Ds(Wb(e?.providerPayload, n), n);
+  return r.length ? r : String(e?.provider || t?.provider || "").toLowerCase() !== "google" ? [] : Ds(zb(e?.providerPayload, n), n);
 }
-function fR(e = {}, t = [], n = {}) {
+function hR(e = {}, t = [], n = {}) {
   return {
     role: "assistant",
     content: Object.prototype.hasOwnProperty.call(n, "content") ? String(n.content || "") : String(e.text || ""),
@@ -21886,7 +21896,7 @@ function fR(e = {}, t = [], n = {}) {
     }))
   };
 }
-function hR(e = {}) {
+function pR(e = {}) {
   const t = String(e.toolName || e.tool_name || "").trim();
   return {
     role: "tool",
@@ -21896,24 +21906,24 @@ function hR(e = {}) {
   };
 }
 export {
-  rR as AGENT_REQUEST_TIMEOUT_MS,
+  oR as AGENT_REQUEST_TIMEOUT_MS,
   Ag as PROVIDER_OPTIONS,
-  Xb as REASONING_MODE_OPTIONS,
-  fR as buildProviderAssistantToolCallMessage,
-  hR as buildProviderToolResultMessage,
-  cR as createAgentAdapter,
-  sR as getProviderLabel,
-  nR as getReasoningEffortOptions,
-  tR as getReasoningModeOptions,
-  aR as getToolModeLabel,
-  iR as isSillyTavernProvider,
+  Qb as REASONING_MODE_OPTIONS,
+  hR as buildProviderAssistantToolCallMessage,
+  pR as buildProviderToolResultMessage,
+  dR as createAgentAdapter,
+  aR as getProviderLabel,
+  rR as getReasoningEffortOptions,
+  nR as getReasoningModeOptions,
+  lR as getToolModeLabel,
+  sR as isSillyTavernProvider,
   sg as normalizeAgentConfig,
-  eR as normalizeAgentSettings,
+  tR as normalizeAgentSettings,
   Ls as normalizeReasoningConfig,
   Gt as redactRequestSecrets,
-  lR as resolveActiveProviderConfig,
+  uR as resolveActiveProviderConfig,
   Vs as resolveReasoningCapability,
-  dR as resolveResultToolCalls,
+  fR as resolveResultToolCalls,
   To as resolveRuntimeReasoning,
-  uR as setHostChatCompletionsRequestHeadersProvider
+  cR as setHostChatCompletionsRequestHeadersProvider
 };

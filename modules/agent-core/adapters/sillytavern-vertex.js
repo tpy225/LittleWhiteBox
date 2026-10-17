@@ -22,6 +22,16 @@ function cacheKey(region, saEmail) {
     return `${region || ''}::${saEmail || ''}`;
 }
 
+// 把相對路徑補成絕對地址。srcdoc iframe 裡相對路徑會解析錯，
+// 必須用 document.baseURI 才能拿到正確的 ST origin。
+function resolveAbsoluteUrl(relativePath) {
+    try {
+        return new URL(relativePath, document.baseURI || window.location.href).toString();
+    } catch {
+        return relativePath;
+    }
+}
+
 export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter {
     provider = 'sillytavern-vertex';
     source = HOST_CHAT_COMPLETIONS_SOURCE_OPENAI; // 走 openai source + reverse_proxy
@@ -58,9 +68,11 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
         const cached = TOKEN_CACHE.get(key);
         if (cached && cached.expiresAt > now) return cached.accessToken;
 
-        // server-plugin 掛在同源，跟 ST 同一個 origin，需要帶 CSRF + session cookie
+        // srcdoc iframe 裡 fetch 相對路徑會解析錯，補成絕對地址
+        const pluginUrl = resolveAbsoluteUrl('/api/plugins/littlewhitebox-server/vertex-exchange-token');
         const stHeaders = await getHostRequestHeaders().catch(() => ({}));
-        const resp = await fetch('/api/plugins/littlewhitebox-server/vertex-exchange-token', {
+        console.debug('[VertexAdapter] fetching token', pluginUrl);
+        const resp = await fetch(pluginUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...stHeaders },
             body: JSON.stringify({ serviceAccountJson: saJson }),
@@ -70,6 +82,13 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
         try { data = rawText ? JSON.parse(rawText) : {}; } catch { data = {}; }
 
         if (!resp.ok) {
+            if (resp.status === 404) {
+                throw new Error(
+                    '換取 Vertex OAuth token 失敗：server-plugin 未啟用（HTTP 404）。'
+                    + '請確認已安裝 littlewhitebox-server、config.yaml 開啟 enableServerPlugins、'
+                    + '並重啟 SillyTavern。'
+                );
+            }
             throw new Error(`換取 Vertex OAuth token 失敗：HTTP ${resp.status} — ${rawText.slice(0, 200)}`);
         }
         if (!data.ok || !data.accessToken) {
