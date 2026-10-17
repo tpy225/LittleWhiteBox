@@ -63,6 +63,19 @@ const SILLYTAVERN_CLAUDE_FALLBACK_MODELS = Object.freeze([
     'claude-sonnet-4-0',
     'claude-sonnet-4-20250514',
 ]);
+// Vertex AI model listing needs a region endpoint and credentials held by the SillyTavern
+// server. Follow-the-tavern users leave both fields blank, which /status cannot enumerate,
+// so this built-in list keeps the config page usable. Latest Google profile the repo knows
+// is google-gemini-3-flash (reasoning-capabilities.js); the model field stays free text.
+const SILLYTAVERN_VERTEX_FALLBACK_MODELS = Object.freeze([
+    'gemini-3-flash',
+    'gemini-3-pro',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+]);
 
 function refillSelect(select, options, placeholderLabel = '') {
     select.replaceChildren();
@@ -333,6 +346,21 @@ export async function pullModelsForProvider(providerConfig, options = {}) {
 
     if (provider === 'sillytavern-claude') {
         return filterModels(await pullSillyTavernClaudeModels(providerConfig, options));
+    }
+
+    if (provider === 'sillytavern-vertex') {
+        try {
+            return filterModels(await fetchHostChatCompletionsModels(
+                providerConfig,
+                HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
+                { signal: options.signal },
+            ));
+        } catch (error) {
+            // A filled base URL or key means the user expected this listing to reach a real
+            // endpoint, so a failure there is worth surfacing rather than masking.
+            if (baseUrl || apiKey) throw error;
+            return [...SILLYTAVERN_VERTEX_FALLBACK_MODELS];
+        }
     }
 
     if (isSillyTavernProvider(provider)) {
