@@ -20973,22 +20973,37 @@ async function ub(e = {}, t = {}) {
 async function cb(e = {}, t, n = {}, o = {}) {
   const r = await qa(e, !0, o.requestHeadersProvider);
   typeof n.onRequest == "function" && n.onRequest(r);
-  const i = await Va(o.fetch)(r.url, {
+  const i = Va(o.fetch), s = JSON.stringify(r.body);
+  console.debug("[HostLLM] stream request to ST", {
+    url: r.url,
+    stream: !0,
+    chat_completion_source: r.body?.chat_completion_source,
+    model: r.body?.model,
+    topLevelKeys: Object.keys(r.body || {}),
+    messagesRoleKinds: (r.body?.messages || []).map((c) => c?.role),
+    bodyPreview: s.slice(0, 300)
+  });
+  const u = await i(r.url, {
     method: r.method,
     headers: r.rawHeaders || r.headers,
-    body: JSON.stringify(r.body),
+    body: s,
     signal: n.signal
   });
-  if (!i.ok) {
-    const s = await i.text().catch(() => ""), u = new Error(fn(s, `酒馆后端流式生成失败：HTTP ${i.status}`, i));
-    throw u.status = i.status, u.body = s, u;
+  if (!u.ok) {
+    const c = await u.text().catch(() => ""), d = new Error(fn(c, `酒馆后端流式生成失败：HTTP ${u.status}`, u));
+    throw d.status = u.status, d.body = c, d;
   }
-  typeof n.onResponseAccepted == "function" && n.onResponseAccepted(), await U0(i, (s) => {
-    if (s?.error) {
-      const u = fn(s.error?.message || s.message || JSON.stringify(s.error), "酒馆后端流式生成失败");
-      throw new Error(u);
+  typeof n.onResponseAccepted == "function" && n.onResponseAccepted(), await U0(u, (c) => {
+    if (c?.error) {
+      const d = fn(c.error?.message || c.message || JSON.stringify(c.error), "酒馆后端流式生成失败");
+      throw new Error(d);
     }
-    t(s);
+    console.debug("[HostLLM] stream event", source, {
+      model: c?.model || c?.modelVersion,
+      finishReason: c?.candidates?.[0]?.finishReason,
+      snippet: String(c?.candidates?.[0]?.content?.parts?.[0]?.text || "").slice(0, 60),
+      keys: Object.keys(c || {})
+    }), t(c);
   });
 }
 async function db(e = {}, t, n = {}) {

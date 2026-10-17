@@ -389,10 +389,20 @@ async function streamCompletion(payload = {}, onEvent, options = {}, dependencie
         options.onRequest(request);
     }
     const fetchImplementation = resolveFetch(dependencies.fetch);
+    const body = JSON.stringify(request.body);
+    console.debug('[HostLLM] stream request to ST', {
+        url: request.url,
+        stream: true,
+        chat_completion_source: request.body?.chat_completion_source,
+        model: request.body?.model,
+        topLevelKeys: Object.keys(request.body || {}),
+        messagesRoleKinds: (request.body?.messages || []).map(m => m?.role),
+        bodyPreview: body.slice(0, 300),
+    });
     const response = await fetchImplementation(request.url, {
         method: request.method,
         headers: request.rawHeaders || request.headers,
-        body: JSON.stringify(request.body),
+        body,
         signal: options.signal,
     });
 
@@ -419,6 +429,12 @@ async function streamCompletion(payload = {}, onEvent, options = {}, dependencie
             );
             throw new Error(message);
         }
+        console.debug('[HostLLM] stream event', source, {
+            model: event?.model || event?.modelVersion,
+            finishReason: event?.candidates?.[0]?.finishReason,
+            snippet: String(event?.candidates?.[0]?.content?.parts?.[0]?.text || '').slice(0, 60),
+            keys: Object.keys(event || {}),
+        });
         onEvent(event);
     });
 }
