@@ -159,7 +159,7 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                         <option value="sillytavern-openai-compatible">酒馆 OpenAI 兼容</option>
                         <option value="sillytavern-claude">酒馆 Claude</option>
                         <option value="sillytavern-google">酒馆 Google AI</option>
-                        <option value="sillytavern-vertex">酒馆 Vertex AI</option>
+                        <option value="sillytavern-vertex">跟随酒馆</option>
                         <option value="anthropic">Anthropic</option>
                         <option value="google">Google AI</option>
                     </select>
@@ -249,7 +249,7 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     <option value="sillytavern-openai-compatible">酒馆 OpenAI 兼容</option>
                     <option value="sillytavern-claude">酒馆 Claude</option>
                     <option value="sillytavern-google">酒馆 Google AI</option>
-                    <option value="sillytavern-vertex">酒馆 Vertex AI</option>
+                    <option value="sillytavern-vertex">跟随酒馆</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="google">Google AI</option>
                 </select>
