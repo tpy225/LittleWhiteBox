@@ -37,7 +37,7 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
 
         // tagged-json：把工具規約嵌入訊息，模型輸出純文字含 <tool_call> 標籤
         const taggedMessages = buildTaggedMessages(task, this.config.model);
-        // ST generateRaw 只吃 { role, content: string } 的純字串訊息（柏寶繪 ChatMsg 形態）
+        // ST generateRaw 只吃 { role, content: string } 的純字串訊息
         const messages = taggedMessages.map((m) => ({
             role: m.role === 'system' || m.role === 'user' || m.role === 'assistant' ? m.role : 'user',
             content: flatten(m.content),
