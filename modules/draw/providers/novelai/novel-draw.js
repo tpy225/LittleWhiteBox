@@ -330,17 +330,28 @@ const DEFAULT_PARAMS_PRESET_2 = {
     },
 };
 
-// 内置「官方」API 预设：官方端点 + 用户自己的 API Key，语义完全等于既有扁平字段行为。
-// 它不写入 apiPresets 存储，渲染时动态置顶；不可删除。
+// 内置「官方」API 预设：官方端点 + 用户自己的 API Key。它与其他预设一样持久化在
+// apiPresets 中（id 固定为 OFFICIAL_API_PRESET_ID），渲染时置顶、不可删除。
 const OFFICIAL_API_PRESET_ID = 'official';
 const OFFICIAL_API_PRESET = Object.freeze({ id: OFFICIAL_API_PRESET_ID, name: '官方', builtin: true });
-// 官方端点对应的扁平字段默认值（切换/回落时以此重置，apiKey 不重置）。
-const OFFICIAL_API_DEFAULTS = Object.freeze({
-    apiBaseUrl: '',
-    sendMode: 'frontend',
-    useImageBackendJobs: false,
-    insecureTLS: false,
-});
+
+// 把一条预设的一组值写进扁平字段（请求层唯一读取来源）。
+function applyApiPresetToFlatFields(settings, preset) {
+    settings.apiKey = String(preset.apiKey || '');
+    settings.apiBaseUrl = String(preset.apiBaseUrl || '').trim();
+    settings.sendMode = preset.sendMode === 'backend' ? 'backend' : 'frontend';
+    settings.insecureTLS = preset.insecureTLS === true;
+    settings.useImageBackendJobs = preset.useImageBackendJobs === true;
+}
+
+// 把当前扁平字段写回某条预设（提交编辑期的值）。
+function commitFlatFieldsToApiPreset(settings, preset) {
+    preset.apiKey = String(settings.apiKey || '');
+    preset.apiBaseUrl = String(settings.apiBaseUrl || '').trim();
+    preset.sendMode = settings.sendMode === 'backend' ? 'backend' : 'frontend';
+    preset.insecureTLS = settings.insecureTLS === true;
+    preset.useImageBackendJobs = settings.useImageBackendJobs === true;
+}
 
 const DEFAULT_SETTINGS = {
     configVersion: CONFIG_VERSION,
@@ -1127,11 +1138,28 @@ function normalizeSettings(saved = {}) {
         .filter(r => r && typeof r === 'object')
         .map(r => ({ start: String(r.start || ''), end: String(r.end || '') }));
 
-    // selectedApiPresetId 必须是「官方」或现存自订预设之一，否则回落到官方。
-    if (merged.selectedApiPresetId !== OFFICIAL_API_PRESET_ID
-        && !merged.apiPresets.some(preset => preset.id === merged.selectedApiPresetId)) {
+    // 官方预设也持久化在 apiPresets 中：缺失时用当前扁平字段创建它
+    // （正好等于旧用户原本的官方值，key 不丢），并置顶渲染。
+    if (!merged.apiPresets.some(preset => preset.id === OFFICIAL_API_PRESET_ID)) {
+        merged.apiPresets.unshift({
+            id: OFFICIAL_API_PRESET_ID,
+            name: OFFICIAL_API_PRESET.name,
+            apiKey: merged.apiKey,
+            apiBaseUrl: merged.apiBaseUrl,
+            sendMode: merged.sendMode,
+            insecureTLS: merged.insecureTLS,
+            useImageBackendJobs: merged.useImageBackendJobs,
+        });
+    }
+
+    // selectedApiPresetId 必须是现存预设之一，否则回落到官方。
+    if (!merged.apiPresets.some(preset => preset.id === merged.selectedApiPresetId)) {
         merged.selectedApiPresetId = OFFICIAL_API_PRESET_ID;
     }
+
+    // 不变式：扁平字段恒等于当前选中预设的值（请求层唯一读取来源）。
+    const activeApiPreset = merged.apiPresets.find(preset => preset.id === merged.selectedApiPresetId);
+    if (activeApiPreset) applyApiPresetToFlatFields(merged, activeApiPreset);
 
     return merged;
 }
@@ -1149,7 +1177,10 @@ async function loadSettings() {
         if (!saved
             || saved.configVersion !== CONFIG_VERSION
             || Number(saved._promptTemplateVersion) !== PROMPT_TEMPLATE_VERSION
-            || promptUpgrade.migrated) {
+            || promptUpgrade.migrated
+            // 旧数据里官方预设还不是持久化条目：一次性写回，之后再读即命中。
+            || !Array.isArray(saved.apiPresets)
+            || !saved.apiPresets.some(p => String(p?.id) === OFFICIAL_API_PRESET_ID)) {
             settingsCache.configVersion = CONFIG_VERSION;
             settingsCache.updatedAt = Date.now();
             const storageValue = mergeNovelDrawProviderSettingsIntoStorageRoot(saved, settingsCache);
@@ -3649,6 +3680,8 @@ async function handleFrameMessage(event) {
         case 'SAVE_API_KEY': {
             await updateSettingsPersistent((settings) => {
                 settings.apiKey = typeof data.apiKey === 'string' ? data.apiKey : settings.apiKey;
+                const active = settings.apiPresets.find(p => p.id === settings.selectedApiPresetId);
+                if (active) commitFlatFieldsToApiPreset(settings, active);
             }, '已保存', { target: 'api' });
             break;
         }
@@ -3673,6 +3706,9 @@ async function handleFrameMessage(event) {
                 if (typeof data.insecureTLS === 'boolean') {
                     settings.insecureTLS = data.insecureTLS;
                 }
+                // 扁平字段恒等于当前选中预设：同步回该条预设，避免切换时丢失本次编辑。
+                const active = settings.apiPresets.find(p => p.id === settings.selectedApiPresetId);
+                if (active) commitFlatFieldsToApiPreset(settings, active);
                 if (data.requestDelay?.min > 0 && data.requestDelay?.max > 0) {
                     settings.requestDelay = data.requestDelay;
                 }
@@ -3688,28 +3724,19 @@ async function handleFrameMessage(event) {
         // 预设只是「编辑期的一组值」，靠这些操作同步扁平字段（请求层唯一来源）生效。
         case 'SWITCH_API_PRESET': {
             const targetId = String(data.id || OFFICIAL_API_PRESET_ID);
-            const target = targetId === OFFICIAL_API_PRESET_ID
-                ? null
-                : getSettings().apiPresets.find(p => p.id === targetId);
-            if (targetId !== OFFICIAL_API_PRESET_ID && !target) {
+            if (!getSettings().apiPresets.some(p => p.id === targetId)) {
                 postStatus('error', '预设不存在', 'api-preset');
                 break;
             }
+            // 同一次 mutation 内完成：先提交出方（当前选中条的扁平字段值），再载入入方。
             const ok = await updateSettingsPersistent((settings) => {
+                const outgoingId = settings.selectedApiPresetId;
+                const outgoing = settings.apiPresets.find(p => p.id === outgoingId);
+                if (outgoing && outgoingId !== targetId) commitFlatFieldsToApiPreset(settings, outgoing);
+                const incoming = settings.apiPresets.find(p => p.id === targetId);
+                if (!incoming) return;
+                applyApiPresetToFlatFields(settings, incoming);
                 settings.selectedApiPresetId = targetId;
-                if (target) {
-                    settings.apiKey = String(target.apiKey || '');
-                    settings.apiBaseUrl = String(target.apiBaseUrl || '').trim();
-                    settings.sendMode = target.sendMode === 'backend' ? 'backend' : 'frontend';
-                    settings.insecureTLS = target.insecureTLS === true;
-                    settings.useImageBackendJobs = target.useImageBackendJobs === true;
-                } else {
-                    // 官方：只重置端点相关字段，apiKey 保持用户当前值不动（等价既有行为）
-                    settings.apiBaseUrl = OFFICIAL_API_DEFAULTS.apiBaseUrl;
-                    settings.sendMode = OFFICIAL_API_DEFAULTS.sendMode;
-                    settings.insecureTLS = OFFICIAL_API_DEFAULTS.insecureTLS;
-                    settings.useImageBackendJobs = OFFICIAL_API_DEFAULTS.useImageBackendJobs;
-                }
             }, '已切换预设', { target: 'api-preset' });
             if (ok) sendInitData();
             break;
@@ -3726,21 +3753,20 @@ async function handleFrameMessage(event) {
             };
             const ok = await updateSettingsPersistent((settings) => {
                 settings.selectedApiPresetId = targetId;
-                // 同步扁平字段；官方只写扁平、不动 apiPresets
+                // 扁平字段同步为该组值（请求层唯一来源）。
                 if (fields.apiKey !== undefined) settings.apiKey = fields.apiKey;
                 if (fields.apiBaseUrl !== undefined) settings.apiBaseUrl = fields.apiBaseUrl;
                 if (fields.sendMode !== undefined) settings.sendMode = fields.sendMode;
                 if (fields.insecureTLS !== undefined) settings.insecureTLS = fields.insecureTLS;
                 if (fields.useImageBackendJobs !== undefined) settings.useImageBackendJobs = fields.useImageBackendJobs;
-                if (targetId !== OFFICIAL_API_PRESET_ID) {
-                    const item = settings.apiPresets.find(p => p.id === targetId);
-                    if (item) {
-                        if (fields.apiKey !== undefined) item.apiKey = fields.apiKey;
-                        if (fields.apiBaseUrl !== undefined) item.apiBaseUrl = fields.apiBaseUrl;
-                        if (fields.sendMode !== undefined) item.sendMode = fields.sendMode;
-                        if (fields.insecureTLS !== undefined) item.insecureTLS = fields.insecureTLS;
-                        if (fields.useImageBackendJobs !== undefined) item.useImageBackendJobs = fields.useImageBackendJobs;
-                    }
+                // 写进当前选中的那条（官方或自订皆同）；找不到条目时只保留扁平字段。
+                const item = settings.apiPresets.find(p => p.id === targetId);
+                if (item) {
+                    if (fields.apiKey !== undefined) item.apiKey = fields.apiKey;
+                    if (fields.apiBaseUrl !== undefined) item.apiBaseUrl = fields.apiBaseUrl;
+                    if (fields.sendMode !== undefined) item.sendMode = fields.sendMode;
+                    if (fields.insecureTLS !== undefined) item.insecureTLS = fields.insecureTLS;
+                    if (fields.useImageBackendJobs !== undefined) item.useImageBackendJobs = fields.useImageBackendJobs;
                 }
             }, '已保存', { target: 'api-preset' });
             if (ok) sendInitData();
@@ -3759,15 +3785,10 @@ async function handleFrameMessage(event) {
             }
             const id = generateSlotId();
             const ok = await updateSettingsPersistent((settings) => {
-                settings.apiPresets.push({
-                    id,
-                    name,
-                    apiKey: String(settings.apiKey || ''),
-                    apiBaseUrl: String(settings.apiBaseUrl || '').trim(),
-                    sendMode: settings.sendMode === 'backend' ? 'backend' : 'frontend',
-                    insecureTLS: settings.insecureTLS === true,
-                    useImageBackendJobs: settings.useImageBackendJobs === true,
-                });
+                const preset = { id, name };
+                // 新条目复制当前扁平字段的值，建立后选中它。
+                commitFlatFieldsToApiPreset(settings, preset);
+                settings.apiPresets.push(preset);
                 settings.selectedApiPresetId = id;
             }, '已创建', { target: 'api-preset' });
             if (ok) sendInitData();
@@ -3785,12 +3806,10 @@ async function handleFrameMessage(event) {
                 if (idx < 0) return;
                 settings.apiPresets.splice(idx, 1);
                 if (settings.selectedApiPresetId === targetId) {
-                    // 删除的是当前选中项：回落到官方并套用其值（apiKey 不动）
+                    // 删除的是当前选中项：回落到官方并载入官方自己的那组值。
                     settings.selectedApiPresetId = OFFICIAL_API_PRESET_ID;
-                    settings.apiBaseUrl = OFFICIAL_API_DEFAULTS.apiBaseUrl;
-                    settings.sendMode = OFFICIAL_API_DEFAULTS.sendMode;
-                    settings.insecureTLS = OFFICIAL_API_DEFAULTS.insecureTLS;
-                    settings.useImageBackendJobs = OFFICIAL_API_DEFAULTS.useImageBackendJobs;
+                    const official = settings.apiPresets.find(p => p.id === OFFICIAL_API_PRESET_ID);
+                    if (official) applyApiPresetToFlatFields(settings, official);
                 }
             }, '已删除', { target: 'api-preset' });
             if (ok) sendInitData();

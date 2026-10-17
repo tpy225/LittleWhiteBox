@@ -3295,10 +3295,12 @@ function applyStateToUI() {
         $('nd_use_backend_jobs').checked = state.useImageBackendJobs === true;
         updateSendModeUI(state.sendMode === 'backend' ? 'backend' : 'frontend');
         $('nd_insecure_tls').checked = state.insecureTLS === true;
-        // API 预设下拉：内置「官方」动态置顶（不存 apiPresets），后接自订预设
+        // API 预设下拉：官方已持久化在 apiPresets（列表首位）；列表缺失官方时兜底补上。
         const aSel = $('nd_api_preset');
         const officialApi = state.officialApiPreset || { id: 'official', name: '官方', builtin: true };
-        aSel.innerHTML = [officialApi, ...(state.apiPresets || [])]
+        const apiPresets = (state.apiPresets || []).slice();
+        if (!apiPresets.some(p => p.id === officialApi.id)) apiPresets.unshift(officialApi);
+        aSel.innerHTML = apiPresets
             .map(p => `<option value="${p.id}">${escapeHtml(p.name || p.id)}</option>`)
             .join('');
         aSel.value = state.selectedApiPresetId || officialApi.id;
