@@ -512,6 +512,7 @@ export function createAgentSettingsPanel(deps = {}) {
             modelListAuth: normalizeModelListAuth(providerConfig.modelListAuth),
             vertexAuthMode: providerConfig.vertexAuthMode || 'full',
             vertexRegion: providerConfig.vertexRegion || 'us-central1',
+            serviceAccountJson: providerConfig.serviceAccountJson || '',
             temperature: normalizeTemperature(providerConfig.temperature, 1),
             maxTokens: normalizeMaxTokens(providerConfig.maxTokens),
             sendTemperature: shouldSendTemperature(providerConfig),
@@ -531,6 +532,7 @@ export function createAgentSettingsPanel(deps = {}) {
             delegateModelListAuth: normalizeModelListAuth(providerConfig.modelListAuth),
             delegateVertexAuthMode: providerConfig.vertexAuthMode || 'full',
             delegateVertexRegion: providerConfig.vertexRegion || 'us-central1',
+            delegateServiceAccountJson: providerConfig.serviceAccountJson || '',
             delegateTemperature: normalizeTemperature(providerConfig.temperature, 1),
             delegateMaxTokens: normalizeMaxTokens(providerConfig.maxTokens),
             delegateSendTemperature: shouldSendTemperature(providerConfig),
@@ -615,6 +617,7 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(provider === 'sillytavern-vertex' ? {
                 vertexAuthMode: root.querySelector('#xb-assistant-vertex-auth')?.value || 'full',
                 vertexRegion: root.querySelector('#xb-assistant-vertex-region')?.value.trim() || 'us-central1',
+                serviceAccountJson: root.querySelector('#xb-assistant-vertex-sa')?.value.trim() || '',
             } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-temperature')?.value, draft.temperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-max-tokens')?.value, draft.maxTokens),
@@ -634,6 +637,7 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(delegateProvider === 'sillytavern-vertex' ? {
                 vertexAuthMode: root.querySelector('#xb-assistant-delegate-vertex-auth')?.value || 'full',
                 vertexRegion: root.querySelector('#xb-assistant-delegate-vertex-region')?.value.trim() || 'us-central1',
+                serviceAccountJson: root.querySelector('#xb-assistant-delegate-vertex-sa')?.value.trim() || '',
             } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-delegate-temperature')?.value, draft.delegateTemperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-delegate-max-tokens')?.value, draft.delegateMaxTokens),
@@ -713,6 +717,7 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(draft.provider === 'sillytavern-vertex' ? {
                 vertexAuthMode: draft.vertexAuthMode || 'full',
                 vertexRegion: draft.vertexRegion || 'us-central1',
+                serviceAccountJson: draft.serviceAccountJson || '',
             } : {}),
             temperature: normalizeTemperature(draft.temperature, 1),
             maxTokens: normalizeMaxTokens(draft.maxTokens),
@@ -737,6 +742,7 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(draft.delegateProvider === 'sillytavern-vertex' ? {
                 vertexAuthMode: draft.delegateVertexAuthMode || 'full',
                 vertexRegion: draft.delegateVertexRegion || 'us-central1',
+                serviceAccountJson: draft.delegateServiceAccountJson || '',
             } : {}),
             temperature: normalizeTemperature(draft.delegateTemperature, 1),
             maxTokens: normalizeMaxTokens(draft.delegateMaxTokens),
@@ -1057,10 +1063,14 @@ export function createAgentSettingsPanel(deps = {}) {
         const vertexAuthSelect = root.querySelector('#xb-assistant-vertex-auth');
         const vertexRegionWrap = root.querySelector('#xb-assistant-vertex-region-wrap');
         const vertexRegionInput = root.querySelector('#xb-assistant-vertex-region');
+        const vertexSaWrap = root.querySelector('#xb-assistant-vertex-sa-wrap');
+        const vertexSaInput = root.querySelector('#xb-assistant-vertex-sa');
         if (vertexAuthWrap) vertexAuthWrap.style.display = isVertex ? '' : 'none';
         if (vertexAuthSelect) vertexAuthSelect.value = draft.vertexAuthMode || 'full';
         if (vertexRegionWrap) vertexRegionWrap.style.display = isVertex ? '' : 'none';
         if (vertexRegionInput) vertexRegionInput.value = draft.vertexRegion || 'us-central1';
+        if (vertexSaWrap) vertexSaWrap.style.display = isVertex ? '' : 'none';
+        if (vertexSaInput) vertexSaInput.value = draft.serviceAccountJson || '';
         if (permissionModeSelect) {
             refillSelect(permissionModeSelect, AGENT_PERMISSION_MODE_OPTIONS);
             permissionModeSelect.value = normalizePermissionMode(draft.permissionMode);
@@ -1096,10 +1106,14 @@ export function createAgentSettingsPanel(deps = {}) {
         const delegateVertexAuthSelect = root.querySelector('#xb-assistant-delegate-vertex-auth');
         const delegateVertexRegionWrap = root.querySelector('#xb-assistant-delegate-vertex-region-wrap');
         const delegateVertexRegionInput = root.querySelector('#xb-assistant-delegate-vertex-region');
+        const delegateVertexSaWrap = root.querySelector('#xb-assistant-delegate-vertex-sa-wrap');
+        const delegateVertexSaInput = root.querySelector('#xb-assistant-delegate-vertex-sa');
         if (delegateVertexAuthWrap) delegateVertexAuthWrap.style.display = isDelegateVertex ? '' : 'none';
         if (delegateVertexAuthSelect) delegateVertexAuthSelect.value = draft.delegateVertexAuthMode || 'full';
         if (delegateVertexRegionWrap) delegateVertexRegionWrap.style.display = isDelegateVertex ? '' : 'none';
         if (delegateVertexRegionInput) delegateVertexRegionInput.value = draft.delegateVertexRegion || 'us-central1';
+        if (delegateVertexSaWrap) delegateVertexSaWrap.style.display = isDelegateVertex ? '' : 'none';
+        if (delegateVertexSaInput) delegateVertexSaInput.value = draft.delegateServiceAccountJson || '';
         syncReasoningControls(root, 'delegate');
         if (delegatePulledSelect) {
             refillSelect(delegatePulledSelect, delegatePulledModels.map((model) => ({ value: model, label: model })), '手动填写');

@@ -186,6 +186,16 @@ function normalizeHostFailureMessage(rawText = '', fallbackMessage = '', respons
 }
 
 function buildHostChatCompletionsFields(config = {}, source = HOST_CHAT_COMPLETIONS_SOURCE_OPENAI) {
+    // 允許 adapter 直接注入 reverse_proxy / proxy_password（用於 SA JSON 換 token 後的 proxy 路徑）
+    const explicitReverseProxy = String(config.reverse_proxy || '').trim();
+    const explicitProxyPassword = String(config.proxy_password || '').trim();
+    if (explicitReverseProxy || explicitProxyPassword) {
+        const fields = { chat_completion_source: source };
+        if (explicitReverseProxy) fields.reverse_proxy = explicitReverseProxy;
+        if (explicitProxyPassword) fields.proxy_password = explicitProxyPassword;
+        return fields;
+    }
+
     const baseUrl = normalizeReverseProxyForSource(config.baseUrl, source);
     const apiKey = String(config.apiKey || '').trim();
     const defaultReverseProxy = HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY[source] || '';

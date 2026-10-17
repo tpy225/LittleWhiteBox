@@ -68,6 +68,7 @@ export const DEFAULT_MODEL_CONFIGS = {
         apiKey: '',
         vertexAuthMode: 'full',
         vertexRegion: 'us-central1',
+        serviceAccountJson: '',
         temperature: 1,
         maxTokens: DEFAULT_MAX_TOKENS,
         sendTemperature: true,

@@ -1,10 +1,7 @@
 'use strict';
 
-/**
- * LittleWhiteBox server plugin. Feature routes are registered here; each feature owns its implementation.
- * Installation and coordinated frontend/backend upgrades are documented in README.md.
- */
-
+const crypto = require('node:crypto');
+const { Buffer } = require('node:buffer');
 const { pipeline } = require('node:stream/promises');
 const {
     generateImage,
@@ -85,6 +82,55 @@ function parseUpstreamUrl(value) {
 
 function errorMessage(error) {
     return String(error?.message || error);
+}
+
+function base64urlEncode(bytes) {
+    return Buffer.from(bytes).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function parseServiceAccount(raw) {
+    if (!raw || typeof raw !== 'string') throw new Error('serviceAccountJson is required');
+    const json = JSON.parse(raw);
+    if (!json.client_email) throw new Error('SA JSON missing client_email');
+    if (!json.private_key) throw new Error('SA JSON missing private_key');
+    return json;
+}
+
+async function exchangeVertexToken(serviceAccountRaw, scope = 'https://www.googleapis.com/auth/cloud-platform') {
+    const sa = parseServiceAccount(serviceAccountRaw);
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const payload = {
+        iss: sa.client_email,
+        scope,
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+    };
+    const hb = base64urlEncode(JSON.stringify(header));
+    const pb = base64urlEncode(JSON.stringify(payload));
+    const signingInput = `${hb}.${pb}`;
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(signingInput);
+    const signature = signer.sign(sa.private_key, 'base64url');
+    const jwt = `${signingInput}.${signature}`;
+
+    const resp = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            assertion: jwt,
+        }),
+    });
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(`OAuth ${resp.status}: ${body.error_description || body.error || resp.statusText}`);
+    if (!body.access_token) throw new Error('OAuth response missing access_token');
+    return {
+        accessToken: body.access_token,
+        expiresAt: now + (body.expires_in || 3600) - 60, // 60s safety margin
+        projectId: sa.project_id,
+    };
 }
 
 function sendRequestError(scope, res, error, label) {
@@ -180,6 +226,19 @@ async function init(router) {
             version: PLUGIN_VERSION,
             capabilities: [...PLUGIN_CAPABILITIES],
         });
+    });
+
+    router.post('/vertex-exchange-token', async (req, res) => {
+        try {
+            const body = req.body || {};
+            const raw = String(body.serviceAccountJson || '').trim();
+            if (!raw) return res.status(400).send({ ok: false, error: 'serviceAccountJson is required' });
+            const result = await exchangeVertexToken(raw);
+            res.status(200).send({ ok: true, ...result });
+        } catch (error) {
+            console.error(`${LOG_PREFIX} vertex-exchange-token error:`, error.message);
+            res.status(400).send({ ok: false, error: errorMessage(error) });
+        }
     });
 
     registerImageJobRoutes(router, {

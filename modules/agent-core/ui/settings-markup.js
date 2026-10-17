@@ -186,6 +186,10 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     <span>Vertex Region</span>
                     <input id="xb-assistant-delegate-vertex-region" type="text" />
                 </label>
+                <label id="xb-assistant-delegate-vertex-sa-wrap" style="display:none" class="xb-assistant-block">
+                    <span>Service Account JSON</span>
+                    <textarea id="xb-assistant-delegate-vertex-sa" rows="4" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
+                </label>
                 <label>
                     <span>Model</span>
                     <input id="xb-assistant-delegate-model" type="text" />
@@ -286,6 +290,11 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
             <label id="xb-assistant-vertex-region-wrap" style="display:none">
                 <span>Vertex Region</span>
                 <input id="xb-assistant-vertex-region" type="text" />
+            </label>
+            <label id="xb-assistant-vertex-sa-wrap" style="display:none" class="xb-assistant-block">
+                <span>Service Account JSON</span>
+                <textarea id="xb-assistant-vertex-sa" rows="4" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
+                <small class="xb-assistant-hint">貼上完整 SA JSON（從 GCP 服務帳號建立金鑰後下載）。Agent 透過小白X server-plugin 換取 access token，ST 走 proxy 路徑發送。</small>
             </label>
             <label>
                 <span>Model</span>
