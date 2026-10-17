@@ -260,7 +260,7 @@ function ut(e) {
 function Fs(e = {}) {
   const t = jt();
   return Object.keys(Li).forEach((n) => {
-    const r = e && typeof e[n] == "object" ? e[n] : {}, o = Li[n];
+    const r = e && typeof e[n] == "object" ? e[n] : {}, o = Li[n], i = n === "sillytavern-vertex";
     t[n] = {
       baseUrl: String(r.baseUrl ?? o.baseUrl ?? ""),
       model: String(r.model ?? o.model ?? ""),
@@ -270,7 +270,12 @@ function Fs(e = {}) {
       maxTokens: Gn(r.maxTokens, o.maxTokens),
       sendTemperature: typeof r.sendTemperature == "boolean" ? r.sendTemperature : o.sendTemperature,
       ..."toolMode" in o ? { toolMode: String(r.toolMode || o.toolMode || "native") } : {},
-      reasoning: Ls(r.reasoning)
+      reasoning: Ls(r.reasoning),
+      ...i ? {
+        vertexAuthMode: r.vertexAuthMode || o.vertexAuthMode || "full",
+        vertexRegion: r.vertexRegion || o.vertexRegion || "us-central1",
+        serviceAccountJson: String(r.serviceAccountJson || o.serviceAccountJson || "")
+      } : {}
     };
   }), t;
 }

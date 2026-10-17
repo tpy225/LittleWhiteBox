@@ -143,6 +143,7 @@ export function normalizeModelConfigs(modelConfigs = {}) {
             ? modelConfigs[provider]
             : {};
         const defaults = DEFAULT_MODEL_CONFIGS[provider];
+        const isVertex = provider === 'sillytavern-vertex';
         next[provider] = {
             baseUrl: String(source.baseUrl ?? defaults.baseUrl ?? ''),
             model: String(source.model ?? defaults.model ?? ''),
@@ -157,6 +158,12 @@ export function normalizeModelConfigs(modelConfigs = {}) {
                 ? { toolMode: String(source.toolMode || defaults.toolMode || 'native') }
                 : {}),
             reasoning: normalizeReasoningConfig(source.reasoning),
+            // provider 專用欄位：白名單外的欄位不會被 normalize 保留，這裡顯式拷貝
+            ...(isVertex ? {
+                vertexAuthMode: source.vertexAuthMode || defaults.vertexAuthMode || 'full',
+                vertexRegion: source.vertexRegion || defaults.vertexRegion || 'us-central1',
+                serviceAccountJson: String(source.serviceAccountJson || defaults.serviceAccountJson || ''),
+            } : {}),
         };
     });
     return next;
