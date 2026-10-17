@@ -1,114 +1,14 @@
 import {
-    HOST_CHAT_COMPLETIONS_SOURCE_OPENAI,
+    HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
 } from '../../../shared/host-llm/chat-completions/client.js';
-import { getHostRequestHeaders } from '../../../shared/host-request-headers.js';
-import { SillyTavernOpenAICompatibleAdapter } from './sillytavern-openai-compatible.js';
+import { SillyTavernGoogleAdapter } from './sillytavern-google.js';
 
-// 走 openai source + reverse_proxy + proxy_password，由 ST 代理轉發到
-// Vertex AI OpenAI 兼容端點：
-//   https://{region}-aiplatform.googleapis.com/v1beta/openai/chat/completions
-//
-// 用戶貼 SA JSON（Service Account），server-plugin 簽 JWT 換 OAuth
-// access_token，注入成 proxy_password（Bearer token）由 ST 發送。
-//
-// 不走 ST 原生 vertexai source 的原因：
-//   ST 原生 vertexai 路徑有 runtime bug，且 payload 結構與 OpenAI 兼容
-// 端點不同，我們的 messages/tool_calls 無法直接喂給它。
+// 跟隨酒館主 API：直接用 ST 原生 vertexai auth（讀 secrets.VERTEXAI_SERVICE_ACCOUNT），
+// 不自換 token、不自管 auth、不注入 reverse_proxy / proxy_password。
+// SillyTavernGoogleAdapter 的 payload 結構（Google 原生 messages/stream/use_sysprompt）
+// 跟 vertexai source 兼容，ST 收到後會走 vertexai 專屬 auth 路徑。
 
-// module-level cache：同一個 ST + SA 共用，避免 GCP OAuth rate limit。
-const TOKEN_CACHE = new Map(); // key: `${region}::${saEmail}`, value: { accessToken, expiresAt }
-
-function cacheKey(region, saEmail) {
-    return `${region || ''}::${saEmail || ''}`;
-}
-
-// 把相對路徑補成絕對地址。srcdoc iframe 裡相對路徑會解析錯，
-// 必須用 document.baseURI 才能拿到正確的 ST origin。
-function resolveAbsoluteUrl(relativePath) {
-    try {
-        return new URL(relativePath, document.baseURI || window.location.href).toString();
-    } catch {
-        return relativePath;
-    }
-}
-
-export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter {
+export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
     provider = 'sillytavern-vertex';
-    source = HOST_CHAT_COMPLETIONS_SOURCE_OPENAI; // 走 openai source + reverse_proxy
-
-    constructor(config, hostClient) {
-        super(config, hostClient);
-    }
-
-    get _region() {
-        const r = String(this.config?.vertexRegion || 'us-central1').trim().toLowerCase();
-        if (!r || r === 'global') return 'us-central1';
-        return r;
-    }
-
-    // Vertex OpenAI 兼容端點（ST openai source 會自動加 /chat/completions）
-    get _reverseProxyUrl() {
-        return `https://${this._region}-aiplatform.googleapis.com/v1beta/openai`;
-    }
-
-    async _ensureToken() {
-        const saJson = String(this.config?.serviceAccountJson || '').trim();
-        if (!saJson) {
-            throw new Error('Vertex AI 需要 Service Account JSON（請在 Agent API 配置頁貼 SA JSON）');
-        }
-        let saEmail = '';
-        try {
-            saEmail = JSON.parse(saJson).client_email || '';
-        } catch {
-            throw new Error('Service Account JSON 格式不正確');
-        }
-
-        const now = Math.floor(Date.now() / 1000);
-        const key = cacheKey(this._region, saEmail);
-        const cached = TOKEN_CACHE.get(key);
-        if (cached && cached.expiresAt > now) return cached.accessToken;
-
-        // srcdoc iframe 裡 fetch 相對路徑會解析錯，補成絕對地址
-        const pluginUrl = resolveAbsoluteUrl('/api/plugins/littlewhitebox-server/vertex-exchange-token');
-        const stHeaders = await getHostRequestHeaders().catch(() => ({}));
-        console.debug('[VertexAdapter] fetching token', pluginUrl);
-        const resp = await fetch(pluginUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...stHeaders },
-            body: JSON.stringify({ serviceAccountJson: saJson }),
-        });
-        const rawText = await resp.text().catch(() => '');
-        let data = {};
-        try { data = rawText ? JSON.parse(rawText) : {}; } catch { data = {}; }
-
-        if (!resp.ok) {
-            if (resp.status === 404) {
-                throw new Error(
-                    '換取 Vertex OAuth token 失敗：server-plugin 未啟用（HTTP 404）。'
-                    + '請確認已安裝 littlewhitebox-server、config.yaml 開啟 enableServerPlugins、'
-                    + '並重啟 SillyTavern。'
-                );
-            }
-            throw new Error(`換取 Vertex OAuth token 失敗：HTTP ${resp.status} — ${rawText.slice(0, 200)}`);
-        }
-        if (!data.ok || !data.accessToken) {
-            throw new Error(`換取 Vertex OAuth token 失敗：${data.error || rawText.slice(0, 200) || '未知錯誤'}`);
-        }
-        const expiresAt = data.expiresAt || (now + 3500);
-        TOKEN_CACHE.set(key, { accessToken: data.accessToken, expiresAt });
-        return data.accessToken;
-    }
-
-    async chat(task) {
-        const token = await this._ensureToken();
-        // 注入 reverse_proxy + proxy_password → ST 當 OpenAI API key 用 Bearer token 發送
-        this.config = {
-            ...this.config,
-            reverse_proxy: this._reverseProxyUrl,
-            proxy_password: token,
-            baseUrl: undefined,  // 不要讓 buildHostChatCompletionsFields 重疊計算
-            apiKey: undefined,   // 避免跟 proxy_password 衝突
-        };
-        return super.chat(task);
-    }
+    source = HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI;
 }
