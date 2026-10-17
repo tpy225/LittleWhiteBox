@@ -238,48 +238,36 @@ function ensureOptionalProPreset(settings, currentDefaults) {
 }
 
 /**
- * Swap the bundled `进阶-构图强化` rules for the current revision. A saved copy still
- * byte-identical to a revision that actually shipped is replaced in place. A copy the user
- * edited fingerprints to something unknown: it is left alone and the current rules are
- * appended beside it under a revision-numbered name, so the bundled template stays reachable
- * without overwriting anyone's work. A user who removed the preset gets neither a copy back
- * nor this rewrite; only the version marker moves forward. Selection is never changed.
+ * Swap the bundled `进阶-构图强化` rules for the current revision.
+ * 全部覆蓋：無論用戶是否修改過舊版，一律用新版替換，不留舊版副本。
+ * Only sets _proPresetVersion marker if pro preset exists; missing preset is handled by installScenePlannerPresets.
  */
 function refreshProPresetRules(settings, currentDefaults) {
     const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
-    if (Number(source._proPresetVersion) >= 2) {
+    if (Number(source._proPresetVersion) >= 3) {
         return { settings: source, replaced: false, appended: false };
     }
     if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
         throw new Error('提示词模板尚未加载：sceneRulesPro');
     }
     const existing = Array.isArray(source.promptPresets) ? source.promptPresets : [];
-    const currentFingerprint = promptTemplateFingerprint(currentDefaults.sceneRulesPro);
     let replaced = false;
-    let edited = false;
     const next = existing.map((preset) => {
         if (!preset || typeof preset !== 'object' || preset.name !== SCENE_PLANNER_PRESET_NAMES.pro) {
             return preset;
         }
         if (typeof preset.sceneRules !== 'string') return preset;
-        const fingerprint = promptTemplateFingerprint(preset.sceneRules);
-        if (fingerprint === currentFingerprint) return preset;
-        if (!PRO_PRESET_RELEASED_SCENE_RULES.includes(fingerprint)) {
-            edited = true;
-            return preset;
-        }
         replaced = true;
         return { ...preset, sceneRules: currentDefaults.sceneRulesPro };
     });
-    const appended = edited && !next.some(preset => preset?.name === PRO_PRESET_BUILTIN_NAME);
     return {
         settings: {
             ...source,
-            promptPresets: appended ? [...next, createScenePlannerBuiltinProPreset(currentDefaults)] : next,
-            _proPresetVersion: 2,
+            promptPresets: next,
+            _proPresetVersion: 3,
         },
         replaced,
-        appended,
+        appended: false,
     };
 }
 
