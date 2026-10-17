@@ -693,7 +693,7 @@ var rR = 900 * 1e3, iR = Object.freeze([{
   },
   {
     value: "sillytavern-vertex",
-    label: "酒馆 Vertex AI"
+    label: "跟随酒馆"
   },
   {
     value: "anthropic",
@@ -722,7 +722,7 @@ function aR(e = "", t = {}) {
 }
 function lR(e = {}) {
   const t = String(e.provider || "").trim();
-  return t === "openai-compatible" || t === "sillytavern-openai-compatible" ? e.toolMode === "tagged-json" ? "Tagged JSON 兼容模式" : "原生 Tool Calling" : "Provider 原生工具";
+  return t === "openai-compatible" || t === "sillytavern-openai-compatible" || t === "sillytavern-vertex" ? e.toolMode === "tagged-json" ? "Tagged JSON 兼容模式" : "原生 Tool Calling" : "Provider 原生工具";
 }
 function uR(e = {}, t = {}) {
   const n = ig(e || {});

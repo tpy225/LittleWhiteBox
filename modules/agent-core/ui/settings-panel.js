@@ -585,11 +585,17 @@ export function createAgentSettingsPanel(deps = {}) {
             || root.querySelector('#xb-assistant-delegate-provider')?.value
             || draft.delegateProvider
             || 'openai-compatible';
-        const baseUrl = root.querySelector('#xb-assistant-base-url')?.value.trim() || '';
+        const isFollowTavern = provider === 'sillytavern-vertex';
+        const baseUrl = isFollowTavern
+            ? ''
+            : (root.querySelector('#xb-assistant-base-url')?.value.trim() || '');
         const model = root.querySelector('#xb-assistant-model')?.value.trim() || '';
-        const delegateBaseUrl = root.querySelector('#xb-assistant-delegate-base-url')?.value.trim()
-            ?? draft.delegateBaseUrl
-            ?? '';
+        const isDelegateFollowTavern = delegateProvider === 'sillytavern-vertex';
+        const delegateBaseUrl = isDelegateFollowTavern
+            ? ''
+            : (root.querySelector('#xb-assistant-delegate-base-url')?.value.trim()
+                ?? draft.delegateBaseUrl
+                ?? '');
         const delegateModel = root.querySelector('#xb-assistant-delegate-model')?.value.trim()
             ?? draft.delegateModel
             ?? '';
@@ -610,7 +616,9 @@ export function createAgentSettingsPanel(deps = {}) {
         const providerConfig = {
             baseUrl,
             model,
-            apiKey: root.querySelector('#xb-assistant-api-key')?.value.trim() || '',
+            apiKey: isFollowTavern
+                ? ''
+                : (root.querySelector('#xb-assistant-api-key')?.value.trim() || ''),
             ...(supportsModelListAuth(provider) ? { modelListAuth: normalizeModelListAuth(
                 root.querySelector('#xb-assistant-model-list-auth')?.value ?? draft.modelListAuth,
             ) } : {}),
@@ -625,7 +633,9 @@ export function createAgentSettingsPanel(deps = {}) {
         const delegateProviderConfig = {
             baseUrl: delegateBaseUrl,
             model: delegateModel,
-            apiKey: root.querySelector('#xb-assistant-delegate-api-key')?.value.trim() ?? draft.delegateApiKey ?? '',
+            apiKey: isDelegateFollowTavern
+                ? ''
+                : (root.querySelector('#xb-assistant-delegate-api-key')?.value.trim() ?? draft.delegateApiKey ?? ''),
             ...(supportsModelListAuth(delegateProvider) ? { modelListAuth: normalizeModelListAuth(
                 root.querySelector('#xb-assistant-delegate-model-list-auth')?.value ?? draft.delegateModelListAuth,
             ) } : {}),
@@ -1049,8 +1059,16 @@ export function createAgentSettingsPanel(deps = {}) {
             toolModeSelect.value = draft.toolMode || 'native';
         }
         const isVertex = provider === 'sillytavern-vertex';
-        const vertexHint = root.querySelector('#xb-assistant-vertex-hint');
-        if (vertexHint) vertexHint.hidden = !isVertex;
+        const isDelegateVertex = delegateProvider === 'sillytavern-vertex';
+        // 跟随酒馆：baseUrl / apiKey 由酒馆主界面连線决定，这里不可填
+        if (baseUrlInput) baseUrlInput.disabled = isVertex;
+        if (apiKeyInput) apiKeyInput.disabled = isVertex;
+        const keyToggle = root.querySelector('#xb-assistant-toggle-key');
+        if (keyToggle) keyToggle.disabled = isVertex;
+        if (delegateBaseUrlInput) delegateBaseUrlInput.disabled = isDelegateVertex;
+        if (delegateApiKeyInput) delegateApiKeyInput.disabled = isDelegateVertex;
+        const delegateKeyToggle = root.querySelector('#xb-assistant-delegate-toggle-key');
+        if (delegateKeyToggle) delegateKeyToggle.disabled = isDelegateVertex;
         if (permissionModeSelect) {
             refillSelect(permissionModeSelect, AGENT_PERMISSION_MODE_OPTIONS);
             permissionModeSelect.value = normalizePermissionMode(draft.permissionMode);
@@ -1081,9 +1099,6 @@ export function createAgentSettingsPanel(deps = {}) {
             refillSelect(delegateToolModeSelect, TOOL_MODE_OPTIONS);
             delegateToolModeSelect.value = draft.delegateToolMode || 'native';
         }
-        const isDelegateVertex = delegateProvider === 'sillytavern-vertex';
-        const delegateVertexHint = root.querySelector('#xb-assistant-delegate-vertex-hint');
-        if (delegateVertexHint) delegateVertexHint.hidden = !isDelegateVertex;
         syncReasoningControls(root, 'delegate');
         if (delegatePulledSelect) {
             refillSelect(delegatePulledSelect, delegatePulledModels.map((model) => ({ value: model, label: model })), '手动填写');

@@ -175,9 +175,6 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                         <button id="xb-assistant-delegate-toggle-key" type="button" class="secondary ghost">显示</button>
                     </div>
                 </label>
-                <div id="xb-assistant-delegate-vertex-hint" hidden class="xb-assistant-hint">
-                    跟隨酒館主 API —— 直接用酒館當前連線的認證，無需在此填寫。
-                </div>
                 <label>
                     <span>Model</span>
                     <input id="xb-assistant-delegate-model" type="text" />
@@ -268,11 +265,6 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     <button id="xb-assistant-toggle-key" type="button" class="secondary ghost">显示</button>
                 </div>
             </label>
-            <div id="xb-assistant-vertex-hint" hidden class="xb-assistant-hint">
-                跟隨酒館主 API —— 直接用酒館當前連線的認證，無需在此填寫。
-                請在酒館設定頁配好 Vertex 連線（API Key 或 Service Account）並測試正常後，
-                再回此頁保存。
-            </div>
             <label>
                 <span>Model</span>
                 <input id="xb-assistant-model" type="text" />
