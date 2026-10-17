@@ -175,25 +175,9 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                         <button id="xb-assistant-delegate-toggle-key" type="button" class="secondary ghost">显示</button>
                     </div>
                 </label>
-                <label id="xb-assistant-delegate-vertex-auth-wrap" style="display:none">
-                    <span>认证方式</span>
-                    <select id="xb-assistant-delegate-vertex-auth">
-                        <option value="full">Service Account (JSON)</option>
-                        <option value="express">Express Mode (API Key)</option>
-                    </select>
-                </label>
-                <label id="xb-assistant-delegate-vertex-region-wrap" style="display:none">
-                    <span>Vertex Region</span>
-                    <input id="xb-assistant-delegate-vertex-region" type="text" />
-                </label>
-                <label id="xb-assistant-delegate-vertex-sa-wrap" style="display:none" class="xb-assistant-block">
-                    <span>Service Account JSON</span>
-                    <div class="xb-assistant-inline-input">
-                        <input id="xb-assistant-delegate-vertex-sa-indicator" type="text" disabled placeholder="未設定" />
-                        <button id="xb-assistant-delegate-vertex-sa-edit" type="button" class="secondary ghost">編輯</button>
-                    </div>
-                    <textarea id="xb-assistant-delegate-vertex-sa" rows="4" style="display:none" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
-                </label>
+                <div id="xb-assistant-delegate-vertex-hint" hidden class="xb-assistant-hint">
+                    跟隨酒館主 API —— 直接用酒館當前連線的認證，無需在此填寫。
+                </div>
                 <label>
                     <span>Model</span>
                     <input id="xb-assistant-delegate-model" type="text" />
@@ -284,26 +268,11 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     <button id="xb-assistant-toggle-key" type="button" class="secondary ghost">显示</button>
                 </div>
             </label>
-            <label id="xb-assistant-vertex-auth-wrap" style="display:none">
-                <span>认证方式</span>
-                <select id="xb-assistant-vertex-auth">
-                    <option value="full">Service Account (JSON)</option>
-                    <option value="express">Express Mode (API Key)</option>
-                </select>
-            </label>
-            <label id="xb-assistant-vertex-region-wrap" style="display:none">
-                <span>Vertex Region</span>
-                <input id="xb-assistant-vertex-region" type="text" />
-            </label>
-            <label id="xb-assistant-vertex-sa-wrap" style="display:none" class="xb-assistant-block">
-                <span>Service Account JSON</span>
-                <div class="xb-assistant-inline-input">
-                    <input id="xb-assistant-vertex-sa-indicator" type="text" disabled placeholder="未設定（貼上 SA JSON 後自動保存）" />
-                    <button id="xb-assistant-vertex-sa-edit" type="button" class="secondary ghost">編輯</button>
-                </div>
-                <textarea id="xb-assistant-vertex-sa" rows="4" style="display:none" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
-                <small class="xb-assistant-hint">貼上完整 SA JSON（從 GCP 服務帳號建立金鑰後下載）。Agent 透過小白X server-plugin 換取 access token。保存後 UI 不再顯示完整內容，避免誤截圖洩漏。</small>
-            </label>
+            <div id="xb-assistant-vertex-hint" hidden class="xb-assistant-hint">
+                跟隨酒館主 API —— 直接用酒館當前連線的認證，無需在此填寫。
+                請在酒館設定頁配好 Vertex 連線（API Key 或 Service Account）並測試正常後，
+                再回此頁保存。
+            </div>
             <label>
                 <span>Model</span>
                 <input id="xb-assistant-model" type="text" />

@@ -614,16 +614,6 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(supportsModelListAuth(provider) ? { modelListAuth: normalizeModelListAuth(
                 root.querySelector('#xb-assistant-model-list-auth')?.value ?? draft.modelListAuth,
             ) } : {}),
-            ...(provider === 'sillytavern-vertex' ? {
-                vertexAuthMode: root.querySelector('#xb-assistant-vertex-auth')?.value || 'full',
-                vertexRegion: root.querySelector('#xb-assistant-vertex-region')?.value.trim() || 'us-central1',
-                // textarea 隱藏時 UI 不回顯，保留 draft 裡已保存的值
-                serviceAccountJson: (() => {
-                    const ta = root.querySelector('#xb-assistant-vertex-sa');
-                    if (!ta || ta.style.display !== 'block') return draft.serviceAccountJson || '';
-                    return ta.value.trim() || '';
-                })(),
-            } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-temperature')?.value, draft.temperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-max-tokens')?.value, draft.maxTokens),
             sendTemperature: root.querySelector('#xb-assistant-send-temperature')?.checked ?? Boolean(draft.sendTemperature ?? true),
@@ -639,15 +629,6 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(supportsModelListAuth(delegateProvider) ? { modelListAuth: normalizeModelListAuth(
                 root.querySelector('#xb-assistant-delegate-model-list-auth')?.value ?? draft.delegateModelListAuth,
             ) } : {}),
-            ...(delegateProvider === 'sillytavern-vertex' ? {
-                vertexAuthMode: root.querySelector('#xb-assistant-delegate-vertex-auth')?.value || 'full',
-                vertexRegion: root.querySelector('#xb-assistant-delegate-vertex-region')?.value.trim() || 'us-central1',
-                serviceAccountJson: (() => {
-                    const ta = root.querySelector('#xb-assistant-delegate-vertex-sa');
-                    if (!ta || ta.style.display !== 'block') return draft.delegateServiceAccountJson || '';
-                    return ta.value.trim() || '';
-                })(),
-            } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-delegate-temperature')?.value, draft.delegateTemperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-delegate-max-tokens')?.value, draft.delegateMaxTokens),
             sendTemperature: root.querySelector('#xb-assistant-delegate-send-temperature')?.checked ?? Boolean(draft.delegateSendTemperature ?? true),
@@ -1068,23 +1049,8 @@ export function createAgentSettingsPanel(deps = {}) {
             toolModeSelect.value = draft.toolMode || 'native';
         }
         const isVertex = provider === 'sillytavern-vertex';
-        const vertexAuthWrap = root.querySelector('#xb-assistant-vertex-auth-wrap');
-        const vertexAuthSelect = root.querySelector('#xb-assistant-vertex-auth');
-        const vertexRegionWrap = root.querySelector('#xb-assistant-vertex-region-wrap');
-        const vertexRegionInput = root.querySelector('#xb-assistant-vertex-region');
-        const vertexSaWrap = root.querySelector('#xb-assistant-vertex-sa-wrap');
-        const vertexSaIndicator = root.querySelector('#xb-assistant-vertex-sa-indicator');
-        const vertexSaInput = root.querySelector('#xb-assistant-vertex-sa');
-        if (vertexAuthWrap) vertexAuthWrap.style.display = isVertex ? '' : 'none';
-        if (vertexAuthSelect) vertexAuthSelect.value = draft.vertexAuthMode || 'full';
-        if (vertexRegionWrap) vertexRegionWrap.style.display = isVertex ? '' : 'none';
-        if (vertexRegionInput) vertexRegionInput.value = draft.vertexRegion || 'us-central1';
-        if (vertexSaWrap) vertexSaWrap.style.display = isVertex ? '' : 'none';
-        if (vertexSaIndicator) vertexSaIndicator.value = draft.serviceAccountJson ? '已設定' : '未設定（貼上 SA JSON 後自動保存）';
-        // textarea 只在編輯模式顯示；正常渲染時從 draft 取值填入 textarea（用戶可能剛貼完）
-        if (vertexSaInput && vertexSaInput.style.display === 'block') {
-            vertexSaInput.value = draft.serviceAccountJson || vertexSaInput.value || '';
-        }
+        const vertexHint = root.querySelector('#xb-assistant-vertex-hint');
+        if (vertexHint) vertexHint.hidden = !isVertex;
         if (permissionModeSelect) {
             refillSelect(permissionModeSelect, AGENT_PERMISSION_MODE_OPTIONS);
             permissionModeSelect.value = normalizePermissionMode(draft.permissionMode);
@@ -1116,19 +1082,8 @@ export function createAgentSettingsPanel(deps = {}) {
             delegateToolModeSelect.value = draft.delegateToolMode || 'native';
         }
         const isDelegateVertex = delegateProvider === 'sillytavern-vertex';
-        const delegateVertexAuthWrap = root.querySelector('#xb-assistant-delegate-vertex-auth-wrap');
-        const delegateVertexAuthSelect = root.querySelector('#xb-assistant-delegate-vertex-auth');
-        const delegateVertexRegionWrap = root.querySelector('#xb-assistant-delegate-vertex-region-wrap');
-        const delegateVertexRegionInput = root.querySelector('#xb-assistant-delegate-vertex-region');
-        const delegateVertexSaWrap = root.querySelector('#xb-assistant-delegate-vertex-sa-wrap');
-        const delegateVertexSaIndicator = root.querySelector('#xb-assistant-delegate-vertex-sa-indicator');
-        const delegateVertexSaInput = root.querySelector('#xb-assistant-delegate-vertex-sa');
-        if (delegateVertexAuthWrap) delegateVertexAuthWrap.style.display = isDelegateVertex ? '' : 'none';
-        if (delegateVertexAuthSelect) delegateVertexAuthSelect.value = draft.delegateVertexAuthMode || 'full';
-        if (delegateVertexRegionWrap) delegateVertexRegionWrap.style.display = isDelegateVertex ? '' : 'none';
-        if (delegateVertexRegionInput) delegateVertexRegionInput.value = draft.delegateVertexRegion || 'us-central1';
-        if (delegateVertexSaWrap) delegateVertexSaWrap.style.display = isDelegateVertex ? '' : 'none';
-        if (delegateVertexSaIndicator) delegateVertexSaIndicator.value = draft.delegateServiceAccountJson ? '已設定' : '未設定';
+        const delegateVertexHint = root.querySelector('#xb-assistant-delegate-vertex-hint');
+        if (delegateVertexHint) delegateVertexHint.hidden = !isDelegateVertex;
         syncReasoningControls(root, 'delegate');
         if (delegatePulledSelect) {
             refillSelect(delegatePulledSelect, delegatePulledModels.map((model) => ({ value: model, label: model })), '手动填写');
