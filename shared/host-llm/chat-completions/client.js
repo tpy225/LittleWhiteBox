@@ -9,10 +9,11 @@ export const HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE = 'makersuite';
 export const HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI = 'vertexai';
 export const HOST_CHAT_COMPLETIONS_STATUS_ENDPOINT = '/api/backends/chat-completions/status';
 export const HOST_CHAT_COMPLETIONS_GENERATE_ENDPOINT = '/api/backends/chat-completions/generate';
+// vertexai source 走 ST 原生 auth（讀 secrets.VERTEXAI_SERVICE_ACCOUNT 簽 JWT），
+// 不需要 reverse_proxy，自動注入反而會讓 ST 混亂走錯分支。
 export const HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY = Object.freeze({
     [HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE]: 'https://api.anthropic.com/v1',
     [HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE]: 'https://generativelanguage.googleapis.com',
-    [HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI]: 'https://us-central1-aiplatform.googleapis.com',
 });
 
 const requestHeadersProvider = getHostRequestHeaders;
@@ -186,7 +187,13 @@ function normalizeHostFailureMessage(rawText = '', fallbackMessage = '', respons
 }
 
 function buildHostChatCompletionsFields(config = {}, source = HOST_CHAT_COMPLETIONS_SOURCE_OPENAI) {
-    // 允許 adapter 直接注入 reverse_proxy / proxy_password（用於 SA JSON 換 token 後的 proxy 路徑）
+    // vertexai source 走 ST 原生 auth，不注入 reverse_proxy / proxy_password —
+    // 這兩個會讓 ST 繞過原生 auth 轉去 proxy 路徑，反而錯亂。
+    if (source === HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI) {
+        return { chat_completion_source: source };
+    }
+
+    // 允許 adapter 直接注入 reverse_proxy / proxy_password
     const explicitReverseProxy = String(config.reverse_proxy || '').trim();
     const explicitProxyPassword = String(config.proxy_password || '').trim();
     if (explicitReverseProxy || explicitProxyPassword) {
