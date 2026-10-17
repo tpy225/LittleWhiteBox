@@ -1,6 +1,7 @@
 import {
     HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE,
     HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE,
+    HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
     HOST_CHAT_COMPLETIONS_SOURCE_OPENAI,
     HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY,
     fetchHostChatCompletionsModels,
@@ -138,6 +139,7 @@ function isToolModeProvider(provider = '') {
 function getSillyTavernChatCompletionSource(provider = '') {
     if (provider === 'sillytavern-claude') return HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE;
     if (provider === 'sillytavern-google') return HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE;
+    if (provider === 'sillytavern-vertex') return HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI;
     return HOST_CHAT_COMPLETIONS_SOURCE_OPENAI;
 }
 

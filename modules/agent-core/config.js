@@ -62,6 +62,14 @@ export const DEFAULT_MODEL_CONFIGS = {
         maxTokens: DEFAULT_MAX_TOKENS,
         sendTemperature: true,
     },
+    'sillytavern-vertex': {
+        baseUrl: '',
+        model: 'gemini-2.5-pro',
+        apiKey: '',
+        temperature: 1,
+        maxTokens: DEFAULT_MAX_TOKENS,
+        sendTemperature: true,
+    },
     anthropic: {
         baseUrl: 'https://api.anthropic.com',
         model: 'claude-sonnet-4-0',

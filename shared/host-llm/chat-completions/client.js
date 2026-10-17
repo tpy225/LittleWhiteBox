@@ -6,6 +6,7 @@ export { setHostRequestHeadersProvider as setHostChatCompletionsRequestHeadersPr
 export const HOST_CHAT_COMPLETIONS_SOURCE_OPENAI = 'openai';
 export const HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE = 'claude';
 export const HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE = 'makersuite';
+export const HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI = 'vertexai';
 export const HOST_CHAT_COMPLETIONS_STATUS_ENDPOINT = '/api/backends/chat-completions/status';
 export const HOST_CHAT_COMPLETIONS_GENERATE_ENDPOINT = '/api/backends/chat-completions/generate';
 export const HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY = Object.freeze({
@@ -263,13 +264,19 @@ export function buildHostClaudeGeneratePayload(config = {}, task = {}, messages 
     );
 }
 
-export function buildHostGoogleGeneratePayload(config = {}, task = {}, messages = [], stream = false) {
+export function buildHostGoogleGeneratePayload(
+    config = {},
+    task = {},
+    messages = [],
+    stream = false,
+    source = HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE,
+) {
     return buildHostChatCompletionsGeneratePayload(
         config,
         task,
         messages,
         stream,
-        HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE,
+        source,
     );
 }
 
