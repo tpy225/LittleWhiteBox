@@ -188,7 +188,11 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                 </label>
                 <label id="xb-assistant-delegate-vertex-sa-wrap" style="display:none" class="xb-assistant-block">
                     <span>Service Account JSON</span>
-                    <textarea id="xb-assistant-delegate-vertex-sa" rows="4" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
+                    <div class="xb-assistant-inline-input">
+                        <input id="xb-assistant-delegate-vertex-sa-indicator" type="text" disabled placeholder="未設定" />
+                        <button id="xb-assistant-delegate-vertex-sa-edit" type="button" class="secondary ghost">編輯</button>
+                    </div>
+                    <textarea id="xb-assistant-delegate-vertex-sa" rows="4" style="display:none" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
                 </label>
                 <label>
                     <span>Model</span>
@@ -293,8 +297,12 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
             </label>
             <label id="xb-assistant-vertex-sa-wrap" style="display:none" class="xb-assistant-block">
                 <span>Service Account JSON</span>
-                <textarea id="xb-assistant-vertex-sa" rows="4" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
-                <small class="xb-assistant-hint">貼上完整 SA JSON（從 GCP 服務帳號建立金鑰後下載）。Agent 透過小白X server-plugin 換取 access token，ST 走 proxy 路徑發送。</small>
+                <div class="xb-assistant-inline-input">
+                    <input id="xb-assistant-vertex-sa-indicator" type="text" disabled placeholder="未設定（貼上 SA JSON 後自動保存）" />
+                    <button id="xb-assistant-vertex-sa-edit" type="button" class="secondary ghost">編輯</button>
+                </div>
+                <textarea id="xb-assistant-vertex-sa" rows="4" style="display:none" placeholder='{"client_email":"...","private_key":"..."}'></textarea>
+                <small class="xb-assistant-hint">貼上完整 SA JSON（從 GCP 服務帳號建立金鑰後下載）。Agent 透過小白X server-plugin 換取 access token。保存後 UI 不再顯示完整內容，避免誤截圖洩漏。</small>
             </label>
             <label>
                 <span>Model</span>

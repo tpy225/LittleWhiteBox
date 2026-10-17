@@ -96,7 +96,7 @@ function parseServiceAccount(raw) {
     return json;
 }
 
-async function exchangeVertexToken(serviceAccountRaw, scope = 'https://www.googleapis.com/auth/cloud-platform') {
+async function exchangeVertexToken(serviceAccountRaw, scope = 'https://www.googleapis.com/auth/aiplatform') {
     const sa = parseServiceAccount(serviceAccountRaw);
     const now = Math.floor(Date.now() / 1000);
     const header = { alg: 'RS256', typ: 'JWT' };

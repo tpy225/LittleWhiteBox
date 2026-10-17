@@ -3,6 +3,15 @@ import {
 } from '../../../shared/host-llm/chat-completions/client.js';
 import { SillyTavernGoogleAdapter } from './sillytavern-google.js';
 
+// module-level cache：同一個 ST 伺服器（同一個 baseUrl + SA）的 token 共用，
+// 避免每次 Agent 請求都向 OAuth 換一次 token（GCP OAuth 端點有 rate limit）。
+// 同時避免 adapter 每次 request 新建實例後 _tokenCache 被重置。
+const TOKEN_CACHE = new Map(); // key: `${baseUrl}::${saEmail}`, value: { accessToken, expiresAt, region }
+
+function cacheKey(baseUrl, saEmail) {
+    return `${baseUrl || ''}::${saEmail || ''}`;
+}
+
 export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
     provider = 'sillytavern-vertex';
     source = HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI;
@@ -10,7 +19,6 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
     constructor(config, hostClient, fetchImpl = typeof fetch !== 'undefined' ? fetch : undefined) {
         super(config, hostClient);
         this.fetch = fetchImpl;
-        this._tokenCache = null; // { accessToken, expiresAt, region }
     }
 
     get _serverPluginUrl() {
@@ -27,7 +35,7 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
 
     get _region() {
         const r = String(this.config?.vertexRegion || 'us-central1').trim().toLowerCase();
-        if (!r || r === 'global') return 'us-central1'; // 有效 Vertex region fallback
+        if (!r || r === 'global') return 'us-central1';
         return r;
     }
 
@@ -36,58 +44,59 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
     }
 
     async _ensureToken() {
-        const now = Math.floor(Date.now() / 1000);
-        if (this._tokenCache && this._tokenCache.expiresAt > now) {
-            // region 變了就重換
-            if (this._tokenCache.region === this._region) return this._tokenCache.accessToken;
-        }
         const saJson = String(this.config?.serviceAccountJson || '').trim();
         if (!saJson) {
-            // 沒有 SA JSON → 讓 ST 走 vertexai 預設路徑（可能踩 full auth bug）
-            return null;
+            throw new Error('Vertex AI 需要 Service Account JSON（請在 Agent API 配置頁貼上完整 SA JSON）');
         }
+        let saEmail = '';
+        try {
+            saEmail = JSON.parse(saJson).client_email || '';
+        } catch {
+            throw new Error('Service Account JSON 格式不正確');
+        }
+
+        const key = cacheKey(this.config?.baseUrl, saEmail);
+        const now = Math.floor(Date.now() / 1000);
+        const cached = TOKEN_CACHE.get(key);
+        if (cached && cached.expiresAt > now && cached.region === this._region) {
+            return cached.accessToken;
+        }
+
         const spUrl = this._serverPluginUrl;
         if (!spUrl) {
-            console.warn('[SillyTavernVertex] baseUrl missing; cannot exchange SA token via server-plugin');
-            return null;
+            throw new Error('Vertex AI 需要 ST baseUrl（請在 Agent API 配置頁填上 ST 伺服器 URL）');
         }
+        let data;
         try {
             const resp = await this.fetch(`${spUrl}/vertex-exchange-token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ serviceAccountJson: saJson }),
             });
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok || !data.ok) {
-                console.warn('[SillyTavernVertex] token exchange failed:', data.error || resp.status);
-                return null;
-            }
-            this._tokenCache = {
-                accessToken: data.accessToken,
-                expiresAt: data.expiresAt || (now + 3500),
-                region: this._region,
-            };
-            return data.accessToken;
+            data = await resp.json().catch(() => ({}));
         } catch (err) {
-            console.warn('[SillyTavernVertex] token exchange error:', err.message);
-            return null;
+            throw new Error(`換取 Vertex OAuth token 失敗：無法連接 server-plugin（${err.message}）。請確認小白X server-plugin 已安裝並重啟 ST。`);
         }
+        if (!data.ok) {
+            throw new Error(`換取 Vertex OAuth token 失敗：${data.error || '未知錯誤'}`);
+        }
+        const expiresAt = data.expiresAt || (now + 3500);
+        TOKEN_CACHE.set(key, {
+            accessToken: data.accessToken,
+            expiresAt,
+            region: this._region,
+        });
+        return data.accessToken;
     }
 
     async chat(task) {
         const token = await this._ensureToken();
-        if (token) {
-            // 暫時注入到 config，讓 buildHostChatCompletionsFields 讀到 reverse_proxy + proxy_password
-            this.config = {
-                ...this.config,
-                reverse_proxy: this._reverseProxyUrl,
-                proxy_password: token,
-            };
-        } else {
-            // 移除舊的 token 注入，讓 ST 走預設路徑
-            const { reverse_proxy, proxy_password, ...rest } = this.config || {};
-            this.config = rest;
-        }
+        // 注入 reverse_proxy + proxy_password → ST 走 proxy 路徑（繞過 ST vertexai full auth bug）
+        this.config = {
+            ...this.config,
+            reverse_proxy: this._reverseProxyUrl,
+            proxy_password: token,
+        };
         return super.chat(task);
     }
 }
