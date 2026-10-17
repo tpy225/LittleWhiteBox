@@ -3,14 +3,19 @@ import {
 } from '../../../shared/host-llm/chat-completions/client.js';
 import { SillyTavernOpenAICompatibleAdapter } from './sillytavern-openai-compatible.js';
 
-// 跟隨酒館主 API：直接呼叫 ST 頁內的 generateRaw()，把整個生成流程交回 ST 後端。
-// 主界面怎麼連（Vertex SA JSON / Vertex API key / OpenAI / 其他），Agent 就跟著怎麼連，
-// 不自行換 token、不自己指定端點。
+// 跟隨酒館主 API：直接呼叫 ST 頁內 generateRaw()，把整個生成流程交回 ST 後端。
+// 主界面怎麼連（Vertex SA JSON / Vertex API key / OpenAI / 其他），Agent 就跟著怎麼連。
+//
+// 呼叫方式與柏寶繪 requestViaMainApi 相同（已驗證可用）：
+//   ctx.generateRaw({ prompt: messages, responseLength: 65535 })
+// generateRaw 第一參數是物件 { prompt: 訊息陣列 }，不是字串。
 //
 // 為什麼不走 HTTP /api/backends/chat-completions/generate：
 // ST 的 HTTP 端點對 vertexai 只支援 Express 模式（API key），SA JSON full-auth
 // 只在主界面內部 Generate() 路徑讀 secrets——所以正文能用 Vertex，HTTP 端點卻 400。
 // 頁內 generateRaw() 就是主界面那一條路徑，完全一致。
+
+const MAIN_API_RESPONSE_LENGTH = 65535;
 
 function getStContext() {
     try {
@@ -42,21 +47,21 @@ function flattenContent(content) {
     return '';
 }
 
-function buildFollowPromptText(task) {
-    const parts = [];
-    const system = typeof task.systemPrompt === 'string' ? task.systemPrompt : '';
-    if (system.trim()) {
-        parts.push(`[System Instructions]\n${system.trim()}`);
-    }
+/** 展平成柏寶繪 ChatMsg 形態（content 為純字串）的訊息陣列。 */
+function normalizeMessages(task) {
+    const out = [];
+    const system = typeof task.systemPrompt === 'string' ? task.systemPrompt.trim() : '';
+    if (system) out.push({ role: 'system', content: system });
     (Array.isArray(task.messages) ? task.messages : []).forEach((message) => {
         if (!message || typeof message !== 'object') return;
-        const role = message.role === 'assistant' ? 'Assistant' : 'User';
+        const role = message.role === 'user' || message.role === 'assistant'
+            ? message.role
+            : 'user';
         const content = flattenContent(message.content).trim();
         if (!content) return;
-        parts.push(`${role}: ${content}`);
+        out.push({ role, content });
     });
-    parts.push('Assistant:');
-    return parts.join('\n\n');
+    return out;
 }
 
 export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter {
@@ -65,33 +70,24 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
 
     async chat(task) {
         const ctx = getStContext();
-        const generateRaw = ctx?.generateRaw
-            || (typeof globalThis !== 'undefined' && typeof globalThis.generateRaw === 'function'
-                ? globalThis.generateRaw
-                : null);
-        if (typeof generateRaw !== 'function') {
+        if (typeof ctx?.generateRaw !== 'function') {
             console.warn('[SillyTavernVertex] 頁內 generateRaw 不可用，退回 HTTP chat-completions 路徑');
             return super.chat(task);
         }
 
-        const prompt = buildFollowPromptText(task);
-        console.debug('[SillyTavernVertex] 跟隨主 API 生成，prompt 前 200 字：', prompt.slice(0, 200));
+        const messages = normalizeMessages(task);
+        const promptText = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
+        console.debug('[SillyTavernVertex] 跟隨主 API 生成，prompt 前 200 字：', promptText.slice(0, 200));
         try {
-            // 第一個參數與 options.prompt 都帶同一段 prompt：
-            // 新版 ST 走 options.prompt（原樣發送），舊版忽略 options 時
-            // 也至少把 prompt 當作輸入，仍走主 API 連線。
-            const text = await generateRaw(prompt, {
-                prompt,
-                quiet: true,
-                skipWpp: true,
-                signal: task.signal,
-            });
-            const result = String(text || '');
+            const text = String((await ctx.generateRaw({
+                prompt: messages,
+                responseLength: MAIN_API_RESPONSE_LENGTH,
+            }))?.trim?.() ?? '');
             if (typeof task.onStreamProgress === 'function') {
-                task.onStreamProgress({ text: result });
+                task.onStreamProgress({ text });
             }
             return {
-                text: result,
+                text,
                 toolCalls: [],
                 thoughts: [],
                 finishReason: 'stop',
@@ -101,7 +97,7 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
                     provider: this.provider,
                     model: this.config.model,
                     transport: 'sillytavern-generate-raw',
-                    request: { body: { prompt } },
+                    request: { body: { prompt: messages, responseLength: MAIN_API_RESPONSE_LENGTH } },
                 },
             };
         } catch (error) {
