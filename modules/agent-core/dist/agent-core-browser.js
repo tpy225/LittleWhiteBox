@@ -21753,14 +21753,13 @@ var Kb = class extends Hm {
     super(e, t), this.fetch = n;
   }
   get _serverPluginUrl() {
-    const e = String(this.config?.baseUrl || "").trim();
-    if (!e) return null;
-    try {
-      const t = new URL(e);
-      return t.pathname = t.pathname.replace(/\/+$/, "") + "/api/plugins/littlewhitebox-server", t.toString();
+    const e = String(this.config?.baseUrl || "").trim(), t = "/api/plugins/littlewhitebox-server";
+    if (e) try {
+      const n = new URL(e);
+      return n.pathname = n.pathname.replace(/\/+$/, "") + t, n.toString();
     } catch {
-      return null;
     }
+    return t;
   }
   get _region() {
     const e = String(this.config?.vertexRegion || "us-central1").trim().toLowerCase();
@@ -21781,7 +21780,6 @@ var Kb = class extends Hm {
     const n = Jb(this.config?.baseUrl, t), r = Math.floor(Date.now() / 1e3), o = id.get(n);
     if (o && o.expiresAt > r && o.region === this._region) return o.accessToken;
     const i = this._serverPluginUrl;
-    if (!i) throw new Error("Vertex AI 需要 ST baseUrl（請在 Agent API 配置頁填上 ST 伺服器 URL）");
     let s;
     try {
       s = await (await this.fetch(`${i}/vertex-exchange-token`, {
@@ -21790,7 +21788,7 @@ var Kb = class extends Hm {
         body: JSON.stringify({ serviceAccountJson: e })
       })).json().catch(() => ({}));
     } catch (c) {
-      throw new Error(`換取 Vertex OAuth token 失敗：無法連接 server-plugin（${c.message}）。請確認小白X server-plugin 已安裝並重啟 ST。`);
+      throw new Error(`換取 Vertex OAuth token 失敗：無法連接小白X server-plugin（${c.message}）。請確認小白X server-plugin 已安裝並重啟 ST。`);
     }
     if (!s.ok) throw new Error(`換取 Vertex OAuth token 失敗：${s.error || "未知錯誤"}`);
     const u = s.expiresAt || r + 3500;

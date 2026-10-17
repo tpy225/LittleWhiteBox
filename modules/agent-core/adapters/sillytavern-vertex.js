@@ -23,14 +23,18 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
 
     get _serverPluginUrl() {
         const base = String(this.config?.baseUrl || '').trim();
-        if (!base) return null;
-        try {
-            const u = new URL(base);
-            u.pathname = u.pathname.replace(/\/+$/, '') + '/api/plugins/littlewhitebox-server';
-            return u.toString();
-        } catch {
-            return null;
+        const pluginPath = '/api/plugins/littlewhitebox-server';
+        if (base) {
+            try {
+                const u = new URL(base);
+                u.pathname = u.pathname.replace(/\/+$/, '') + pluginPath;
+                return u.toString();
+            } catch {
+                // baseUrl 格式錯，fallback 到相對路徑（同源）
+            }
         }
+        // baseUrl 空 → 相對路徑，TT 同源 fetch（跟 chat-completions/generate 同樣策略）
+        return pluginPath;
     }
 
     get _region() {
@@ -63,9 +67,6 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
         }
 
         const spUrl = this._serverPluginUrl;
-        if (!spUrl) {
-            throw new Error('Vertex AI 需要 ST baseUrl（請在 Agent API 配置頁填上 ST 伺服器 URL）');
-        }
         let data;
         try {
             const resp = await this.fetch(`${spUrl}/vertex-exchange-token`, {
@@ -75,7 +76,7 @@ export class SillyTavernVertexAdapter extends SillyTavernGoogleAdapter {
             });
             data = await resp.json().catch(() => ({}));
         } catch (err) {
-            throw new Error(`換取 Vertex OAuth token 失敗：無法連接 server-plugin（${err.message}）。請確認小白X server-plugin 已安裝並重啟 ST。`);
+            throw new Error(`換取 Vertex OAuth token 失敗：無法連接小白X server-plugin（${err.message}）。請確認小白X server-plugin 已安裝並重啟 ST。`);
         }
         if (!data.ok) {
             throw new Error(`換取 Vertex OAuth token 失敗：${data.error || '未知錯誤'}`);
