@@ -2,6 +2,11 @@ import {
     HOST_CHAT_COMPLETIONS_SOURCE_OPENAI,
 } from '../../../shared/host-llm/chat-completions/client.js';
 import { SillyTavernOpenAICompatibleAdapter } from './sillytavern-openai-compatible.js';
+import {
+    buildTaggedMessages,
+    extractResponseTaggedToolCalls,
+    stripTaggedToolCallsForDisplay,
+} from './openai-compatible.js';
 
 // 跟隨酒館主 API：直接呼叫 ST 頁內 generateRaw()，把整個生成流程交回 ST 後端。
 // 主界面怎麼連（Vertex SA JSON / Vertex API key / OpenAI / 其他），Agent 就跟著怎麼連。
@@ -10,10 +15,9 @@ import { SillyTavernOpenAICompatibleAdapter } from './sillytavern-openai-compati
 //   ctx.generateRaw({ prompt: messages, responseLength: 65535 })
 // generateRaw 第一參數是物件 { prompt: 訊息陣列 }，不是字串。
 //
-// 為什麼不走 HTTP /api/backends/chat-completions/generate：
-// ST 的 HTTP 端點對 vertexai 只支援 Express 模式（API key），SA JSON full-auth
-// 只在主界面內部 Generate() 路徑讀 secrets——所以正文能用 Vertex，HTTP 端點卻 400。
-// 頁內 generateRaw() 就是主界面那一條路徑，完全一致。
+// generateRaw 是純文字路徑（ST 內部構造請求體，不吃原生 tool_calls），
+// 因此強制使用 tagged-json toolMode：工具規約由 buildTaggedMessages 嵌進 prompt，
+// 模型輸出含 <tool_call> 標籤的純文字，回覆後用 extractResponseTaggedToolCalls 解析。
 
 const MAIN_API_RESPONSE_LENGTH = 65535;
 
@@ -27,43 +31,6 @@ function getStContext() {
     }
 }
 
-function flattenContent(content) {
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-        return content
-            .map((part) => {
-                if (!part || typeof part !== 'object') return '';
-                if (typeof part.text === 'string') return part.text;
-                if (part.type === 'image_url' || part.type === 'image') return '[image]';
-                return '';
-            })
-            .filter(Boolean)
-            .join('\n');
-    }
-    if (content && typeof content === 'object') {
-        if (typeof content.text === 'string') return content.text;
-        if (typeof content.content !== 'undefined') return flattenContent(content.content);
-    }
-    return '';
-}
-
-/** 展平成柏寶繪 ChatMsg 形態（content 為純字串）的訊息陣列。 */
-function normalizeMessages(task) {
-    const out = [];
-    const system = typeof task.systemPrompt === 'string' ? task.systemPrompt.trim() : '';
-    if (system) out.push({ role: 'system', content: system });
-    (Array.isArray(task.messages) ? task.messages : []).forEach((message) => {
-        if (!message || typeof message !== 'object') return;
-        const role = message.role === 'user' || message.role === 'assistant'
-            ? message.role
-            : 'user';
-        const content = flattenContent(message.content).trim();
-        if (!content) return;
-        out.push({ role, content });
-    });
-    return out;
-}
-
 export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter {
     provider = 'sillytavern-vertex';
     source = HOST_CHAT_COMPLETIONS_SOURCE_OPENAI;
@@ -75,34 +42,52 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
             return super.chat(task);
         }
 
-        const messages = normalizeMessages(task);
-        const promptText = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
+        // tagged-json：把工具規約嵌入訊息，模型輸出純文字含 <tool_call> 標籤
+        const messages = buildTaggedMessages(task, this.config.model);
+        const promptText = messages.map((m) => `${m.role}: ${flatten(m.content)}`).join('\n\n');
         console.debug('[SillyTavernVertex] 跟隨主 API 生成，prompt 前 200 字：', promptText.slice(0, 200));
         try {
             const text = String((await ctx.generateRaw({
                 prompt: messages,
                 responseLength: MAIN_API_RESPONSE_LENGTH,
             }))?.trim?.() ?? '');
+
+            const requestInspection = {
+                provider: this.provider,
+                model: this.config.model,
+                transport: 'sillytavern-generate-raw',
+                request: { body: { prompt: messages, responseLength: MAIN_API_RESPONSE_LENGTH } },
+            };
+
+            // 從純文字回覆解析 <tool_call> 標籤
+            const toolCalls = extractResponseTaggedToolCalls(task, text, {}, requestInspection);
+            const displayText = stripTaggedToolCallsForDisplay(text);
+
             if (typeof task.onStreamProgress === 'function') {
-                task.onStreamProgress({ text });
+                task.onStreamProgress({ text: displayText });
             }
             return {
-                text,
-                toolCalls: [],
+                text: displayText,
+                toolCalls,
                 thoughts: [],
                 finishReason: 'stop',
                 model: this.config.model,
                 provider: this.provider,
-                requestInspection: {
-                    provider: this.provider,
-                    model: this.config.model,
-                    transport: 'sillytavern-generate-raw',
-                    request: { body: { prompt: messages, responseLength: MAIN_API_RESPONSE_LENGTH } },
-                },
+                requestInspection,
             };
         } catch (error) {
             console.warn('[SillyTavernVertex] 跟隨主 API 生成失敗：', error?.message || error);
             throw error;
         }
     }
+}
+
+function flatten(content) {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content.map((p) => p && typeof p === 'object' && typeof p.text === 'string'
+            ? p.text
+            : '').filter(Boolean).join('\n');
+    }
+    return '';
 }

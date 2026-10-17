@@ -72,6 +72,7 @@ export const DEFAULT_MODEL_CONFIGS = {
         temperature: 1,
         maxTokens: DEFAULT_MAX_TOKENS,
         sendTemperature: true,
+        toolMode: 'tagged-json',
     },
     anthropic: {
         baseUrl: 'https://api.anthropic.com',
