@@ -3885,7 +3885,6 @@ async function handleFrameMessage(event) {
 
         case 'BATCH_DOWNLOAD': {
             const { getPreview, getPreviewDisplayUrl } = await import('../../shared/gallery-cache.js');
-            const { saveBase64AsFile } = await import('../../../../../../../utils.js');
             const ids = Array.isArray(data.ids) ? data.ids : [];
             try {
                 let saved = 0, failed = 0;
@@ -3894,9 +3893,17 @@ async function handleFrameMessage(event) {
                     const url = p ? getPreviewDisplayUrl(p) : null;
                     if (!url) { failed++; continue; }
                     const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
-                    const ext = p.base64?.startsWith('data:image/jpeg') ? 'jpg' : 'png';
-                    await saveBase64AsFile(url, `image-${p.imgId}-${ts}.${ext}`);
+                    const isJpeg = (p.base64 || '').startsWith('data:image/jpeg');
+                    const name = `${p.characterName || 'image'}-${p.imgId}-${ts}.${isJpeg ? 'jpg' : 'png'}`;
+                    // 浏覽器原生下載（非保存到服務器）
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = name;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
                     saved++;
+                    await new Promise((r) => setTimeout(r, 120)); // 避免連續下載被瀏覽器吞掉
                 }
                 const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
                 if (iframe) postToIframe(iframe, { type: 'BATCH_DOWNLOADED', ok: true, saved, failed }, 'LittleWhiteBox-NovelDraw');

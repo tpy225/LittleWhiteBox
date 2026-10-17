@@ -2055,6 +2055,11 @@ const CHARACTER_TYPES = [
 // 状态
 // ═══════════════════════════════════════════════════════════════════════════
 
+// 保護旗標：某些移動 WebView（如 Termux）在 JS 設 .checked / .value 時
+// 會錯誤觸發 change 事件，導致 applyStateToUI → change → 保存 → sendInitData
+// → applyStateToUI 的無限循環。所有會 postToParent SAVE_* 的事件監聽器必須檢查此旗標。
+let suppressChangeEvents = false;
+
 let state = {
     enabled: false,
     mode: 'manual',
@@ -3399,7 +3404,18 @@ function fillPromptModal(current) {
     if (posEl) posEl.textContent = current.positive || '';
     if (charEl) {
         const cp = current.characterPrompts;
-        if (cp && typeof cp === 'object') {
+        if (Array.isArray(cp) && cp.length) {
+            charEl.textContent = cp
+                .map((c, i) => {
+                    const name = c?.name || `角色 ${i + 1}`;
+                    const parts = [];
+                    if (c?.prompt) parts.push(c.prompt);
+                    if (c?.uc) parts.push(`(消極: ${c.uc})`);
+                    return `${name}: ${parts.join('，')}`;
+                })
+                .join('\n');
+        } else if (cp && typeof cp === 'object') {
+            // 舊格式：{ 角色名: promptString }
             charEl.textContent = Object.entries(cp)
                 .map(([name, prompt]) => `${name}: ${prompt}`)
                 .join('\n');
@@ -3576,6 +3592,7 @@ function renderWorldbookEntriesLocal(book) {
 function applyStateToUI() {
     console.log('[ND-UI] applyStateToUI: autoLearn=%s, advMode=%s, presets=%d',
         state.autoLearnCharacters, state.advancedMode, state.promptPresets?.length);
+    suppressChangeEvents = true;
     try {
         updateBadge(state.enabled);
         updateModeButtons(state.mode);
@@ -3634,14 +3651,12 @@ function applyStateToUI() {
         $('nd_danbooru_local_sub').classList.toggle('hidden', !state.danbooruLocalDB);
         $('nd_danbooru_local_status').textContent = state.danbooruLocalDB ? '已加载' : '未加载';
         renderFilterRules(state.messageFilterRules);
-    } catch (e) {
-        console.error('[ND-UI] applyStateToUI 部分失败:', e);
-    }
-    // applyAdvancedMode 必须执行，不受上面异常影响
-    try {
+        // applyAdvancedMode 也會設置世界書 checkbox/select，必須在 suppressChangeEvents 保護範圍內
         applyAdvancedMode();
     } catch (e) {
-        console.error('[ND-UI] applyAdvancedMode 失败:', e);
+        console.error('[ND-UI] applyStateToUI 部分失败:', e);
+    } finally {
+        suppressChangeEvents = false;
     }
 }
 
@@ -4763,10 +4778,9 @@ window.addEventListener('message', event => {
 
         case 'BATCH_DELETED':
             if (data.ok) {
-                alert(`已刪除 ${data.count} 張`);
-                closeBatchManage();
-                // 順便刷新畫廊
-                postToParent({ type: 'LOAD_CHARACTER_GALLERY' });
+                $('nd_batch_count').textContent = `已刪除 ${data.count} 張`;
+                // 留在批量管理頁，重新載入列表（保留分組展開狀態）
+                postToParent({ type: 'BATCH_LOAD_PREVIEWS' });
             } else {
                 alert('刪除失敗：' + (data.message || '未知錯誤'));
                 $('nd_batch_count').textContent = '刪除失敗';
@@ -4961,6 +4975,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
 
     $('nd_show_floor').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         postToParent({
             type: 'SAVE_BUTTON_MODE',
             showFloorButton: $('nd_show_floor').checked,
@@ -4969,6 +4984,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     $('nd_show_floating').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         postToParent({
             type: 'SAVE_BUTTON_MODE',
             showFloorButton: $('nd_show_floor').checked,
@@ -5024,6 +5040,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     $('nd_insecure_tls').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         postToParent({
             type: 'SAVE_API_CONFIG',
             apiKey: $('nd_api_key').value.trim(),
@@ -5037,6 +5054,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     $('nd_use_backend_jobs').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         updateSendModeUI(getSendMode());
         renderBackendPluginStatus();
         postToParent({
@@ -5069,6 +5087,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── 多套 API 预设：切换 / 保存 / 新增 / 删除 ──
     $('nd_api_preset').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         postToParent({ type: 'SWITCH_API_PRESET', id: $('nd_api_preset').value });
     });
 
@@ -5099,12 +5118,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     $('nd_image_title_mode').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         const mode = $('nd_image_title_mode').value;
         state.imageTitleMode = mode;
         postToParent({ type: 'SAVE_IMAGE_TITLE_MODE', imageTitleMode: mode });
     });
 
     $('nd_auto_generate_images').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         const auto = $('nd_auto_generate_images').checked;
         state.autoGenerateImages = auto;
         postToParent({ type: 'SAVE_AUTO_GENERATE_IMAGES', autoGenerateImages: auto });
@@ -5154,6 +5175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 参数预设管理
     // ═══════════════════════════════════════════════════════════════════════
     $('nd_params_preset').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         state.selectedParamsPresetId = $('nd_params_preset').value;
         applyParamsPreset();
     });
@@ -5304,6 +5326,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // auto-learn (toggle + subordinate checkbox)
     $('nd_auto_learn').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         const enabled = $('nd_auto_learn').checked;
         state.autoLearnCharacters = enabled; // 乐观更新，与 danbooruLocalDB 一致
         $('nd_auto_learn_sub').classList.toggle('hidden', !enabled);
@@ -5311,16 +5334,19 @@ document.addEventListener('DOMContentLoaded', () => {
         postToParent({ type: 'SAVE_AUTO_LEARN', autoLearnCharacters: enabled, autoLearnMode: mode });
     });
     $('nd_auto_learn_update').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         const mode = $('nd_auto_learn_update').checked ? 'auto_update' : 'new_only';
         postToParent({ type: 'SAVE_AUTO_LEARN', autoLearnCharacters: $('nd_auto_learn').checked, autoLearnMode: mode });
     });
     $('nd_continuity').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         const enabled = $('nd_continuity').checked;
         state.continuityEnabled = enabled; // 乐观更新
         postToParent({ type: 'SAVE_CONTINUITY', enabled });
     });
 
     $('nd_danbooru_local').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         const enabled = $('nd_danbooru_local').checked;
         state.danbooruLocalDB = enabled; // 乐观更新，避免 toggle → 点击修正 之间的窗口期
         $('nd_danbooru_local_sub').classList.toggle('hidden', !enabled);
@@ -5510,6 +5536,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════════
     // 提示词预设管理 — 切换立即持久化，模板正文仍由保存按钮提交
     $('nd_prompt_preset').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         state.selectedPromptPresetId = $('nd_prompt_preset').value;
         applyPromptPreset();
         requestPromptChainPreview();
