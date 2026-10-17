@@ -745,7 +745,12 @@ function uR(e = {}, t = {}) {
       maxTokens: Gn(h.maxTokens),
       timeoutMs: Number(t.timeoutMs) || 9e5,
       toolMode: h.toolMode || "native",
-      reasoning: To(f, h.reasoning)
+      reasoning: To(f, h.reasoning),
+      ...d === "sillytavern-vertex" ? {
+        vertexAuthMode: h.vertexAuthMode || "full",
+        vertexRegion: h.vertexRegion || "us-central1",
+        serviceAccountJson: String(h.serviceAccountJson || "")
+      } : {}
     };
   }
   const r = ut(t.presetName || (t.role === "delegate" ? n.delegatePresetName : n.currentPresetName) || "默认"), o = n.presets?.[r] ? r : n.presets?.[n.currentPresetName] ? n.currentPresetName : Us, i = n.presets?.[o] || Et(), s = i.provider || n.provider || "openai-compatible", u = (i.modelConfigs || n.modelConfigs || jt())[s] || jt()[s] || {}, c = {
@@ -767,7 +772,12 @@ function uR(e = {}, t = {}) {
     maxTokens: Gn(u.maxTokens),
     timeoutMs: Number(t.timeoutMs) || 9e5,
     toolMode: u.toolMode || "native",
-    reasoning: To(c, u.reasoning)
+    reasoning: To(c, u.reasoning),
+    ...s === "sillytavern-vertex" ? {
+      vertexAuthMode: u.vertexAuthMode || "full",
+      vertexRegion: u.vertexRegion || "us-central1",
+      serviceAccountJson: String(u.serviceAccountJson || "")
+    } : {}
   };
 }
 function D(e, t, n, r, o) {

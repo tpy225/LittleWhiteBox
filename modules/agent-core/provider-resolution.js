@@ -97,6 +97,12 @@ export function resolveActiveProviderConfig(configValue = {}, options = {}) {
             timeoutMs: Number(options.timeoutMs) || AGENT_REQUEST_TIMEOUT_MS,
             toolMode: providerConfig.toolMode || 'native',
             reasoning: resolveRuntimeReasoning(context, providerConfig.reasoning),
+            // provider 專用欄位：adapter 需要讀
+            ...(provider === 'sillytavern-vertex' ? {
+                vertexAuthMode: providerConfig.vertexAuthMode || 'full',
+                vertexRegion: providerConfig.vertexRegion || 'us-central1',
+                serviceAccountJson: String(providerConfig.serviceAccountJson || ''),
+            } : {}),
         };
     }
 
@@ -132,5 +138,11 @@ export function resolveActiveProviderConfig(configValue = {}, options = {}) {
         timeoutMs: Number(options.timeoutMs) || AGENT_REQUEST_TIMEOUT_MS,
         toolMode: providerConfig.toolMode || 'native',
         reasoning: resolveRuntimeReasoning(context, providerConfig.reasoning),
+        // provider 專用欄位：adapter 需要讀
+        ...(provider === 'sillytavern-vertex' ? {
+            vertexAuthMode: providerConfig.vertexAuthMode || 'full',
+            vertexRegion: providerConfig.vertexRegion || 'us-central1',
+            serviceAccountJson: String(providerConfig.serviceAccountJson || ''),
+        } : {}),
     };
 }
