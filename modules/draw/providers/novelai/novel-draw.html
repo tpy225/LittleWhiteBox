@@ -4457,7 +4457,8 @@ async function handleVibeImportFiles(fileList) {
 function applyParamsPreset() {
     const p = state.paramsPresets.find(x => x.id === state.selectedParamsPresetId) || state.paramsPresets[0];
     if (!p) return;
-
+    suppressChangeEvents = true;
+    try {
     $('nd_positive').value = p.positivePrefix || '';
     $('nd_negative').value = p.negativePrefix || '';
     $('nd_thumbnail').value = p.thumbnail || '';
@@ -4519,6 +4520,9 @@ function applyParamsPreset() {
     }
     renderVibeAll();
     setVibeStatus('');
+    } finally {
+        suppressChangeEvents = false;
+    }
 }
 
 /** 纯本地：从当前选中的提示词预设加载 textarea 内容（对标 applyParamsPreset） */

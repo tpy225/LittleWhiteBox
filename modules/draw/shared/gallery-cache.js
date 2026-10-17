@@ -854,33 +854,39 @@ export async function getPreview(imgId) {
     });
 }
 
-/** 取所有預覽的輕量版本（僅 imgId + thumbBase64 + timestamp），用於批量管理網格 */
+/** 取所有預覽的輕量版本，用於批量管理網格；對缺 thumbBase64 的舊記錄懶補建 */
 export async function getAllPreviewsLight() {
     const database = await openDB();
-    return new Promise((resolve, reject) => {
+    const allRaw = await new Promise((resolve, reject) => {
         try {
             const tx = database.transaction(DB_STORE, 'readonly');
             const store = tx.objectStore(DB_STORE);
             const request = store.getAll();
-            request.onsuccess = () => {
-                const all = (request.result || [])
-                    .filter((r) => r && r.imgId)
-                    .map((r) => ({
-                        imgId: String(r.imgId),
-                        thumbBase64: r.thumbBase64 || null,
-                        savedUrl: r.savedUrl || '',
-                        characterName: String(r.characterName || ''),
-                        slotId: String(r.slotId || ''),
-                        timestamp: Number(r.timestamp) || 0,
-                    }))
-                    .sort((a, b) => b.timestamp - a.timestamp);
-                resolve(all);
-            };
+            request.onsuccess = () => resolve(request.result || []);
             request.onerror = () => reject(request.error);
-        } catch (e) {
-            reject(e);
-        }
+        } catch (e) { reject(e); }
     });
+    // 懶補建：舊記錄可能有 base64 但缺 thumbBase64（256px 縮略圖首次訪問時生成）
+    for (const r of allRaw) {
+        if (r && r.imgId && !r.thumbBase64 && r.base64) {
+            const thumb = await createThumbnailDataUrl(r.base64);
+            if (thumb) {
+                await persistThumbnailQuiet(r.imgId, thumb);
+                r.thumbBase64 = thumb;
+            }
+        }
+    }
+    return allRaw
+        .filter((r) => r && r.imgId)
+        .map((r) => ({
+            imgId: String(r.imgId),
+            thumbBase64: r.thumbBase64 || null,
+            savedUrl: r.savedUrl || '',
+            characterName: String(r.characterName || ''),
+            slotId: String(r.slotId || ''),
+            timestamp: Number(r.timestamp) || 0,
+        }))
+        .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 export async function getPreviewsBySlot(slotId) {
