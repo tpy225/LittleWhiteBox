@@ -4,15 +4,16 @@ import {
 import { getHostRequestHeaders } from '../../../shared/host-request-headers.js';
 import { SillyTavernOpenAICompatibleAdapter } from './sillytavern-openai-compatible.js';
 
-// 柏寶繪同款：用 openai source + reverse_proxy + proxy_password 走 ST 代理。
-// Vertex AI 提供 OpenAI 兼容端點：
+// 走 openai source + reverse_proxy + proxy_password，由 ST 代理轉發到
+// Vertex AI OpenAI 兼容端點：
 //   https://{region}-aiplatform.googleapis.com/v1beta/openai/chat/completions
-// 用戶貼 SA JSON（Service Account），server-plugin 簽 JWT 換 OAuth access_token，
-// 再注入成 proxy_password（Bearer token）由 ST 當 OpenAI API key 發送。
 //
-// 為什麼不用 ST 原生 vertexai source？
-//   ST 原生 vertexai 路徑有 runtime bug（source is not defined），而且走的是
-//   Vertex Native API（非 OpenAI 兼容），跟我們的 payload 結構不匹配。
+// 用戶貼 SA JSON（Service Account），server-plugin 簽 JWT 換 OAuth
+// access_token，注入成 proxy_password（Bearer token）由 ST 發送。
+//
+// 不走 ST 原生 vertexai source 的原因：
+//   ST 原生 vertexai 路徑有 runtime bug，且 payload 結構與 OpenAI 兼容
+// 端點不同，我們的 messages/tool_calls 無法直接喂給它。
 
 // module-level cache：同一個 ST + SA 共用，避免 GCP OAuth rate limit。
 const TOKEN_CACHE = new Map(); // key: `${region}::${saEmail}`, value: { accessToken, expiresAt }
