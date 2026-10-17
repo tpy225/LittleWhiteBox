@@ -6,6 +6,13 @@ export const SCENE_PLANNER_PRESET_NAMES = Object.freeze({
     pro: '进阶-构图强化',
 });
 
+/**
+ * Name of the built-in revision appended when a release rewrites the enhanced rules. Kept
+ * outside SCENE_PLANNER_PRESET_NAMES: only the migration creates this copy, and the name
+ * carries the revision number so users can tell it apart from their editable `pro` copy.
+ */
+export const PRO_PRESET_BUILTIN_NAME = '进阶-构图强化（内置 v2）';
+
 export function isPovPromptPreset(name) {
     return name === SCENE_PLANNER_PRESET_NAMES.pov || name === '默认-第一人称完整规则';
 }
@@ -47,6 +54,11 @@ export function createScenePlannerProPreset(defaults) {
             ? { tagGuideContent: defaults.tagGuideContent }
             : { modelGuideOverrides: {} }),
     };
+}
+
+/** The same preset under a revision-specific name, so it can sit beside the editable copy. */
+export function createScenePlannerBuiltinProPreset(defaults) {
+    return { ...createScenePlannerProPreset(defaults), name: PRO_PRESET_BUILTIN_NAME };
 }
 
 /**

@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { migrateLegacyNovelPromptSettings } from '../novel-prompt-migration.js';
 import { PROMPT_TEMPLATE_VERSION } from '../novel-prompts.js';
-import { SCENE_PLANNER_PRESET_NAMES } from '../../../shared/scene-planner-presets.js';
+import { PRO_PRESET_BUILTIN_NAME, SCENE_PLANNER_PRESET_NAMES } from '../../../shared/scene-planner-presets.js';
 
 const CURRENT = Object.freeze({
     topSystem: 'current model-independent system',
@@ -115,12 +115,13 @@ test('replaces an untouched released enhanced preset with the current rules', as
     }, CURRENT, TARGET);
 
     assert.equal(result.proRefreshed, true);
+    assert.equal(result.proAppended, false);
     assert.equal(result.settings.promptPresets[0].sceneRules, CURRENT.sceneRulesPro);
     assert.equal(result.settings._proPresetVersion, 2);
     assert.equal(result.migrated, true);
 });
 
-test('keeps an edited or removed enhanced preset while advancing the marker', () => {
+test('keeps an edited enhanced preset and appends the built-in revision beside it', () => {
     const edited = migrateLegacyNovelPromptSettings({
         _promptTemplateVersion: TARGET,
         _proPresetVersion: 1,
@@ -128,10 +129,16 @@ test('keeps an edited or removed enhanced preset while advancing the marker', ()
     }, CURRENT, TARGET);
 
     assert.equal(edited.proRefreshed, false);
+    assert.equal(edited.proAppended, true);
     assert.equal(edited.settings.promptPresets[0].sceneRules, 'my own rules');
+    const builtin = edited.settings.promptPresets[1];
+    assert.equal(builtin.name, PRO_PRESET_BUILTIN_NAME);
+    assert.equal(builtin.sceneRules, CURRENT.sceneRulesPro);
     assert.equal(edited.settings._proPresetVersion, 2);
-    assert.equal(edited.migrated, false);
+    assert.equal(edited.migrated, true);
+});
 
+test('does not append the built-in revision when the enhanced preset was removed', () => {
     const removed = migrateLegacyNovelPromptSettings({
         _promptTemplateVersion: TARGET,
         _proPresetVersion: 1,
@@ -139,8 +146,10 @@ test('keeps an edited or removed enhanced preset while advancing the marker', ()
     }, CURRENT, TARGET);
 
     assert.equal(removed.proRefreshed, false);
+    assert.equal(removed.proAppended, false);
     assert.deepEqual(removed.settings.promptPresets.map(preset => preset.id), ['normal']);
     assert.equal(removed.settings._proPresetVersion, 2);
+    assert.equal(removed.migrated, false);
 });
 
 test('requires an explicit target version', () => {

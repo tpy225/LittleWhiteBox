@@ -1,8 +1,10 @@
 import { NOVEL_PROMPT_GUIDES } from './novel-model-capabilities.js';
 import { promptTemplateFingerprint } from '../../shared/prompt-template-migration.js';
 import {
+    createScenePlannerBuiltinProPreset,
     createScenePlannerProPreset,
     installScenePlannerPresets,
+    PRO_PRESET_BUILTIN_NAME,
     SCENE_PLANNER_PRESET_NAMES,
 } from '../../shared/scene-planner-presets.js';
 
@@ -236,35 +238,48 @@ function ensureOptionalProPreset(settings, currentDefaults) {
 }
 
 /**
- * Swap the bundled `进阶-构图强化` rules for the current revision, but only when the saved
- * copy is still byte-identical to a revision that actually shipped. A copy the user edited
- * fingerprints to something unknown and is left alone. A user who removed the preset gets
- * neither a copy back nor this rewrite; only the version marker moves forward.
+ * Swap the bundled `进阶-构图强化` rules for the current revision. A saved copy still
+ * byte-identical to a revision that actually shipped is replaced in place. A copy the user
+ * edited fingerprints to something unknown: it is left alone and the current rules are
+ * appended beside it under a revision-numbered name, so the bundled template stays reachable
+ * without overwriting anyone's work. A user who removed the preset gets neither a copy back
+ * nor this rewrite; only the version marker moves forward. Selection is never changed.
  */
 function refreshProPresetRules(settings, currentDefaults) {
     const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
     if (Number(source._proPresetVersion) >= 2) {
-        return { settings: source, replaced: false };
+        return { settings: source, replaced: false, appended: false };
     }
     if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
         throw new Error('提示词模板尚未加载：sceneRulesPro');
     }
     const existing = Array.isArray(source.promptPresets) ? source.promptPresets : [];
+    const currentFingerprint = promptTemplateFingerprint(currentDefaults.sceneRulesPro);
     let replaced = false;
+    let edited = false;
     const next = existing.map((preset) => {
         if (!preset || typeof preset !== 'object' || preset.name !== SCENE_PLANNER_PRESET_NAMES.pro) {
             return preset;
         }
         if (typeof preset.sceneRules !== 'string') return preset;
-        if (!PRO_PRESET_RELEASED_SCENE_RULES.includes(promptTemplateFingerprint(preset.sceneRules))) {
+        const fingerprint = promptTemplateFingerprint(preset.sceneRules);
+        if (fingerprint === currentFingerprint) return preset;
+        if (!PRO_PRESET_RELEASED_SCENE_RULES.includes(fingerprint)) {
+            edited = true;
             return preset;
         }
         replaced = true;
         return { ...preset, sceneRules: currentDefaults.sceneRulesPro };
     });
+    const appended = edited && !next.some(preset => preset?.name === PRO_PRESET_BUILTIN_NAME);
     return {
-        settings: { ...source, promptPresets: next, _proPresetVersion: 2 },
+        settings: {
+            ...source,
+            promptPresets: appended ? [...next, createScenePlannerBuiltinProPreset(currentDefaults)] : next,
+            _proPresetVersion: 2,
+        },
         replaced,
+        appended,
     };
 }
 
@@ -287,7 +302,8 @@ export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetV
         templateVersion: refresh.settings._promptTemplateVersion,
         proAdded: pro.added,
         proRefreshed: refresh.replaced,
-        migrated: result.migrated || installation.changed || pro.added || refresh.replaced,
+        proAppended: refresh.appended,
+        migrated: result.migrated || installation.changed || pro.added || refresh.replaced || refresh.appended,
         installed: installation.installed,
     };
 }

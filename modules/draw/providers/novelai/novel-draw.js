@@ -83,7 +83,7 @@ import {
     normalizeNovelPromptGuideOverrides,
 } from "./novel-prompts.js";
 import { parseNovelPromptPresetImport } from "./novel-prompt-import.js";
-import { createScenePlannerDefaultPresets, isPovPromptPreset, SCENE_PLANNER_PRESET_INSTALL_NOTICE, SCENE_PLANNER_PRESET_NAMES } from "../../shared/scene-planner-presets.js";
+import { createScenePlannerDefaultPresets, isPovPromptPreset, PRO_PRESET_BUILTIN_NAME, SCENE_PLANNER_PRESET_INSTALL_NOTICE, SCENE_PLANNER_PRESET_NAMES } from "../../shared/scene-planner-presets.js";
 import {
     getNovelModelCapability,
     getNovelModelCapabilitiesForUi,
@@ -1165,6 +1165,9 @@ async function loadSettings() {
         }
         if (promptUpgrade.proRefreshed) {
             showToast('「进阶-构图强化」预设的规则已更新为新版', 'info', 8000);
+        }
+        if (promptUpgrade.proAppended) {
+            showToast(`已追加内置新版预设「${PRO_PRESET_BUILTIN_NAME}」，你原来改过的副本保持不变，可在提示词设置中切换`, 'info', 8000);
         }
         if (promptUpgrade.upstreamPresetCount > 0) {
             const customNotice = promptUpgrade.customPresetCount > 0
