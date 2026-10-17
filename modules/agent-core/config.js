@@ -66,6 +66,8 @@ export const DEFAULT_MODEL_CONFIGS = {
         baseUrl: '',
         model: 'gemini-2.5-pro',
         apiKey: '',
+        vertexAuthMode: 'full',
+        vertexRegion: 'us-central1',
         temperature: 1,
         maxTokens: DEFAULT_MAX_TOKENS,
         sendTemperature: true,

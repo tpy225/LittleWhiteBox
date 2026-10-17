@@ -175,6 +175,17 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                         <button id="xb-assistant-delegate-toggle-key" type="button" class="secondary ghost">显示</button>
                     </div>
                 </label>
+                <label id="xb-assistant-delegate-vertex-auth-wrap" style="display:none">
+                    <span>认证方式</span>
+                    <select id="xb-assistant-delegate-vertex-auth">
+                        <option value="full">Service Account (JSON)</option>
+                        <option value="express">Express Mode (API Key)</option>
+                    </select>
+                </label>
+                <label id="xb-assistant-delegate-vertex-region-wrap" style="display:none">
+                    <span>Vertex Region</span>
+                    <input id="xb-assistant-delegate-vertex-region" type="text" />
+                </label>
                 <label>
                     <span>Model</span>
                     <input id="xb-assistant-delegate-model" type="text" />
@@ -264,6 +275,17 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     <input id="xb-assistant-api-key" type="password" />
                     <button id="xb-assistant-toggle-key" type="button" class="secondary ghost">显示</button>
                 </div>
+            </label>
+            <label id="xb-assistant-vertex-auth-wrap" style="display:none">
+                <span>认证方式</span>
+                <select id="xb-assistant-vertex-auth">
+                    <option value="full">Service Account (JSON)</option>
+                    <option value="express">Express Mode (API Key)</option>
+                </select>
+            </label>
+            <label id="xb-assistant-vertex-region-wrap" style="display:none">
+                <span>Vertex Region</span>
+                <input id="xb-assistant-vertex-region" type="text" />
             </label>
             <label>
                 <span>Model</span>

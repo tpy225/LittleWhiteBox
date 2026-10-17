@@ -198,6 +198,8 @@ var Qb = Object.freeze([{
     baseUrl: "",
     model: "gemini-2.5-pro",
     apiKey: "",
+    vertexAuthMode: "full",
+    vertexRegion: "us-central1",
     temperature: 1,
     maxTokens: Xe,
     sendTemperature: !0
@@ -21721,6 +21723,10 @@ var Hb = class {
 }, Vb = class extends Bm {
   provider = "sillytavern-vertex";
   source = O0;
+  buildPayload(e, t) {
+    const n = super.buildPayload(e, t), o = this.config?.vertexAuthMode || "full", r = this.config?.vertexRegion || "us-central1";
+    return n.vertexai_auth_mode = o, r && (n.vertexai_region = r), delete n.reverse_proxy, delete n.proxy_password, n;
+  }
 };
 function rr(e, t, n) {
   return Object.hasOwn(n, "hostClient") ? new e(t, li(n.hostClient)) : new e(t);
