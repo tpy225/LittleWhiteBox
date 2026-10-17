@@ -22,6 +22,9 @@ const DEFAULT_SHARED_DRAW_SETTINGS = {
     danbooruLocalDB: false,
     messageFilterRules: [],
     worldbooks: { enabled: false, uploadedBooks: [], keywordFilterMode: 'auto' },
+    // 生成後自動轉存為 JPEG 以節省快取/伺服器空間（PNG→JPEG 約縮 80-90%）
+    saveAsJpeg: false,
+    jpegQuality: 0.8,
     updatedAt: 0,
 };
 
@@ -127,6 +130,8 @@ export function normalizeSharedDrawSettings(saved = {}) {
             uploadedBooks: Array.isArray(rawWorldbooks.uploadedBooks) ? rawWorldbooks.uploadedBooks : [],
             keywordFilterMode: rawWorldbooks.keywordFilterMode === 'all_active' ? 'all_active' : 'auto',
         },
+        saveAsJpeg: source.saveAsJpeg === true,
+        jpegQuality: Math.max(0.1, Math.min(1, Number(source.jpegQuality) || DEFAULT_SHARED_DRAW_SETTINGS.jpegQuality)),
         updatedAt: Number(source.updatedAt) || 0,
     };
 }
