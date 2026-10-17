@@ -157,7 +157,7 @@ export function createChatImageSession({ context, provider, changed, report, aut
             if (!source.startsWith(initialBody)) return;
             // DICE's makeFirst listener has already applied its current body.
             const candidates = parseChatImageTags(source).filter(tag => tag.end > initialBody.length);
-            // 手动模式：不接管标签，view() 会让它们保持「尚未绘图 + 生成按钮」，等用户点击
+            // 手动模式：不接管标签，等用户点占位卡上的钢笔图标；未认领态不再挂操作按钮
             if (candidates.length && autoGenerate() !== false) await claim(ctx, index, candidates, true);
         },
         view(message, index, candidate) {
@@ -172,7 +172,7 @@ export function createChatImageSession({ context, provider, changed, report, aut
                 return { phase: 'streaming',
                     label: autoGenerate() === false ? DRAW_SLOT_COPY.manualWaiting : DRAW_SLOT_COPY.waiting };
             }
-            return { phase: 'unclaimed', label: DRAW_SLOT_COPY.unclaimed, action: DRAW_SLOT_COPY.generate };
+            return { phase: 'unclaimed', label: DRAW_SLOT_COPY.unclaimed };
         },
         async retry({ ctx, message, messageId, source, swipeIndex, candidate }) {
             const live = context();
