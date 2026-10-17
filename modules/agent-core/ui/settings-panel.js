@@ -617,7 +617,12 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(provider === 'sillytavern-vertex' ? {
                 vertexAuthMode: root.querySelector('#xb-assistant-vertex-auth')?.value || 'full',
                 vertexRegion: root.querySelector('#xb-assistant-vertex-region')?.value.trim() || 'us-central1',
-                serviceAccountJson: root.querySelector('#xb-assistant-vertex-sa')?.value.trim() || '',
+                // textarea 隱藏時 UI 不回顯，保留 draft 裡已保存的值
+                serviceAccountJson: (() => {
+                    const ta = root.querySelector('#xb-assistant-vertex-sa');
+                    if (!ta || ta.style.display !== 'block') return draft.serviceAccountJson || '';
+                    return ta.value.trim() || '';
+                })(),
             } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-temperature')?.value, draft.temperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-max-tokens')?.value, draft.maxTokens),
@@ -637,7 +642,11 @@ export function createAgentSettingsPanel(deps = {}) {
             ...(delegateProvider === 'sillytavern-vertex' ? {
                 vertexAuthMode: root.querySelector('#xb-assistant-delegate-vertex-auth')?.value || 'full',
                 vertexRegion: root.querySelector('#xb-assistant-delegate-vertex-region')?.value.trim() || 'us-central1',
-                serviceAccountJson: root.querySelector('#xb-assistant-delegate-vertex-sa')?.value.trim() || '',
+                serviceAccountJson: (() => {
+                    const ta = root.querySelector('#xb-assistant-delegate-vertex-sa');
+                    if (!ta || ta.style.display !== 'block') return draft.delegateServiceAccountJson || '';
+                    return ta.value.trim() || '';
+                })(),
             } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-delegate-temperature')?.value, draft.delegateTemperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-delegate-max-tokens')?.value, draft.delegateMaxTokens),
@@ -1388,21 +1397,25 @@ export function createAgentSettingsPanel(deps = {}) {
             const btn = root.querySelector('#xb-assistant-vertex-sa-edit');
             if (!ta) return;
             const isShowing = ta.style.display === 'block';
-            ta.style.display = isShowing ? 'none' : 'block';
             if (!isShowing) {
-                // 打開編輯模式時，從 draft 取值填入 textarea（如果 draft 沒有就留空讓用戶貼）
+                // 打開編輯模式：同步 draft 到 textarea
+                const draft = syncConfigDraft(root);
                 ta.value = draft.serviceAccountJson || '';
+                ta.style.display = 'block';
                 btn.textContent = '完成';
-                indicator.style.display = 'none';
+                if (indicator) indicator.style.display = 'none';
+                ta.focus();
             } else {
-                // 關閉編輯模式時，text 不為空則覆蓋保存
+                // 完成：把 textarea 值寫回 draft（保存時走正規路徑持久化）
                 const val = ta.value.trim();
-                if (val) {
-                    draft.serviceAccountJson = val;
-                    indicator.value = '已設定';
-                }
+                const draft = syncConfigDraft(root);
+                if (val) draft.serviceAccountJson = val;
+                ta.style.display = 'none';
                 btn.textContent = '編輯';
-                indicator.style.display = '';
+                if (indicator) {
+                    indicator.value = val ? '已設定' : '未設定（貼上 SA JSON 後自動保存）';
+                    indicator.style.display = '';
+                }
             }
         });
         root.querySelector('#xb-assistant-delegate-vertex-sa-edit')?.addEventListener('click', () => {
@@ -1411,19 +1424,23 @@ export function createAgentSettingsPanel(deps = {}) {
             const btn = root.querySelector('#xb-assistant-delegate-vertex-sa-edit');
             if (!ta) return;
             const isShowing = ta.style.display === 'block';
-            ta.style.display = isShowing ? 'none' : 'block';
             if (!isShowing) {
+                const draft = syncConfigDraft(root);
                 ta.value = draft.delegateServiceAccountJson || '';
+                ta.style.display = 'block';
                 btn.textContent = '完成';
-                indicator.style.display = 'none';
+                if (indicator) indicator.style.display = 'none';
+                ta.focus();
             } else {
                 const val = ta.value.trim();
-                if (val) {
-                    draft.delegateServiceAccountJson = val;
-                    indicator.value = '已設定';
-                }
+                const draft = syncConfigDraft(root);
+                if (val) draft.delegateServiceAccountJson = val;
+                ta.style.display = 'none';
                 btn.textContent = '編輯';
-                indicator.style.display = '';
+                if (indicator) {
+                    indicator.value = val ? '已設定' : '未設定';
+                    indicator.style.display = '';
+                }
             }
         });
 
