@@ -15,6 +15,8 @@ import {
     getPreviewDisplayUrl,
     preloadPreviewDisplayUrl,
     warmSlotPreviewNeighbors,
+    openGalleryBatchManage,
+    closeBatchManage,
 } from "../../shared/gallery-cache.js";
 import { getContext } from "../../../../../../../extensions.js";
 import { saveBase64AsFile } from "../../../../../../../utils.js";
@@ -1380,6 +1382,26 @@ function bindOverlayEvents() {
             setValue('comfy-gallery-cache-days', nextDays);
         }
     });
+    querySettings('#comfy-gallery-batch')?.addEventListener('click', () => {
+        closeBatchManage();
+        openGalleryBatchManage(null);
+    });
+    querySettings('#comfy-gallery-save-jpeg')?.addEventListener('click', async (event) => {
+        const nextJpeg = getSettingsElement('#comfy-gallery-save-as-jpeg')?.checked === true;
+        const nextQuality = Math.max(0.1, Math.min(1, Number(getSettingsElement('#comfy-gallery-jpeg-quality')?.value) || 0.8));
+        const ok = await runSaveButtonTask(event.currentTarget, () => updateSharedDrawSettingsPersistent((settings) => {
+            settings.saveAsJpeg = nextJpeg;
+            settings.jpegQuality = nextQuality;
+        }, 'JPEG 设置已保存', { notify: false, silent: false }), {
+            statusElementId: 'comfy-gallery-status',
+            pendingText: '正在保存...',
+            successText: nextJpeg ? `已启用 JPEG（品質 ${nextQuality}）` : '已关闭 JPEG 转换',
+            errorText: '保存失败，请重试',
+        });
+        if (ok) {
+            setValue('comfy-gallery-jpeg-quality', nextQuality);
+        }
+    });
     querySettings('#comfy-gallery-clear-expired')?.addEventListener('click', async () => {
         updateStatusText('comfy-gallery-status', '', '正在清理...');
         try {
@@ -2445,10 +2467,13 @@ async function renderGalleryManagement() {
     const countEl = getSettingsElement('comfy-gallery-count');
     const sizeEl = getSettingsElement('comfy-gallery-size');
     const cacheDaysEl = getSettingsElement('comfy-gallery-cache-days');
+    const jpegCheckbox = getSettingsElement('comfy-gallery-save-as-jpeg');
+    const jpegQuality = getSettingsElement('comfy-gallery-jpeg-quality');
     if (!container || !empty || !countEl || !sizeEl) return;
-    if (cacheDaysEl) {
-        cacheDaysEl.value = String(getSharedDrawSettings().cacheDays);
-    }
+    const settings = getSharedDrawSettings();
+    if (cacheDaysEl) cacheDaysEl.value = String(settings.cacheDays);
+    if (jpegCheckbox) jpegCheckbox.checked = settings.saveAsJpeg === true;
+    if (jpegQuality) jpegQuality.value = String(settings.jpegQuality);
 
     container.textContent = '加载中...';
     empty.style.display = 'none';
