@@ -1123,6 +1123,9 @@ async function loadSettings() {
         if (promptUpgrade.proAdded) {
             showToast('提示词预设列表已新增「进阶-构图强化」，可在提示词设置中切换；当前预设保持不变', 'info', 8000);
         }
+        if (promptUpgrade.proRefreshed) {
+            showToast('「进阶-构图强化」预设的规则已更新为新版', 'info', 8000);
+        }
         if (promptUpgrade.upstreamPresetCount > 0) {
             const customNotice = promptUpgrade.customPresetCount > 0
                 ? `；其中 ${promptUpgrade.customPresetCount} 个自定义预设的旧规则已保留，请在提示词设置中检查`

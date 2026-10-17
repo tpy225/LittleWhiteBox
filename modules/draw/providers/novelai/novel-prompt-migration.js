@@ -20,6 +20,15 @@ const UPSTREAM_V4_PROMPT_FINGERPRINTS = Object.freeze({
 });
 
 
+// Released revisions of the bundled `进阶-构图强化` rules. A saved copy whose sceneRules
+// still fingerprint to one of these was never edited by the user, so the current bundled
+// rules replace it on upgrade; an edited copy keeps its own text untouched.
+const PRO_PRESET_RELEASED_SCENE_RULES = Object.freeze([
+    '5501:5333f1f6:20175d04', // 初版：v15「進階-構圖強化」遷移
+    '5574:8d01ba86:a43e7706', // 補回服裝參考庫「選一套改寫」規則
+    '5719:e95756b0:47f77fb6', // v3.1.7 前的現行版
+]);
+
 const UPSTREAM_MANAGED_PRESETS = Object.freeze({
     '默认-模型要求高': { name: '默认-完整规则', pov: false },
     '默认-第一人称视角': { name: '默认-第一人称完整规则', pov: true },
@@ -226,6 +235,39 @@ function ensureOptionalProPreset(settings, currentDefaults) {
     };
 }
 
+/**
+ * Swap the bundled `进阶-构图强化` rules for the current revision, but only when the saved
+ * copy is still byte-identical to a revision that actually shipped. A copy the user edited
+ * fingerprints to something unknown and is left alone. A user who removed the preset gets
+ * neither a copy back nor this rewrite; only the version marker moves forward.
+ */
+function refreshProPresetRules(settings, currentDefaults) {
+    const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+    if (Number(source._proPresetVersion) >= 2) {
+        return { settings: source, replaced: false };
+    }
+    if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
+        throw new Error('提示词模板尚未加载：sceneRulesPro');
+    }
+    const existing = Array.isArray(source.promptPresets) ? source.promptPresets : [];
+    let replaced = false;
+    const next = existing.map((preset) => {
+        if (!preset || typeof preset !== 'object' || preset.name !== SCENE_PLANNER_PRESET_NAMES.pro) {
+            return preset;
+        }
+        if (typeof preset.sceneRules !== 'string') return preset;
+        if (!PRO_PRESET_RELEASED_SCENE_RULES.includes(promptTemplateFingerprint(preset.sceneRules))) {
+            return preset;
+        }
+        replaced = true;
+        return { ...preset, sceneRules: currentDefaults.sceneRulesPro };
+    });
+    return {
+        settings: { ...source, promptPresets: next, _proPresetVersion: 2 },
+        replaced,
+    };
+}
+
 export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetVersion) {
     const source = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
     const result = migrateLegacyNovelPromptPresets(source.promptPresets, {
@@ -237,13 +279,15 @@ export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetV
         promptPresets: result.presets,
     }, currentDefaults, targetVersion, { installVersion: 13 });
     const pro = ensureOptionalProPreset(installation.settings, currentDefaults);
+    const refresh = refreshProPresetRules(pro.settings, currentDefaults);
     return {
         ...result,
-        settings: pro.settings,
-        presets: pro.settings.promptPresets,
-        templateVersion: pro.settings._promptTemplateVersion,
+        settings: refresh.settings,
+        presets: refresh.settings.promptPresets,
+        templateVersion: refresh.settings._promptTemplateVersion,
         proAdded: pro.added,
-        migrated: result.migrated || installation.changed || pro.added,
+        proRefreshed: refresh.replaced,
+        migrated: result.migrated || installation.changed || pro.added || refresh.replaced,
         installed: installation.installed,
     };
 }
