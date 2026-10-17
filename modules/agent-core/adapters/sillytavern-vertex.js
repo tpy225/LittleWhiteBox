@@ -43,14 +43,24 @@ export class SillyTavernVertexAdapter extends SillyTavernOpenAICompatibleAdapter
         }
 
         // tagged-json：把工具規約嵌入訊息，模型輸出純文字含 <tool_call> 標籤
-        const messages = buildTaggedMessages(task, this.config.model);
-        const promptText = messages.map((m) => `${m.role}: ${flatten(m.content)}`).join('\n\n');
+        const taggedMessages = buildTaggedMessages(task, this.config.model);
+        // ST generateRaw 只吃 { role, content: string } 的純字串訊息（柏寶繪 ChatMsg 形態）
+        const messages = taggedMessages.map((m) => ({
+            role: m.role === 'system' || m.role === 'user' || m.role === 'assistant' ? m.role : 'user',
+            content: flatten(m.content),
+        }));
+        const promptText = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
         console.debug('[SillyTavernVertex] 跟隨主 API 生成，prompt 前 200 字：', promptText.slice(0, 200));
         try {
             const text = String((await ctx.generateRaw({
                 prompt: messages,
                 responseLength: MAIN_API_RESPONSE_LENGTH,
             }))?.trim?.() ?? '');
+            if (!text) {
+                console.warn('[SillyTavernVertex] generateRaw 回空。訊息數：', messages.length,
+                    '訊息 role 序列：', messages.map((m) => m.role).join(','),
+                    'prompt 尾 300 字：', promptText.slice(-300));
+            }
 
             const requestInspection = {
                 provider: this.provider,

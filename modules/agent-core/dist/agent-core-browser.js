@@ -21759,7 +21759,10 @@ var Jb = class extends qm {
     const t = Vb();
     if (typeof t?.generateRaw != "function")
       return console.warn("[SillyTavernVertex] 頁內 generateRaw 不可用，退回 HTTP chat-completions 路徑"), super.chat(e);
-    const n = Ur(e, this.config.model), o = n.map((r) => `${r.role}: ${Kb(r.content)}`).join(`
+    const n = Ur(e, this.config.model).map((r) => ({
+      role: r.role === "system" || r.role === "user" || r.role === "assistant" ? r.role : "user",
+      content: Kb(r.content)
+    })), o = n.map((r) => `${r.role}: ${r.content}`).join(`
 
 `);
     console.debug("[SillyTavernVertex] 跟隨主 API 生成，prompt 前 200 字：", o.slice(0, 200));
@@ -21767,7 +21770,9 @@ var Jb = class extends qm {
       const r = String((await t.generateRaw({
         prompt: n,
         responseLength: id
-      }))?.trim?.() ?? ""), i = {
+      }))?.trim?.() ?? "");
+      r || console.warn("[SillyTavernVertex] generateRaw 回空。訊息數：", n.length, "訊息 role 序列：", n.map((c) => c.role).join(","), "prompt 尾 300 字：", o.slice(-300));
+      const i = {
         provider: this.provider,
         model: this.config.model,
         transport: "sillytavern-generate-raw",
