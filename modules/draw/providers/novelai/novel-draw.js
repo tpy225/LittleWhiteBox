@@ -2474,7 +2474,11 @@ async function handleDelegatedClick(e) {
 
     const actionEl = e.target.closest('[data-action]');
     const action = actionEl?.dataset?.action;
-    if (!action) return;
+    if (!action) {
+        // 暫時診斷（手機端點圖無反應定位用，事後移除）：圖卡被命中但點到的元素不帶動作。
+        showToast(`診斷：圖片未被動作元素接收（命中 ${e.target.tagName}${e.target.className ? '.' + String(e.target.className).trim().split(/\s+/).join('.') : ''}）`, 'info', 6000);
+        return;
+    }
 
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -2489,9 +2493,17 @@ async function handleDelegatedClick(e) {
             wrap.classList.toggle('open');
             break;
         }
-        case 'open-gallery':
-            await handleImageClick(container);
+        case 'open-gallery': {
+            // 暫時診斷（手機端點圖無反應定位用，事後移除）
+            showToast('診斷：已命中圖片，準備開啟畫廊', 'info', 2000);
+            try {
+                await handleImageClick(container);
+            } catch (err) {
+                showToast(`診斷：開啟畫廊失敗 — ${err?.message || err}`, 'error', 8000);
+                throw err;
+            }
             break;
+        }
         case 'refresh-image':
             container.querySelector('.xb-nd-menu-wrap')?.classList.remove('open');
             await refreshSingleImage(container);
