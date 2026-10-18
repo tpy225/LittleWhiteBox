@@ -1,6 +1,33 @@
 import { SUBMIT_SCENE_PLAN_TOOL_NAME } from './scene-plan-contract.js';
 import { normalizeScenePlannerProfile } from './scene-planner-profile.js';
 
+/**
+ * Apply user-configured description overrides onto a freshly built parameters tree.
+ * Paths: `images`, `images[].scene`, `images[].characters[].name`, ...; `tool` targets
+ * the function-level description. Empty/whitespace overrides are ignored.
+ */
+function applyFieldDescriptionOverrides(tool, descriptions) {
+    const walk = (schema, path) => {
+        if (!schema || typeof schema !== 'object') return;
+        const override = descriptions[path];
+        if (typeof schema.description === 'string' && typeof override === 'string' && override.trim()) {
+            schema.description = override;
+        }
+        if (schema.type === 'object' && schema.properties) {
+            for (const [key, child] of Object.entries(schema.properties)) {
+                walk(child, path ? `${path}.${key}` : key);
+            }
+        } else if (schema.type === 'array' && schema.items) {
+            walk(schema.items, `${path}[]`);
+        }
+    };
+    walk(tool.function?.parameters, '');
+    const toolDescription = descriptions.tool;
+    if (typeof toolDescription === 'string' && toolDescription.trim()) {
+        tool.function.description = toolDescription;
+    }
+}
+
 // Model-facing instructions are prepared in the browser, not bundled into the executor.
 function normalizeLimit(value) {
     const number = Number(value);
@@ -84,6 +111,9 @@ export function createSubmitScenePlanTool(options = {}) {
     const maxCharactersPerImage = normalizeLimit(options.maxCharactersPerImage);
     const insertPointCount = normalizeLimit(options.insertPointCount);
     const profile = normalizeScenePlannerProfile(options.profile);
+    const descriptions = options.descriptions && typeof options.descriptions === 'object'
+        ? options.descriptions
+        : {};
     const maxPlanItems = maxImages || maxPlanImages;
     const charactersSchema = {
         type: 'array',
@@ -141,7 +171,7 @@ export function createSubmitScenePlanTool(options = {}) {
         },
     };
 
-    return {
+    const tool = {
         type: 'function',
         function: {
             name: SUBMIT_SCENE_PLAN_TOOL_NAME,
@@ -156,4 +186,6 @@ export function createSubmitScenePlanTool(options = {}) {
             },
         },
     };
+    applyFieldDescriptionOverrides(tool, descriptions);
+    return tool;
 }

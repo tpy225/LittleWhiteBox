@@ -8,6 +8,7 @@
 <title>Novel Draw</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="../../shared/agent-settings-surface.css">
+<link rel="stylesheet" href="../../shared/character-group-presets-ui.css">
 <script type="module" src="../../shared/draw-usage.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -1712,6 +1713,10 @@ select.input { cursor: pointer; }
                                 </div>
                                 <div class="char-list-count" id="nd_char_result_count">0 / 0</div>
                             </div>
+                            <div class="char-group-toolbar" style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+                                <button id="nd_group_add" class="btn btn-sm" type="button"><i class="fa-solid fa-folder-plus"></i> 新建分组</button>
+                                <span class="form-hint" style="font-size:11px;">关闭分组后组内角色不参与出图</span>
+                            </div>
                             <div class="char-list-body">
                                 <div id="nd_char_list" class="char-grid"></div>
                                 <div id="nd_char_empty" class="char-empty">
@@ -1720,6 +1725,17 @@ select.input { cursor: pointer; }
                                     <p>点击左侧“添加角色”，开始建立你的角色标签库</p>
                                 </div>
                             </div>
+                        </div>
+                    </section>
+                    <section class="char-group-presets-section" style="margin-top:16px;">
+                        <div class="card">
+                            <div class="char-list-card-header">
+                                <div>
+                                    <div class="card-title">🎛️ 分组预设</div>
+                                    <p class="form-hint" style="margin-top:6px;">把分组开关存成预设，绑定角色卡后切换聊天自动应用</p>
+                                </div>
+                            </div>
+                            <div id="nd_group_preset_root"></div>
                         </div>
                     </section>
                 </div>
@@ -2084,6 +2100,12 @@ let state = {
     selectedParamsPresetId: null,
     paramsPresets: [],
     characterTags: [],
+    characterGroups: [],
+    characterGroupPresets: [],
+    characterGroupPresetApplied: null,
+    activeAvatars: [],
+    hostCharacters: null,
+    plannerMaxRetries: 3,
     autoLearnCharacters: true,
     autoLearnMode: 'new_only',
     continuityEnabled: true,
@@ -2107,6 +2129,10 @@ const expandedGalleryChars = new Set();
 let galleryScrollEl = null;
 let galleryScrollTop = 0;
 let editingCharId = null;
+// 分组预设模块（动态加载）
+let GPM = null; // character-group-presets.js
+let GP = null;  // character-group-presets-ui.js
+let groupPresetPanel = null;
 const saveBtnStates = new WeakMap();
 const promptTextDraftsByPreset = new Map();
 const modelGuideDraftsByPreset = new Map();
@@ -2688,7 +2714,7 @@ function renderCharList() {
     empty.style.display = 'none';
     empty.classList.remove('filtered');
     
-    list.innerHTML = filteredChars.map(c => {
+    const renderCard = (c) => {
         const isEditing = editingCharId === c.id;
         const isEnabled = c.enabled !== false;
         const charId = escapeHtml(c.id);
@@ -2740,6 +2766,13 @@ function renderCharList() {
                             <label class="form-label">类型</label>
                             <select class="input char-edit-type">${typeOptions}</select>
                             <input type="text" class="input char-edit-type-custom${selectedType === 'custom' ? '' : ' hidden'}" value="${selectedType === 'custom' ? escapeHtml(savedType) : ''}" placeholder="如: mature female" style="margin-top:4px;">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">分组</label>
+                            <select class="input char-edit-group">
+                                <option value="">未分组</option>
+                                ${(state.characterGroups || []).map(g => `<option value="${escapeHtml(g.id)}"${c.groupId === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+                            </select>
                         </div>
                     </div>
                     <div class="form-group">
@@ -2796,7 +2829,38 @@ function renderCharList() {
         <div class="char-card${isEnabled ? '' : ' disabled'}" data-id="${charId}">
             ${summary}
         </div>`;
-    }).join('');
+    };
+
+    // 按分组组织：先未分组，再按 characterGroups 顺序
+    const groups = state.characterGroups || [];
+    const groupOrder = ['', ...groups.map(g => g.id)];
+    const groupMap = new Map();
+    for (const c of filteredChars) {
+        const gid = c.groupId || '';
+        if (!groupMap.has(gid)) groupMap.set(gid, []);
+        groupMap.get(gid).push(c);
+    }
+    let html = '';
+    for (const gid of groupOrder) {
+        const gChars = groupMap.get(gid);
+        if (!gChars || !gChars.length) continue;
+        const g = groups.find(x => x.id === gid);
+        const gName = gid ? (g?.name || '未命名分组') : '未分组';
+        const gEnabled = !gid || g?.enabled !== false;
+        html += `<div class="char-group" data-group-id="${escapeHtml(gid)}">
+            <div class="char-group-header" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-input);border-radius:6px;margin:8px 0;">
+                <button type="button" class="btn btn-sm btn-icon" data-action="toggle-group" data-group-id="${escapeHtml(gid)}" title="${gEnabled ? '停用分组' : '启用分组'}" aria-pressed="${gEnabled}">
+                    <i class="fa-solid ${gEnabled ? 'fa-eye' : 'fa-eye-slash'}"></i>
+                </button>
+                <span style="font-weight:600;${gEnabled ? '' : 'opacity:0.5;text-decoration:line-through;'}">${escapeHtml(gName)}</span>
+                <span class="form-hint" style="font-size:11px;">${gChars.length} 个角色</span>
+                ${gid ? `<button type="button" class="btn btn-sm btn-icon" data-action="rename-group" data-group-id="${escapeHtml(gid)}" title="重命名"><i class="fa-solid fa-pen"></i></button>
+                <button type="button" class="btn btn-sm btn-icon" data-action="delete-group" data-group-id="${escapeHtml(gid)}" title="删除分组（角色移入未分组）"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+            </div>
+            ${gChars.map(renderCard).join('')}
+        </div>`;
+    }
+    list.innerHTML = html;
     
     list.querySelectorAll('.char-edit-type').forEach(sel => {
         sel.addEventListener('change', function() {
@@ -2814,7 +2878,7 @@ function handleCharAction(action, id, card, trigger) {
         const char = state.characterTags.find(c => c.id === id);
         if (!char) return;
         char.enabled = char.enabled === false;
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         card?.classList.toggle('disabled', !char.enabled);
         const status = card?.querySelector('.char-status');
         if (status) {
@@ -2868,6 +2932,7 @@ function handleCharAction(action, id, card, trigger) {
         
         char.name = name;
         char.type = type;
+        char.groupId = card.querySelector('.char-edit-group')?.value || '';
         char.aliases = (card.querySelector('.char-edit-aliases')?.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
         char.appearance = card.querySelector('.char-edit-appearance')?.value?.trim() || '';
         char.negativeTags = card.querySelector('.char-edit-neg')?.value?.trim() || '';
@@ -2875,15 +2940,146 @@ function handleCharAction(action, id, card, trigger) {
         char.dynamicStates = collectNamedTagEditorValues(card, 'dynstate');
 
         editingCharId = null;
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     } else if (action === 'delete') {
         const char = state.characterTags.find(c => c.id === id);
         if (!confirm(`确定删除角色“${char?.name || '未命名角色'}”？此操作不可撤销。`)) return;
         state.characterTags = state.characterTags.filter(c => c.id !== id);
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     }
+}
+
+// ── 分组操作 ────────────────────────────────────────────────
+function handleGroupAction(action, gid) {
+    const groups = state.characterGroups || [];
+    if (action === 'toggle-group') {
+        if (!gid) return;
+        const g = groups.find(x => x.id === gid);
+        if (!g) return;
+        g.enabled = g.enabled === false ? true : false;
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
+    } else if (action === 'rename-group') {
+        const g = groups.find(x => x.id === gid);
+        if (!g) return;
+        const name = prompt('分组名称', g.name);
+        if (name === null) return;
+        const trimmed = name.trim();
+        if (!trimmed) { alert('分组名称不能为空'); return; }
+        g.name = trimmed;
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
+    } else if (action === 'delete-group') {
+        if (!gid) return;
+        if (!confirm('确定删除此分组？组内角色将移入“未分组”。')) return;
+        state.characterGroups = groups.filter(x => x.id !== gid);
+        state.characterTags.forEach(c => { if (c.groupId === gid) c.groupId = ''; });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
+    }
+}
+
+// ── 分组预设面板 ────────────────────────────────────────────
+// 预设保存 / 应用都经宿主（SAVE_GROUP_PRESETS / APPLY_GROUP_PRESET）；组件受控，数据从 state 读，
+// 改动先乐观写进 state 再发给宿主。INIT_DATA 重绘只调 panel.render()，不销毁重建。
+let groupPresetSaveSeq = 0;
+let groupPresetRequestSeq = 0;
+const groupPresetPendingSaves = new Map();
+const GROUP_PRESET_SAVE_RECEIPT_TIMEOUT_MS = 15000;
+let groupPresetHostPresets = null;
+const groupPresetApplyWaiters = new Map();
+const GROUP_PRESET_APPLY_TIMEOUT_MS = 15000;
+
+function getCharacterLibraryForPresets() {
+    return { characters: state.characterTags || [], groups: state.characterGroups || [] };
+}
+
+function groupPresetToast(message, level = 'info') {
+    try {
+        const t = globalThis.toastr;
+        if (t) {
+            if (level === 'error') t.error?.(String(message || ''));
+            else if (level === 'success') t.success?.(String(message || ''));
+            else t.info?.(String(message || ''));
+        }
+    } catch { /* 提示失败不影响功能 */ }
+}
+
+function realignGroupPresetsWithHost() {
+    if (Array.isArray(groupPresetHostPresets)) state.characterGroupPresets = groupPresetHostPresets;
+    renderGroupPresetPanel();
+}
+
+function saveGroupPresetsToHost(presets) {
+    state.characterGroupPresets = presets;
+    const seq = ++groupPresetSaveSeq;
+    const timer = setTimeout(() => {
+        if (!groupPresetPendingSaves.delete(seq)) return;
+        if (!groupPresetPendingSaves.size) realignGroupPresetsWithHost();
+    }, GROUP_PRESET_SAVE_RECEIPT_TIMEOUT_MS);
+    groupPresetPendingSaves.set(seq, timer);
+    postToParent({ type: 'SAVE_GROUP_PRESETS', presets, seq });
+}
+
+function applyGroupPresetViaHost(presetId) {
+    const requestId = `gp-apply-${++groupPresetRequestSeq}`;
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            groupPresetApplyWaiters.delete(requestId);
+            resolve({ status: 'error', message: '宿主没有响应' });
+        }, GROUP_PRESET_APPLY_TIMEOUT_MS);
+        groupPresetApplyWaiters.set(requestId, (result) => {
+            clearTimeout(timer);
+            resolve(result || { status: 'error', message: '宿主没有返回结果' });
+        });
+        postToParent({ type: 'APPLY_GROUP_PRESET', presetId, requestId });
+    });
+}
+
+function handleGroupPresetStatus(data) {
+    if (data.requestId && groupPresetApplyWaiters.has(data.requestId)) {
+        const resolve = groupPresetApplyWaiters.get(data.requestId);
+        groupPresetApplyWaiters.delete(data.requestId);
+        resolve(data.result);
+        return;
+    }
+    if (data.seq) {
+        clearTimeout(groupPresetPendingSaves.get(data.seq));
+        groupPresetPendingSaves.delete(data.seq);
+        if (data.state === 'success' && Array.isArray(data.presets) && !groupPresetPendingSaves.size) {
+            groupPresetHostPresets = data.presets;
+            state.characterGroupPresets = data.presets;
+            renderGroupPresetPanel();
+        }
+    }
+    if (data.state === 'error') groupPresetToast(data.text || '分组预设操作失败', 'error');
+}
+
+function renderGroupPresetPanel() {
+    if (!GP) return;
+    if (groupPresetPanel) {
+        groupPresetPanel.render();
+        return;
+    }
+    const container = $('nd_group_preset_root');
+    if (!container) return;
+    groupPresetPanel = GP.createGroupPresetPanel({
+        document,
+        container,
+        getLibrary: getCharacterLibraryForPresets,
+        getPresets: () => state.characterGroupPresets || [],
+        getApplied: () => state.characterGroupPresetApplied || null,
+        getActiveAvatars: () => state.activeAvatars || [],
+        listHostCharacters: () => {
+            if (!Array.isArray(state.hostCharacters)) throw new Error('宿主角色列表未就绪');
+            return state.hostCharacters;
+        },
+        onPresetsChange: presets => saveGroupPresetsToHost(presets),
+        onApply: presetId => applyGroupPresetViaHost(presetId),
+        toast: groupPresetToast,
+    });
 }
 
 // ── Danbooru 搜索（本地 DB）─────────────────────────────────
@@ -2970,7 +3166,7 @@ function renderLocalDanbooruResults(query, results, charId) {
                 char.appearance = appearanceTags.map(t => t.replace(/_/g, ' ')).join(', ');
             }
 
-            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
             panel.classList.add('hidden');
             panel.innerHTML = '';
             editingCharId = null;
@@ -4598,6 +4794,7 @@ function applyParamsPreset() {
 /** 纯本地：从当前选中的提示词预设加载 textarea 内容（对标 applyParamsPreset） */
 function applyPromptPreset() {
     const active = getActivePromptPresetForForm() || {};
+    const isBuiltin = active.builtin === true;
     const drafts = active.id ? promptTextDraftsByPreset.get(active.id) : null;
     $('nd_prompt_system').value = drafts?.has('topSystem')
         ? drafts.get('topSystem')
@@ -4606,6 +4803,33 @@ function applyPromptPreset() {
         ? drafts.get('sceneRules')
         : active.sceneRules ?? '';
     applyModelGuideForCurrentModel();
+    // 内置模板只读：禁止直接修改，需「新建」或「保存」另存为可编辑副本。
+    for (const id of ['nd_prompt_system', 'nd_prompt_format', 'nd_prompt_guide']) {
+        const el = $(id);
+        if (el) el.readOnly = isBuiltin;
+    }
+    const presetSave = $('nd_prompt_preset_save');
+    if (presetSave) {
+        presetSave.title = isBuiltin ? '内置模板：另存为可编辑副本' : '保存';
+    }
+    const bottomSave = $('nd_prompts_save');
+    if (bottomSave) {
+        bottomSave.innerHTML = isBuiltin
+            ? '<i class="fa-solid fa-copy"></i> 另存为可编辑副本'
+            : '<i class="fa-solid fa-floppy-disk"></i> 保存到当前预设';
+    }
+    for (const id of ['nd_prompt_rename', 'nd_prompt_del',
+        'nd_prompt_reset_system', 'nd_prompt_reset_format', 'nd_prompt_reset_guide',
+        'nd_prompts_reset_all']) {
+        const btn = $(id);
+        if (btn) btn.disabled = isBuiltin;
+    }
+    const status = $('nd_prompts_status');
+    if (status) {
+        status.textContent = isBuiltin
+            ? '内置模板不可直接修改，点击「另存为」或「＋新建」创建可编辑副本。'
+            : '';
+    }
 }
 
 function getActivePromptPresetForForm() {
@@ -4828,6 +5052,7 @@ window.addEventListener('message', event => {
             }
             applyStateToUI();
             shuffleCredits();
+            renderGroupPresetPanel();
             break;
 
         case 'CACHE_DATA':
@@ -4909,6 +5134,10 @@ window.addEventListener('message', event => {
 
             
         case 'STATUS':
+            if (data.target === 'group-presets') {
+                handleGroupPresetStatus(data);
+                break;
+            }
             if (data.target === 'worldbook') {
                 updateStatus($('nd_wb_status'), data.state, data.text);
                 if (data.state === 'success' || data.state === 'error') handleSaveResult(data.state === 'success');
@@ -4933,7 +5162,13 @@ window.addEventListener('message', event => {
             }
             if (data.state === 'success' || data.state === 'error') handleSaveResult(data.state === 'success');
             break;
-            
+
+        case 'GROUP_PRESET_CONTEXT':
+            if (Array.isArray(data.activeAvatars)) state.activeAvatars = data.activeAvatars;
+            if (Array.isArray(data.hostCharacters)) state.hostCharacters = data.hostCharacters;
+            renderGroupPresetPanel();
+            break;
+
         case 'GALLERY_IMAGE_DELETED':
             // 列表是輕量索引，刪除後準確的封面／張數需重取該角色索引（刪除是低頻操作）。
             if (modalData.charName) {
@@ -5393,9 +5628,28 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_char_list').addEventListener('click', e => {
         const btn = e.target.closest('[data-action]');
         if (!btn) return;
+        const action = btn.dataset.action;
+        const gid = btn.dataset.groupId;
+        if (gid !== undefined) {
+            handleGroupAction(action, gid);
+            return;
+        }
         const card = btn.closest('.char-card');
         const id = btn.dataset.id || card?.dataset.id;
-        if (id) handleCharAction(btn.dataset.action, id, card, btn);
+        if (id) handleCharAction(action, id, card, btn);
+    });
+
+    // 新建分组
+    $('nd_group_add')?.addEventListener('click', () => {
+        const name = prompt('分组名称', '新分组');
+        if (name === null) return;
+        const trimmed = name.trim();
+        if (!trimmed) { alert('分组名称不能为空'); return; }
+        if (!state.characterGroups) state.characterGroups = [];
+        const id = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        state.characterGroups.push({ id, name: trimmed, enabled: true });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
     });
 
     // auto-learn (toggle + subordinate checkbox)
@@ -5434,7 +5688,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.characterTags?.length) { alert('没有角色可清除'); return; }
         if (!confirm(`确定清除全部 ${state.characterTags.length} 个角色？此操作不可撤销。`)) return;
         state.characterTags = [];
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     });
     
@@ -5472,7 +5726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (existing) Object.assign(existing, imported, { id: existing.id });
                 else state.characterTags.push(imported);
             }
-            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
             renderCharList();
             alert(`导入 ${d.characters.length} 个角色`);
         } catch (err) {
@@ -5642,48 +5896,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }, statusTarget: 'prompts' });
     });
 
-    // 恢复默认只改表单；点保存才落盘
+    // 恢复默认：内置模板禁用；自定义模板恢复到該預設已保存的內容（清除未保存草稿），而非插件內置模板。
     const refreshChainIfOpen = () => { if ($('nd_prompt_chain_details').open) requestPromptChainPreview(); };
     $('nd_prompt_reset_system').addEventListener('click', () => {
-        const activePreset = (state.promptPresets || []).find(p => p.id === state.selectedPromptPresetId);
-        const isPov = ['默认-第一人称完整规则', '新版-第一人称完整规则'].includes(activePreset?.name);
-        const defaultTopSystem = isPov ? (state._defaultPrompts?.topSystemPov || '') : (state._defaultPrompts?.topSystem || '');
-        $('nd_prompt_system').value = defaultTopSystem;
-        setCurrentPromptTextDraft('topSystem', defaultTopSystem);
+        const activePreset = getActivePromptPresetForForm();
+        if (!activePreset || activePreset.builtin) return;
+        const savedTopSystem = activePreset.topSystem ?? '';
+        $('nd_prompt_system').value = savedTopSystem;
+        setCurrentPromptTextDraft('topSystem', savedTopSystem);
         refreshChainIfOpen();
     });
     $('nd_prompt_reset_format').addEventListener('click', () => {
-        const defaultSceneRules = state._defaultPrompts?.sceneRules || '';
-        $('nd_prompt_format').value = defaultSceneRules;
-        setCurrentPromptTextDraft('sceneRules', defaultSceneRules);
+        const activePreset = getActivePromptPresetForForm();
+        if (!activePreset || activePreset.builtin) return;
+        const savedSceneRules = activePreset.sceneRules ?? '';
+        $('nd_prompt_format').value = savedSceneRules;
+        setCurrentPromptTextDraft('sceneRules', savedSceneRules);
         refreshChainIfOpen();
     });
     $('nd_prompt_reset_guide').addEventListener('click', () => {
-        const defaultContent = state.modelGuideDefaults?.[getCurrentModelGuideId()] ?? '';
+        const activePreset = getActivePromptPresetForForm();
+        if (!activePreset || activePreset.builtin) return;
+        const guideId = getCurrentModelGuideId();
+        const savedOverride = activePreset.modelGuideOverrides?.[guideId];
+        const defaultContent = typeof savedOverride === 'string'
+            ? savedOverride
+            : (state.modelGuideDefaults?.[guideId] ?? '');
         $('nd_prompt_guide').value = defaultContent;
         setCurrentModelGuideDraft(defaultContent);
         refreshChainIfOpen();
     });
     $('nd_prompts_reset_all').addEventListener('click', () => {
-        if (!confirm('确认将当前预设的全部提示词恢复为默认值？（需点击保存才会生效）')) return;
-        const defaults = state._defaultPrompts || {};
         const activePreset = getActivePromptPresetForForm();
         if (!activePreset) {
             alert('没有可恢复的提示词预设');
             return;
         }
-        const isPov = ['默认-第一人称完整规则', '新版-第一人称完整规则'].includes(activePreset.name);
-        const topSystemVal = isPov ? (defaults.topSystemPov || '') : (defaults.topSystem || '');
-        const sceneRulesVal = defaults.sceneRules || '';
+        if (activePreset.builtin) return;
+        if (!confirm('确认将当前预设的全部提示词恢复为已保存的值？（未保存的修改将被丢弃）')) return;
+        const topSystemVal = activePreset.topSystem ?? '';
+        const sceneRulesVal = activePreset.sceneRules ?? '';
         $('nd_prompt_system').value = topSystemVal;
         $('nd_prompt_format').value = sceneRulesVal;
         promptTextDraftsByPreset.set(activePreset.id, new Map([
             ['topSystem', topSystemVal],
             ['sceneRules', sceneRulesVal],
         ]));
+        const savedOverrides = activePreset.modelGuideOverrides && typeof activePreset.modelGuideOverrides === 'object'
+            ? activePreset.modelGuideOverrides
+            : {};
         modelGuideDraftsByPreset.set(activePreset.id, new Map(
             Object.entries(state.modelGuideDefaults || {})
-                .filter(([, content]) => typeof content === 'string'),
+                .map(([guideId, content]) => [
+                    guideId,
+                    typeof savedOverrides[guideId] === 'string' ? savedOverrides[guideId] : content,
+                ]),
         ));
         applyModelGuideForCurrentModel();
         refreshChainIfOpen();
@@ -5768,9 +6035,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════════
-    // 通知父窗口准备就绪
+    // 动态加载分组预设模块，通知父窗口准备就绪
     // ═══════════════════════════════════════════════════════════════════════
-    postToParent({ type: 'FRAME_READY' });
+    Promise.all([
+        import('../../shared/character-group-presets.js')
+            .then((m) => { GPM = m; })
+            .catch((e) => { console.error('[ND-UI] 分组预设逻辑模块加载失败:', e); }),
+        import('../../shared/character-group-presets-ui.js')
+            .then((m) => { GP = m; })
+            .catch((e) => { console.error('[ND-UI] 分组预设面板模块加载失败:', e); }),
+    ]).finally(() => postToParent({ type: 'FRAME_READY' }));
 });
 </script>
 </body>

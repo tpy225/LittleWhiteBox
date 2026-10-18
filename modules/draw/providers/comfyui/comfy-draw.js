@@ -61,6 +61,7 @@ import { submitRecoverableImageJob } from "../../shared/recoverable-image-jobs.j
 import { submitProviderDrawRun } from "../../shared/draw-run-production.js";
 import { cancelPendingDrawRuns, captureDrawCancellationTarget } from "../../shared/draw-run-controls.js";
 import { createCharacterEnabledControl, getCharacterEnabledFromCard } from "../../shared/character-enabled-control.js";
+import { characterLibraryFromSettings } from "../../shared/character-library.js";
 import { hashStableValue } from "../../shared/generation-fingerprint.js";
 import {
     createScenePlannerDefaultPresets,
@@ -421,6 +422,7 @@ function normalizeSettings(raw = {}) {
         return {
             id: String(preset.id || `prompt-${Date.now()}-${index}`),
             name: String(preset.name || `提示词预设 ${index + 1}`),
+            builtin: preset.builtin === true,
             topSystem: typeof preset.topSystem === 'string' ? preset.topSystem : defaults.topSystem,
             tagGuideContent: typeof preset.tagGuideContent === 'string'
                 ? preset.tagGuideContent
@@ -3754,7 +3756,7 @@ async function buildComfyScenePlannerOptions({
     const sceneSource = createSceneSource(sourceText, { filterRules });
     if (!sceneSource.content) throw new Error('消息内容为空（可能被过滤规则清空）');
 
-    const presentCharacters = detectPresentCharacters(sceneSource.content, sharedDrawSettings.characterTags || []);
+    const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(sharedDrawSettings));
     let worldbookEntries = null;
 
     if (useWorldbook && sharedDrawSettings.worldbooks?.enabled && sharedDrawSettings.worldbooks.uploadedBooks?.length) {

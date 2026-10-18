@@ -162,47 +162,8 @@ export function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-function escapeRegexChars(str) {
-    return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function normalizeNamedTagList(list = []) {
-    return (Array.isArray(list) ? list : [])
-        .map(item => ({
-            name: String(item?.name || '').trim(),
-            tags: String(item?.tags || '').trim(),
-        }))
-        .filter(item => item.name || item.tags);
-}
-
-export function detectPresentCharacters(messageText, characterTags) {
-    if (!messageText || !characterTags?.length) return [];
-    const text = messageText.toLowerCase();
-    const present = [];
-
-    for (const char of characterTags) {
-        if (!isCharacterEnabled(char) || !char.name) continue;
-        const names = [char.name, ...(char.aliases || [])].filter(Boolean);
-        const isPresent = names.some(name => {
-            const lowerName = String(name).toLowerCase();
-            return text.includes(lowerName) || new RegExp(`\\b${escapeRegexChars(lowerName)}\\b`, 'i').test(text);
-        });
-
-        if (isPresent) {
-            present.push({
-                name: char.name,
-                aliases: char.aliases || [],
-                type: char.type || 'girl',
-                appearance: char.appearance || '',
-                danbooruTag: char.danbooruTag || '',
-                negativeTags: char.negativeTags || '',
-                outfits: normalizeNamedTagList(char.outfits),
-                dynamicStates: normalizeNamedTagList(char.dynamicStates),
-            });
-        }
-    }
-    return present;
-}
+// 角色出场检测统一走 present-characters.js（支持分组开关）；此处保持向后兼容的导出。
+export { detectPresentCharacters } from './present-characters.js';
 
 export function findLastAIMessageId() {
     const ctx = getContext();

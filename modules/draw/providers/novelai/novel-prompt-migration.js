@@ -4,6 +4,8 @@ import {
     createScenePlannerBuiltinProPreset,
     createScenePlannerProPreset,
     installScenePlannerPresets,
+    isBuiltinPromptPreset,
+    isPovPromptPreset,
     PRO_PRESET_BUILTIN_NAME,
     SCENE_PLANNER_PRESET_NAMES,
 } from '../../shared/scene-planner-presets.js';
@@ -271,6 +273,50 @@ function refreshProPresetRules(settings, currentDefaults) {
     };
 }
 
+/**
+ * Force-refresh every built-in preset to the currently bundled content and lock it
+ * read-only. Runs once per release via `_builtinPresetVersion`. Unlike the opening
+ * migration, this overwrites user edits intentionally: built-in templates are not
+ * editable in the UI, so any saved divergence is stale and must be replaced.
+ */
+function refreshBuiltinPresetContent(settings, currentDefaults) {
+    const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+    if (Number(source._builtinPresetVersion) >= 1) {
+        return { settings: source, refreshed: false };
+    }
+    for (const key of ['topSystem', 'topSystemPov', 'sceneRules']) {
+        if (typeof currentDefaults?.[key] !== 'string' || !currentDefaults[key].trim()) {
+            throw new Error(`提示词模板尚未加载：${key}`);
+        }
+    }
+    if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
+        throw new Error('提示词模板尚未加载：sceneRulesPro');
+    }
+    const existing = Array.isArray(source.promptPresets) ? source.promptPresets : [];
+    let refreshed = false;
+    const next = existing.map((preset) => {
+        if (!isBuiltinPromptPreset(preset)) return preset;
+        const isPov = isPovPromptPreset(preset.name);
+        const isPro = preset.name === SCENE_PLANNER_PRESET_NAMES.pro
+            || preset.name === PRO_PRESET_BUILTIN_NAME;
+        refreshed = true;
+        return {
+            ...preset,
+            builtin: true,
+            topSystem: isPov ? currentDefaults.topSystemPov : currentDefaults.topSystem,
+            sceneRules: isPro ? currentDefaults.sceneRulesPro : currentDefaults.sceneRules,
+        };
+    });
+    return {
+        settings: {
+            ...source,
+            promptPresets: next,
+            _builtinPresetVersion: 1,
+        },
+        refreshed,
+    };
+}
+
 export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetVersion) {
     const source = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
     const result = migrateLegacyNovelPromptPresets(source.promptPresets, {
@@ -283,15 +329,18 @@ export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetV
     }, currentDefaults, targetVersion, { installVersion: 13 });
     const pro = ensureOptionalProPreset(installation.settings, currentDefaults);
     const refresh = refreshProPresetRules(pro.settings, currentDefaults);
+    const builtin = refreshBuiltinPresetContent(refresh.settings, currentDefaults);
     return {
         ...result,
-        settings: refresh.settings,
-        presets: refresh.settings.promptPresets,
-        templateVersion: refresh.settings._promptTemplateVersion,
+        settings: builtin.settings,
+        presets: builtin.settings.promptPresets,
+        templateVersion: builtin.settings._promptTemplateVersion,
         proAdded: pro.added,
         proRefreshed: refresh.replaced,
         proAppended: refresh.appended,
-        migrated: result.migrated || installation.changed || pro.added || refresh.replaced || refresh.appended,
+        builtinRefreshed: builtin.refreshed,
+        migrated: result.migrated || installation.changed || pro.added || refresh.replaced
+            || refresh.appended || builtin.refreshed,
         installed: installation.installed,
     };
 }

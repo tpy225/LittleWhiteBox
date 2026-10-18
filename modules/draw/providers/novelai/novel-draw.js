@@ -51,6 +51,22 @@ import { getLastDrawAgentDiagnostic } from "../../shared/draw-agent.js";
 import { attachDrawAgentSettingsSurface } from "../../shared/agent-settings-surface.js";
 import { createSerialImageRequestQueue } from "../../shared/serial-image-request-queue.js";
 import { isCharacterEnabled } from "../../shared/character-selection.js";
+import { characterLibraryFromSettings } from "../../shared/character-library.js";
+import {
+    buildAutoLearnCreateOp,
+    buildAutoLearnUpdateOp,
+    mergeAutoLearnOps,
+    snapshotAutoLearnFields,
+} from "../../shared/auto-learn-merge.js";
+import {
+    applyGroupPresetForCurrentChat,
+    getActiveCharacterAvatars,
+    listHostCharacters,
+    onGroupPresetApplied,
+    onGroupPresetContextChanged,
+    saveGroupPresets,
+    startGroupPresetWatcher,
+} from "../../shared/character-group-presets-runtime.js";
 import { joinTags } from "../../shared/character-prompts.js";
 import {
     buildContinuityBlockForRequest,
@@ -104,6 +120,8 @@ import {
 import { submitRecoverableImageJob } from "../../shared/recoverable-image-jobs.js";
 import { submitProviderDrawRun } from "../../shared/draw-run-production.js";
 import { cancelPendingDrawRuns, captureDrawCancellationTarget } from "../../shared/draw-run-controls.js";
+import { createDrawRunClient } from "../../shared/draw-run-client.js";
+import { cancelDrawWork, resumeDrawCancellations } from "../../shared/draw-work-cancellation.js";
 import { migrateLegacyNovelPromptSettings } from "./novel-prompt-migration.js";
 import { WorldbookProcessor } from "../../shared/worldbook-processor.js";
 import {
@@ -136,6 +154,7 @@ import {
     buildImageHtml,
     buildFailedPlaceholderHtml,
     ensureDrawImageStyles,
+    detectPresentCharacters,
 } from "../../shared/draw-common.js";
 import { replaceSceneSlotElements } from "../../shared/scene-slot-dom.js";
 import { createSceneSource, normalizeMessageSceneSourceText } from "../../shared/scene-source.js";
@@ -407,6 +426,17 @@ const novelImageRequestQueue = createSerialImageRequestQueue({
     getCooldownMs: () => getNovelImageRequestDelay(),
 });
 const imageBackendJobsClient = createImageBackendJobsClient({ getHeaders: getRequestHeaders });
+// 取消意图日志（IndexedDB）专用的 draw-run client，用于恢复未完成的取消。
+const cancellationRunClient = createDrawRunClient({ getHeaders: getRequestHeaders });
+
+function getCancellationOwner() {
+    try {
+        const ctx = getContext?.();
+        const name = ctx?.name2 || ctx?.name1;
+        if (name) return String(name);
+    } catch { /* ignore */ }
+    return 'default';
+}
 let ensureNovelDrawPanelRef = null;
 let overlayResizeHandler = null;
 let afterAiGateDispose = null;
@@ -596,6 +626,17 @@ function abortGeneration(messageId = null, { reason = 'user', target = captureDr
             aborted = true;
         }
         if (reason === 'user' && cancelPendingDrawRun(messageId, target)) aborted = true;
+        // 把用户取消意图写入取消日志（IndexedDB），供刷新/崩溃后的 resumeDrawCancellations 补发。
+        // 实际取消仍由 cancelPendingDrawRuns 主导；这里是持久化兜底，失败不影响主流程。
+        if (reason === 'user') {
+            const runIds = target.entries.map((e) => e.runId).filter(Boolean);
+            if (runIds.length) {
+                void cancelDrawWork(
+                    { owner: getCancellationOwner(), jobIds: [], runIds },
+                    cancellationRunClient,
+                ).catch((error) => console.warn('[NovelDraw] 记录取消意图失败:', error));
+            }
+        }
         return aborted;
     }
 
@@ -1066,6 +1107,7 @@ function normalizeSettings(saved = {}) {
             : String(source.selectedPromptPresetId),
         _promptTemplateVersion: Number(source._promptTemplateVersion) || 0,
         _proPresetVersion: Number(source._proPresetVersion) || 0,
+        _builtinPresetVersion: Number(source._builtinPresetVersion) || 0,
         worldbooks: {
             enabled: rawWorldbooks.enabled === true,
             uploadedBooks: Array.isArray(rawWorldbooks.uploadedBooks) ? rawWorldbooks.uploadedBooks : [],
@@ -1116,6 +1158,7 @@ function normalizeSettings(saved = {}) {
         return {
             id: String(preset.id || `prompt-${Date.now()}-${index}`),
             name: String(preset.name || `提示词预设 ${index + 1}`),
+            builtin: preset.builtin === true,
             topSystem: typeof preset.topSystem === 'string'
                 ? preset.topSystem
                 : (isPov ? DEFAULT_PROMPT_CONFIG.topSystemPov : DEFAULT_PROMPT_CONFIG.topSystem),
@@ -1242,7 +1285,11 @@ function getRuntimeSettings() {
         timeout: sharedSettings.timeout,
         cacheDays: sharedSettings.cacheDays,
         useWorldInfo: sharedSettings.useWorldInfo,
+        plannerMaxRetries: sharedSettings.plannerMaxRetries,
         characterTags: sharedSettings.characterTags,
+        characterGroups: sharedSettings.characterGroups,
+        characterGroupPresets: sharedSettings.characterGroupPresets,
+        characterGroupPresetApplied: sharedSettings.characterGroupPresetApplied,
         worldbooks: sharedSettings.worldbooks,
         danbooruLocalDB: sharedSettings.danbooruLocalDB,
         messageFilterRules: sharedSettings.messageFilterRules,
@@ -1544,35 +1591,6 @@ function normalizeNamedTagList(list = []) {
         .filter(item => item.name || item.tags);
 }
 
-function detectPresentCharacters(messageText, characterTags) {
-    if (!messageText || !characterTags?.length) return [];
-    const text = messageText.toLowerCase();
-    const present = [];
-
-    for (const char of characterTags) {
-        if (!isCharacterEnabled(char) || !char.name) continue;
-        const names = [char.name, ...(char.aliases || [])].filter(Boolean);
-        const isPresent = names.some(name => {
-            const lowerName = name.toLowerCase();
-            return text.includes(lowerName) || new RegExp(`\\b${escapeRegexChars(lowerName)}\\b`, 'i').test(text);
-        });
-
-        if (isPresent) {
-            present.push({
-                name: char.name,
-                aliases: char.aliases || [],
-                type: char.type || 'girl',
-                appearance: char.appearance || '',
-                danbooruTag: char.danbooruTag || '',
-                negativeTags: char.negativeTags || '',
-                outfits: normalizeNamedTagList(char.outfits),
-                dynamicStates: normalizeNamedTagList(char.dynamicStates),
-            });
-        }
-    }
-    return present;
-}
-
 // ── 角色自动学习 ─────────────────────────────────────────────
 
 /** 通用/匿名角色名过滤：预编译为单一正则，避免每次调用迭代 30+ 个 pattern */
@@ -1598,13 +1616,38 @@ const GENERIC_NAME_REGEX = new RegExp([
     '(?:^(?:teacher|master|boss|doctor|nurse|brother|sister|senpai|sensei)$)',
 ].join('|'), 'i');
 
+// 已有角色补字段的学习规则（auto_update 模式）：从 autoLearnFromTasks 抽出，
+// 供学习阶段和“写回时合并到最新角色库”共用。对传入角色就地修改，返回是否有改动。
+function fillExistingCharacterFromCandidate(found, char) {
+    let updated = false;
+    if (!found.appearance && char.appear) {
+        found.appearance = char.appear;
+        updated = true;
+    }
+    // 仅在外貌仍为空时更新 type（已有外貌说明角色已配置，不应覆盖 type）
+    if (!found.appearance && char.type && found.type !== char.type) {
+        found.type = char.type;
+        updated = true;
+    }
+    if (!found.danbooruTag && char.danbooru) {
+        found.danbooruTag = char.danbooru;
+        updated = true;
+    }
+    // 本地 DB 自动匹配 danbooruTag（auto_update 模式）
+    if (!found.danbooruTag && isDanbooruDBLoaded()) {
+        const matches = searchLocalDanbooru(found.name, 1);
+        if (matches.length) { found.danbooruTag = matches[0].name; updated = true; }
+    }
+    return updated;
+}
+
 function isGenericCharName(name) {
     if (!name || name.trim().length <= 1) return true;
     return GENERIC_NAME_REGEX.test(name.trim());
 }
 
 function autoLearnFromTasks(tasks, settings) {
-    const result = { newChars: [], updatedChars: [] };
+    const result = { newChars: [], updatedChars: [], ops: [] };
     if (!tasks?.length) return result;
 
     // 收集所有有 type 或 appear 的角色（LLM 认定的未知角色）
@@ -1653,27 +1696,14 @@ function autoLearnFromTasks(tasks, settings) {
             }
             knownTags.push(newChar);
             result.newChars.push(char.name);
+            result.ops.push(buildAutoLearnCreateOp(newChar, { candidate: char }));
         } else if (mode === 'auto_update') {
-            let updated = false;
-            if (!found.appearance && char.appear) {
-                found.appearance = char.appear;
-                updated = true;
+            const before = snapshotAutoLearnFields(found);
+            if (fillExistingCharacterFromCandidate(found, char)) {
+                result.updatedChars.push(found.name);
+                const op = buildAutoLearnUpdateOp(found, before);
+                if (op) result.ops.push(op);
             }
-            // 仅在外貌仍为空时更新 type（已有外貌说明角色已配置，不应覆盖 type）
-            if (!found.appearance && char.type && found.type !== char.type) {
-                found.type = char.type;
-                updated = true;
-            }
-            if (!found.danbooruTag && char.danbooru) {
-                found.danbooruTag = char.danbooru;
-                updated = true;
-            }
-            // 本地 DB 自动匹配 danbooruTag（auto_update 模式）
-            if (!found.danbooruTag && isDanbooruDBLoaded()) {
-                const matches = searchLocalDanbooru(found.name, 1);
-                if (matches.length) { found.danbooruTag = matches[0].name; updated = true; }
-            }
-            if (updated) result.updatedChars.push(found.name);
         }
     }
 
@@ -2850,16 +2880,29 @@ async function maybeAutoLearnFromTasks(tasks = [], settings = {}) {
         const tagsCopy = JSON.parse(JSON.stringify(settings.characterTags || []));
         const settingsCopy = { ...settings, characterTags: tagsCopy };
         const learnResult = autoLearnFromTasks(tasks, settingsCopy);
-        if (learnResult.newChars.length || learnResult.updatedChars.length) {
-            const parts = [];
-            if (learnResult.newChars.length) parts.push(`新角色: ${learnResult.newChars.join(', ')}`);
-            if (learnResult.updatedChars.length) parts.push(`更新: ${learnResult.updatedChars.join(', ')}`);
-            const msg = `已学习 ${parts.join(' | ')}`;
-            const ok = await updateSharedSettingsPersistent((draft) => {
-                draft.characterTags = tagsCopy;
-            }, msg);
-            if (ok && overlayCreated && frameReady) sendInitData();
-        }
+        if (!learnResult.ops.length) return;
+        // 学习用的是任务开始时的快照；写回时把操作列表合并到保存时最新的角色库，
+        // 任务期间用户的整理（分组、移动、复制、删除、导入、启停）原样保留。
+        const mergeOptions = {
+            mode: settings.autoLearnMode || 'new_only',
+            resolve: resolveAutoLearnCharacter,
+            fillExisting: fillExistingCharacterFromCandidate,
+        };
+        const probe = mergeAutoLearnOps(
+            characterLibraryFromSettings(getSharedDrawSettings()),
+            learnResult.ops,
+            mergeOptions,
+        );
+        if (!probe.changed) return;
+        const parts = [];
+        if (probe.created.length) parts.push(`新角色: ${probe.created.join(', ')}`);
+        if (probe.updated.length) parts.push(`更新: ${probe.updated.join(', ')}`);
+        const msg = `已学习 ${parts.join(' | ')}`;
+        const ok = await updateSharedSettingsPersistent((draft) => {
+            const merged = mergeAutoLearnOps(characterLibraryFromSettings(draft), learnResult.ops, mergeOptions);
+            if (merged.changed) draft.characterTags = merged.characters;
+        }, msg);
+        if (ok && overlayCreated && frameReady) sendInitData();
     } catch (e) {
         console.warn('[NovelDraw] 自动学习角色失败:', e);
     }
@@ -2949,6 +2992,7 @@ async function buildNovelScenePlannerOptions({
         absoluteMaxCharactersPerImage: capability.maxCharactersPerImage,
         modelGuide: getEffectiveNovelModelGuide(model, customPrompts),
         plannerProfile: getNovelPlannerProfile(model),
+        plannerRetry: { maxRetries: settings.plannerMaxRetries },
         onDiagnosticUpdate: diagnostic => onStateChange?.('llm', toScenePlannerProgress(diagnostic)),
         signal,
     };
@@ -2990,7 +3034,7 @@ async function generateImagesFromText(options = {}) {
         const sceneSource = createSceneSource(text, { filterRules });
         if (!sceneSource.content) throw new NovelDrawError('正文内容为空（可能被过滤规则清空）', ErrorType.PARSE);
 
-        const presentCharacters = detectPresentCharacters(sceneSource.content, settings.characterTags || []);
+        const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(settings));
         const continuityText = settings.continuityEnabled === false
             ? ''
             : await buildContinuityBlockForRequest({
@@ -3215,7 +3259,7 @@ async function generateAndInsertImages({
         );
         if (!sceneSource.content) throw new NovelDrawError('消息内容为空（可能被过滤规则清空）', ErrorType.PARSE);
 
-        const presentCharacters = detectPresentCharacters(sceneSource.content, settings.characterTags || []);
+        const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(settings));
 
         // 上镜锚点：读取本聊天中这些角色上一次实际入画的外貌/着装 tag，跨楼层延续。
         const continuityText = settings.continuityEnabled === false
@@ -3435,6 +3479,7 @@ function createOverlay() {
     // Guarded by isTrustedMessage (origin + source).
     // eslint-disable-next-line no-restricted-syntax
     window.addEventListener('message', handleFrameMessage);
+    subscribeGroupPresetRefresh();
 }
 
 function showOverlay() {
@@ -3463,6 +3508,7 @@ function hideOverlay() {
     }
 
     window.removeEventListener('message', handleFrameMessage);
+    unsubscribeGroupPresetRefresh();
 }
 
 let _sendInitDataTimer = null;
@@ -3508,7 +3554,13 @@ async function _doSendInitData() {
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
             useWorldInfo: settings.useWorldInfo,
+            plannerMaxRetries: settings.plannerMaxRetries,
             characterTags: settings.characterTags,
+            characterGroups: settings.characterGroups || [],
+            characterGroupPresets: settings.characterGroupPresets || [],
+            characterGroupPresetApplied: settings.characterGroupPresetApplied || null,
+            hostCharacters: listHostCharacters(),
+            activeAvatars: getActiveCharacterAvatars(),
             autoLearnCharacters: !!settings.autoLearnCharacters,
             autoLearnMode: settings.autoLearnMode || 'new_only',
             continuityEnabled: settings.continuityEnabled !== false,
@@ -3547,9 +3599,41 @@ async function _doSendInitData() {
     }
 }
 
-function postStatus(state, text, target = '') {
+function postStatus(state, text, target = '', extra = {}) {
     const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
-    if (iframe) postToIframe(iframe, { type: 'STATUS', state, text, target }, 'LittleWhiteBox-NovelDraw');
+    if (iframe) postToIframe(iframe, { type: 'STATUS', state, text, target, ...extra }, 'LittleWhiteBox-NovelDraw');
+}
+
+function postGroupPresetContext() {
+    const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+    if (!iframe?.contentWindow || !frameReady) return;
+    postToIframe(iframe, {
+        type: 'GROUP_PRESET_CONTEXT',
+        activeAvatars: getActiveCharacterAvatars(),
+        hostCharacters: listHostCharacters(),
+    }, 'LittleWhiteBox-NovelDraw');
+}
+
+let groupPresetUnsubscribers = [];
+function subscribeGroupPresetRefresh() {
+    unsubscribeGroupPresetRefresh();
+    groupPresetUnsubscribers = [
+        onGroupPresetApplied(() => { if (frameReady) void sendInitData(); }),
+        onGroupPresetContextChanged(() => postGroupPresetContext()),
+    ];
+}
+
+function unsubscribeGroupPresetRefresh() {
+    groupPresetUnsubscribers.splice(0).forEach((off) => { try { off(); } catch { /* 忽略 */ } });
+}
+
+function describeGroupPresetApply(result) {
+    if (result?.status === 'applied') {
+        return result.changed ? `已应用“${result.presetName}”：${result.changedCount} 个分组开关变化` : `“${result.presetName}”的分组开关已是目标状态，无变化`;
+    }
+    if (result?.status === 'preset-missing') return '预设不存在，请刷新后重试';
+    if (result?.status === 'no-presets') return '还没有可应用的预设';
+    return `应用分组预设失败${result?.message ? `：${result.message}` : ''}`;
 }
 
 function getAgentSettingsSurfaceRoot() {
@@ -4427,6 +4511,7 @@ async function handleFrameMessage(event) {
                 const newPreset = {
                     id,
                     name: (typeof data.name === 'string' && data.name.trim()) ? data.name.trim() : `提示词-${settings.promptPresets.length + 1}`,
+                    builtin: false,
                     topSystem: current?.topSystem ?? DEFAULT_PROMPT_CONFIG.topSystem,
                     sceneRules: current?.sceneRules ?? DEFAULT_PROMPT_CONFIG.sceneRules,
                     modelGuideOverrides: normalizeNovelPromptGuideOverrides(current?.modelGuideOverrides),
@@ -4469,6 +4554,11 @@ async function handleFrameMessage(event) {
         case 'DEL_PROMPT_PRESET': {
             const s = getSettings();
             const presetId = String(data.id || s.selectedPromptPresetId || '');
+            const target = s.promptPresets.find(p => p.id === presetId);
+            if (target?.builtin) {
+                postStatus('error', '内置模板不可删除，请先新建副本', 'prompt-preset');
+                break;
+            }
             let deleteResult = 'missing';
             const ok = await updateSettingsPersistent((settings) => {
                 if (settings.promptPresets.length <= 1) {
@@ -4497,6 +4587,10 @@ async function handleFrameMessage(event) {
         case 'RENAME_PROMPT_PRESET': {
             const presetId = String(data.id || getSettings().selectedPromptPresetId || '');
             const active = getSettings().promptPresets.find(p => p.id === presetId);
+            if (active?.builtin) {
+                postStatus('error', '内置模板不可重命名，请先新建副本', 'prompt-preset');
+                break;
+            }
             if (active && typeof data.name === 'string' && data.name.trim()) {
                 let presetFound = false;
                 const ok = await updateSettingsPersistent((settings) => {
@@ -4519,6 +4613,38 @@ async function handleFrameMessage(event) {
             const presetId = String(data.selectedPromptPresetId || getSettings().selectedPromptPresetId || '');
             if (data.promptDraft && typeof data.promptDraft === 'object') {
                 const statusTarget = data.statusTarget === 'prompt-preset' ? 'prompt-preset' : 'prompts';
+                const target = getSettings().promptPresets.find(p => p.id === presetId);
+                // 内置模板不可就地修改：保存等同「另存为」一个可编辑副本。
+                if (target?.builtin) {
+                    const newId = generateSlotId();
+                    let created = false;
+                    const ok = await updateSettingsPersistent((settings) => {
+                        const current = settings.promptPresets.find(p => p.id === presetId);
+                        if (!current) return;
+                        created = true;
+                        const cp = data.promptDraft;
+                        settings.promptPresets.push({
+                            id: newId,
+                            name: `${current.name} 副本`,
+                            builtin: false,
+                            topSystem: 'topSystem' in cp ? cp.topSystem : current.topSystem,
+                            sceneRules: 'sceneRules' in cp ? cp.sceneRules : current.sceneRules,
+                            modelGuideOverrides: compactPromptGuideOverrides(
+                                'modelGuideOverrides' in cp
+                                    ? cp.modelGuideOverrides
+                                    : current.modelGuideOverrides,
+                            ),
+                        });
+                        settings.selectedPromptPresetId = newId;
+                    }, '已另存为新预设', { target: statusTarget, notify: false });
+                    postStatus(
+                        ok && created ? 'success' : 'error',
+                        ok && created ? '内置模板已另存为可编辑副本' : ok ? '目标提示词预设已不存在' : '保存失败',
+                        statusTarget,
+                    );
+                    if (ok && created) sendInitData();
+                    break;
+                }
                 let presetFound = false;
                 const ok = await updateSettingsPersistent((settings) => {
                     const current = settings.promptPresets.find(p => p.id === presetId);
@@ -4568,6 +4694,9 @@ async function handleFrameMessage(event) {
         case 'SAVE_CHARACTER_TAGS': {
             const ok = await updateSharedSettingsPersistent((settings) => {
                 if (Array.isArray(data.characterTags)) settings.characterTags = data.characterTags;
+                if (Array.isArray(data.characterGroups)) settings.characterGroups = data.characterGroups;
+                if (Array.isArray(data.characterGroupPresets)) settings.characterGroupPresets = data.characterGroupPresets;
+                if (data.characterGroupPresetApplied !== undefined) settings.characterGroupPresetApplied = data.characterGroupPresetApplied || null;
             }, '角色标签已保存');
             if (!ok) await sendInitData();
             break;
@@ -4591,6 +4720,33 @@ async function handleFrameMessage(event) {
                 settings.continuityEnabled = enabled;
             }, enabled ? '上镜锚点已开启' : '上镜锚点已关闭');
             sendInitData();
+            break;
+        }
+
+        case 'SAVE_GROUP_PRESETS': {
+            const seq = Number(data.seq) || 0;
+            const result = await saveGroupPresets(data.presets);
+            if (result.saved) {
+                postStatus('success', '分组预设已保存', 'group-presets', { seq, presets: result.presets });
+            } else {
+                const reason = result.message || (result.status === 'invalid' ? '预设数据格式不正确' : '保存失败');
+                postStatus('error', `分组预设保存失败：${reason}`, 'group-presets', { seq });
+                await sendInitData();
+            }
+            break;
+        }
+
+        case 'APPLY_GROUP_PRESET': {
+            const requestId = typeof data.requestId === 'string' ? data.requestId : '';
+            const result = await applyGroupPresetForCurrentChat({ force: true, presetId: String(data.presetId || '') });
+            const applied = result?.status === 'applied';
+            const text = describeGroupPresetApply(result);
+            postStatus(applied ? 'success' : 'error', text, 'group-presets', {
+                requestId,
+                result: applied
+                    ? { status: 'applied', changed: Boolean(result.changed), changedCount: result.changedCount || 0 }
+                    : { status: 'error', message: result?.status === 'save-failed' || result?.status === 'error' ? (result.message || '') : text },
+            });
             break;
         }
 
@@ -4953,6 +5109,10 @@ export async function initNovelDraw() {
 
     setupEventDelegation();
     startSharedDrawPreviewRuntime();
+    startGroupPresetWatcher({ immediate: false });
+    // 恢复上次未完成的取消意图（IndexedDB 持久化，刷新/崩溃后补发取消）。
+    void resumeDrawCancellations(cancellationRunClient, getCancellationOwner())
+        .catch((error) => console.warn('[NovelDraw] 恢复取消意图失败:', error));
 
     // ════════════════════════════════════════════════════════════════════
     // 动态导入 floating-panel（避免循环依赖）

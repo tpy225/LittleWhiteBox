@@ -317,6 +317,7 @@ export async function buildScenePlannerTask(options = {}) {
             tool: request.tool,
             validationContext: request.validationContext,
             presentCharacters: Array.isArray(options.presentCharacters) ? options.presentCharacters : [],
+            retry: options.plannerRetry || null,
         },
         agent: { channel: '', providerConfig: null },
     });
@@ -352,6 +353,7 @@ export async function prepareScenePlannerInput(options = {}) {
             tool: request.tool,
             validationContext: request.validationContext,
             presentCharacters: Array.isArray(options.presentCharacters) ? options.presentCharacters : [],
+            retry: options.plannerRetry || null,
         },
         agent: {
             channel: String(providerConfig?.provider || ''),

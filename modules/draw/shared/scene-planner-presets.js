@@ -13,6 +13,28 @@ export const SCENE_PLANNER_PRESET_NAMES = Object.freeze({
  */
 export const PRO_PRESET_BUILTIN_NAME = '进阶-构图强化（内置 v2）';
 
+/**
+ * Names that identify a bundled preset even after a rename back to the stock label.
+ * Used together with the `builtin` flag to decide which presets are force-refreshed
+ * and locked read-only on upgrade.
+ */
+export const BUILTIN_PROMPT_PRESET_NAMES = Object.freeze(new Set([
+    SCENE_PLANNER_PRESET_NAMES.normal,
+    SCENE_PLANNER_PRESET_NAMES.pov,
+    SCENE_PLANNER_PRESET_NAMES.pro,
+    PRO_PRESET_BUILTIN_NAME,
+    '默认-完整规则',
+    '默认-第一人称完整规则',
+    '旧版-模型要求低（已升级）',
+]));
+
+/** A preset is built-in when it carries the flag or still uses a stock name. */
+export function isBuiltinPromptPreset(preset) {
+    if (!preset || typeof preset !== 'object') return false;
+    if (preset.builtin === true) return true;
+    return typeof preset.name === 'string' && BUILTIN_PROMPT_PRESET_NAMES.has(preset.name);
+}
+
 export function isPovPromptPreset(name) {
     return name === SCENE_PLANNER_PRESET_NAMES.pov || name === '默认-第一人称完整规则';
 }
@@ -32,6 +54,7 @@ export function createScenePlannerDefaultPresets(defaults) {
     return [false, true].map(pov => ({
         id: `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         name: pov ? SCENE_PLANNER_PRESET_NAMES.pov : SCENE_PLANNER_PRESET_NAMES.normal,
+        builtin: true,
         topSystem: pov ? defaults.topSystemPov : defaults.topSystem,
         sceneRules: defaults.sceneRules,
         ...(typeof defaults.tagGuideContent === 'string'
@@ -48,6 +71,7 @@ export function createScenePlannerProPreset(defaults) {
     return {
         id: `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         name: SCENE_PLANNER_PRESET_NAMES.pro,
+        builtin: true,
         topSystem: defaults.topSystem,
         sceneRules: defaults.sceneRulesPro,
         ...(typeof defaults.tagGuideContent === 'string'

@@ -19,6 +19,10 @@ const DEFAULT_SHARED_DRAW_SETTINGS = {
     autoGenerateImages: true,
     imageTitleMode: DEFAULT_IMAGE_TITLE_MODE,
     characterTags: [],
+    characterGroups: [],
+    characterGroupPresets: [],
+    characterGroupPresetApplied: null,
+    plannerMaxRetries: 3,
     danbooruLocalDB: false,
     messageFilterRules: [],
     worldbooks: { enabled: false, uploadedBooks: [], keywordFilterMode: 'auto' },
@@ -111,7 +115,21 @@ export function normalizeSharedDrawSettings(saved = {}) {
             danbooruTag: String(char.danbooruTag || ''),
             outfits: normalizeNamedTagList(char.outfits || char.costumes || char.clothes || []),
             dynamicStates: normalizeNamedTagList(char.dynamicStates || []),
+            ...(char.groupId ? { groupId: String(char.groupId) } : {}),
         }));
+    const characterGroups = (Array.isArray(source.characterGroups) ? source.characterGroups : [])
+        .filter(group => group && typeof group === 'object')
+        .map(group => ({
+            id: String(group.id || `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+            name: String(group.name || '未命名分组'),
+            enabled: group.enabled !== false,
+        }));
+    const characterGroupPresets = (Array.isArray(source.characterGroupPresets) ? source.characterGroupPresets : [])
+        .filter(preset => preset && typeof preset === 'object');
+    const plannerMaxRetriesRaw = Number(source.plannerMaxRetries);
+    const plannerMaxRetries = Number.isFinite(plannerMaxRetriesRaw) && plannerMaxRetriesRaw >= 0
+        ? Math.min(10, Math.floor(plannerMaxRetriesRaw))
+        : DEFAULT_SHARED_DRAW_SETTINGS.plannerMaxRetries;
     const timeout = Number(source.timeout);
 
     return {
@@ -123,6 +141,10 @@ export function normalizeSharedDrawSettings(saved = {}) {
         autoGenerateImages: source.autoGenerateImages !== false,
         imageTitleMode: normalizeImageTitleMode(source.imageTitleMode),
         characterTags,
+        characterGroups,
+        characterGroupPresets,
+        characterGroupPresetApplied: source.characterGroupPresetApplied || null,
+        plannerMaxRetries,
         danbooruLocalDB: source.danbooruLocalDB === true,
         messageFilterRules,
         worldbooks: {
