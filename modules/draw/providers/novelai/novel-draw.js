@@ -2490,21 +2490,11 @@ async function handleDelegatedClick(e) {
             break;
         }
         case 'open-gallery': {
-            // 點圖只切換控制列（張數列＋「⋮」），不做放大；放大改由「⋮」內的「放大」執行。
+            // 點圖只切換控制列（張數列＋「⋮」），不開彈窗放大。
             const willShow = !container.classList.contains('controls-visible');
             container.classList.toggle('controls-visible', willShow);
             if (!willShow) {
                 document.querySelectorAll('.xb-nd-menu-wrap.open').forEach(w => w.classList.remove('open'));
-            }
-            break;
-        }
-        case 'view-image': {
-            container.querySelector('.xb-nd-menu-wrap')?.classList.remove('open');
-            try {
-                await handleImageClick(container);
-            } catch (err) {
-                showToast(`開啟畫廊失敗 — ${err?.message || err}`, 'error', 6000);
-                throw err;
             }
             break;
         }
