@@ -224,6 +224,12 @@ export function ensureDrawImageStyles() {
 .xb-nd-nav-arrow:disabled{opacity:0.3;cursor:not-allowed}
 .xb-nd-nav-text{min-width:36px;text-align:center;font-variant-numeric:tabular-nums;padding:0 2px}
 @media(hover:none),(pointer:coarse){.xb-nd-nav-pill{opacity:0.78;padding:5px 8px}}
+/* 點擊才顯示控制鈕（僅由 NovelAI 端在 body 上掛 .xb-nd-tap-controls 時生效）：
+   張數翻動列與「⋮」選單鈕默認隱藏，點圖片叫出、再點圖片收起。 */
+.xb-nd-tap-controls .xb-nd-img .xb-nd-nav-pill,
+.xb-nd-tap-controls .xb-nd-img .xb-nd-menu-trigger{opacity:0;pointer-events:none}
+.xb-nd-tap-controls .xb-nd-img.controls-visible .xb-nd-nav-pill{opacity:0.82;pointer-events:auto}
+.xb-nd-tap-controls .xb-nd-img.controls-visible .xb-nd-menu-trigger{opacity:0.9;pointer-events:auto}
 .xb-nd-title-bar{position:absolute;top:0;left:0;right:0;z-index:6;pointer-events:none;display:flex;align-items:center;min-height:22px;padding:3px 44px 3px 10px;background:rgba(0,0,0,0.55);font-size:13px;line-height:1.4;letter-spacing:0.02em;color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,0.6);opacity:0;transition:opacity 0.2s ease}
 .xb-nd-img-wrap:hover .xb-nd-title-bar,.xb-nd-img-wrap.title-show .xb-nd-title-bar{opacity:1}
 /* details 收縮到內容寬並置中；摺疊標題列寬度吃 JS 量得的圖片實寬（--xb-img-w），
@@ -300,6 +306,7 @@ export function buildImageHtml({ slotId, imgId, url, tags, positive, messageId, 
     const menuHtml = `<div class="xb-nd-menu-wrap${menuBusy}">
         <button class="xb-nd-menu-trigger" data-action="toggle-menu" title="操作">⋮</button>
         <div class="xb-nd-dropdown">
+            <button data-action="view-image" title="放大">⤢</button>
             ${isPreview ? '<button data-action="save-image" title="保存到服务器">⬇</button>' : ''}
             <button data-action="refresh-image" title="重新生成">${RELOAD_ICON_SVG}</button>
             <button data-action="edit-tags" title="编辑TAG">✐</button>

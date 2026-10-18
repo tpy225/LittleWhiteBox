@@ -2489,9 +2489,25 @@ async function handleDelegatedClick(e) {
             wrap.classList.toggle('open');
             break;
         }
-        case 'open-gallery':
-            await handleImageClick(container);
+        case 'open-gallery': {
+            // 點圖只切換控制列（張數列＋「⋮」），不做放大；放大改由「⋮」內的「放大」執行。
+            const willShow = !container.classList.contains('controls-visible');
+            container.classList.toggle('controls-visible', willShow);
+            if (!willShow) {
+                document.querySelectorAll('.xb-nd-menu-wrap.open').forEach(w => w.classList.remove('open'));
+            }
             break;
+        }
+        case 'view-image': {
+            container.querySelector('.xb-nd-menu-wrap')?.classList.remove('open');
+            try {
+                await handleImageClick(container);
+            } catch (err) {
+                showToast(`開啟畫廊失敗 — ${err?.message || err}`, 'error', 6000);
+                throw err;
+            }
+            break;
+        }
         case 'refresh-image':
             container.querySelector('.xb-nd-menu-wrap')?.classList.remove('open');
             await refreshSingleImage(container);
@@ -2544,6 +2560,9 @@ async function handleDelegatedClick(e) {
 function setupEventDelegation() {
     if (window._xbNovelEventsBound) return;
     window._xbNovelEventsBound = true;
+
+    // 啟用「點圖才顯示控制列」樣式（該 CSS 只在此類存在時生效，不影響 SD/ComfyUI）
+    document.body.classList.add('xb-nd-tap-controls');
 
     document.addEventListener('click', handleDelegatedClick, { capture: true });
     document.addEventListener('touchstart', handleTouchStart, { passive: true });
