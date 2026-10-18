@@ -1244,7 +1244,11 @@ function getRuntimeSettings() {
         timeout: sharedSettings.timeout,
         cacheDays: sharedSettings.cacheDays,
         useWorldInfo: sharedSettings.useWorldInfo,
+        plannerMaxRetries: sharedSettings.plannerMaxRetries,
         characterTags: sharedSettings.characterTags,
+        characterGroups: sharedSettings.characterGroups,
+        characterGroupPresets: sharedSettings.characterGroupPresets,
+        characterGroupPresetApplied: sharedSettings.characterGroupPresetApplied,
         worldbooks: sharedSettings.worldbooks,
         danbooruLocalDB: sharedSettings.danbooruLocalDB,
         messageFilterRules: sharedSettings.messageFilterRules,
@@ -2922,6 +2926,7 @@ async function buildNovelScenePlannerOptions({
         absoluteMaxCharactersPerImage: capability.maxCharactersPerImage,
         modelGuide: getEffectiveNovelModelGuide(model, customPrompts),
         plannerProfile: getNovelPlannerProfile(model),
+        plannerRetry: { maxRetries: settings.plannerMaxRetries },
         onDiagnosticUpdate: diagnostic => onStateChange?.('llm', toScenePlannerProgress(diagnostic)),
         signal,
     };
@@ -3481,7 +3486,11 @@ async function _doSendInitData() {
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
             useWorldInfo: settings.useWorldInfo,
+            plannerMaxRetries: settings.plannerMaxRetries,
             characterTags: settings.characterTags,
+            characterGroups: settings.characterGroups || [],
+            characterGroupPresets: settings.characterGroupPresets || [],
+            characterGroupPresetApplied: settings.characterGroupPresetApplied || null,
             autoLearnCharacters: !!settings.autoLearnCharacters,
             autoLearnMode: settings.autoLearnMode || 'new_only',
             continuityEnabled: settings.continuityEnabled !== false,
@@ -4541,6 +4550,9 @@ async function handleFrameMessage(event) {
         case 'SAVE_CHARACTER_TAGS': {
             const ok = await updateSharedSettingsPersistent((settings) => {
                 if (Array.isArray(data.characterTags)) settings.characterTags = data.characterTags;
+                if (Array.isArray(data.characterGroups)) settings.characterGroups = data.characterGroups;
+                if (Array.isArray(data.characterGroupPresets)) settings.characterGroupPresets = data.characterGroupPresets;
+                if (data.characterGroupPresetApplied !== undefined) settings.characterGroupPresetApplied = data.characterGroupPresetApplied || null;
             }, '角色标签已保存');
             if (!ok) await sendInitData();
             break;
