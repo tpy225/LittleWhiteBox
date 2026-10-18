@@ -1234,7 +1234,7 @@ async function loadSettings() {
         if (saved && promptUpgrade.installed) {
             showToast(SCENE_PLANNER_PRESET_INSTALL_NOTICE, 'info', 8000);
         }
-        if (promptUpgrade.proAdded) {
+        if (saved && promptUpgrade.proAdded) {
             showToast('提示词预设列表已新增「进阶-构图强化」，可在提示词设置中切换；当前预设保持不变', 'info', 8000);
         }
         if (promptUpgrade.proRefreshed) {

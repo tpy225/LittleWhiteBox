@@ -1,7 +1,6 @@
 import { NOVEL_PROMPT_GUIDES } from './novel-model-capabilities.js';
 import { promptTemplateFingerprint } from '../../shared/prompt-template-migration.js';
 import {
-    createScenePlannerBuiltinProPreset,
     createScenePlannerProPreset,
     installScenePlannerPresets,
     isBuiltinPromptPreset,
@@ -22,16 +21,6 @@ const UPSTREAM_V4_PROMPT_FINGERPRINTS = Object.freeze({
     userJsonFormat: '9753:8aae4f39:f6eaf107',
     legacyUserJsonFormat: '2280:fbc8792d:9d385adb',
 });
-
-
-// Released revisions of the bundled `进阶-构图强化` rules. A saved copy whose sceneRules
-// still fingerprint to one of these was never edited by the user, so the current bundled
-// rules replace it on upgrade; an edited copy keeps its own text untouched.
-const PRO_PRESET_RELEASED_SCENE_RULES = Object.freeze([
-    '5501:5333f1f6:20175d04', // 初版：v15「進階-構圖強化」遷移
-    '5574:8d01ba86:a43e7706', // 補回服裝參考庫「選一套改寫」規則
-    '5719:e95756b0:47f77fb6', // v3.1.7 前的現行版
-]);
 
 const UPSTREAM_MANAGED_PRESETS = Object.freeze({
     '默认-模型要求高': { name: '默认-完整规则', pov: false },
@@ -321,6 +310,27 @@ function refreshBuiltinPresetContent(settings, currentDefaults) {
     };
 }
 
+/**
+ * New NovelAI installs open on the enhanced preset. Only a settings object that carried
+ * neither presets nor a selection counts as fresh; every existing user keeps whatever
+ * they had chosen, so an upgrade never silently swaps the active template.
+ */
+function selectProPresetForFreshInstall(settings, saved) {
+    const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+    const hadPresets = Array.isArray(saved?.promptPresets) && saved.promptPresets.length > 0;
+    if (hadPresets || saved?.selectedPromptPresetId) {
+        return { settings: source, switched: false };
+    }
+    const pro = (source.promptPresets || []).find(preset => preset?.name === SCENE_PLANNER_PRESET_NAMES.pro);
+    if (!pro || source.selectedPromptPresetId === pro.id) {
+        return { settings: source, switched: false };
+    }
+    return {
+        settings: { ...source, selectedPromptPresetId: pro.id },
+        switched: true,
+    };
+}
+
 export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetVersion) {
     const source = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
     const result = migrateLegacyNovelPromptPresets(source.promptPresets, {
@@ -334,17 +344,19 @@ export function migrateLegacyNovelPromptSettings(saved, currentDefaults, targetV
     const pro = ensureOptionalProPreset(installation.settings, currentDefaults);
     const refresh = refreshProPresetRules(pro.settings, currentDefaults);
     const builtin = refreshBuiltinPresetContent(refresh.settings, currentDefaults);
+    const proDefault = selectProPresetForFreshInstall(builtin.settings, source);
     return {
         ...result,
-        settings: builtin.settings,
-        presets: builtin.settings.promptPresets,
-        templateVersion: builtin.settings._promptTemplateVersion,
+        settings: proDefault.settings,
+        presets: proDefault.settings.promptPresets,
+        templateVersion: proDefault.settings._promptTemplateVersion,
         proAdded: pro.added,
         proRefreshed: refresh.replaced,
         proAppended: refresh.appended,
         builtinRefreshed: builtin.refreshed,
+        proSelected: proDefault.switched,
         migrated: result.migrated || installation.changed || pro.added || refresh.replaced
-            || refresh.appended || builtin.refreshed,
+            || refresh.appended || builtin.refreshed || proDefault.switched,
         installed: installation.installed,
     };
 }
