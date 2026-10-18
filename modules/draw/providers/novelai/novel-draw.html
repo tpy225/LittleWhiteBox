@@ -4818,7 +4818,9 @@ function applyPromptPreset() {
             ? '<i class="fa-solid fa-copy"></i> 另存为可编辑副本'
             : '<i class="fa-solid fa-floppy-disk"></i> 保存到当前预设';
     }
-    for (const id of ['nd_prompt_rename', 'nd_prompt_del']) {
+    for (const id of ['nd_prompt_rename', 'nd_prompt_del',
+        'nd_prompt_reset_system', 'nd_prompt_reset_format', 'nd_prompt_reset_guide',
+        'nd_prompts_reset_all']) {
         const btn = $(id);
         if (btn) btn.disabled = isBuiltin;
     }
@@ -5894,48 +5896,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }, statusTarget: 'prompts' });
     });
 
-    // 恢复默认只改表单；点保存才落盘
+    // 恢复默认：内置模板禁用；自定义模板恢复到該預設已保存的內容（清除未保存草稿），而非插件內置模板。
     const refreshChainIfOpen = () => { if ($('nd_prompt_chain_details').open) requestPromptChainPreview(); };
     $('nd_prompt_reset_system').addEventListener('click', () => {
-        const activePreset = (state.promptPresets || []).find(p => p.id === state.selectedPromptPresetId);
-        const isPov = ['默认-第一人称完整规则', '新版-第一人称完整规则'].includes(activePreset?.name);
-        const defaultTopSystem = isPov ? (state._defaultPrompts?.topSystemPov || '') : (state._defaultPrompts?.topSystem || '');
-        $('nd_prompt_system').value = defaultTopSystem;
-        setCurrentPromptTextDraft('topSystem', defaultTopSystem);
+        const activePreset = getActivePromptPresetForForm();
+        if (!activePreset || activePreset.builtin) return;
+        const savedTopSystem = activePreset.topSystem ?? '';
+        $('nd_prompt_system').value = savedTopSystem;
+        setCurrentPromptTextDraft('topSystem', savedTopSystem);
         refreshChainIfOpen();
     });
     $('nd_prompt_reset_format').addEventListener('click', () => {
-        const defaultSceneRules = state._defaultPrompts?.sceneRules || '';
-        $('nd_prompt_format').value = defaultSceneRules;
-        setCurrentPromptTextDraft('sceneRules', defaultSceneRules);
+        const activePreset = getActivePromptPresetForForm();
+        if (!activePreset || activePreset.builtin) return;
+        const savedSceneRules = activePreset.sceneRules ?? '';
+        $('nd_prompt_format').value = savedSceneRules;
+        setCurrentPromptTextDraft('sceneRules', savedSceneRules);
         refreshChainIfOpen();
     });
     $('nd_prompt_reset_guide').addEventListener('click', () => {
-        const defaultContent = state.modelGuideDefaults?.[getCurrentModelGuideId()] ?? '';
+        const activePreset = getActivePromptPresetForForm();
+        if (!activePreset || activePreset.builtin) return;
+        const guideId = getCurrentModelGuideId();
+        const savedOverride = activePreset.modelGuideOverrides?.[guideId];
+        const defaultContent = typeof savedOverride === 'string'
+            ? savedOverride
+            : (state.modelGuideDefaults?.[guideId] ?? '');
         $('nd_prompt_guide').value = defaultContent;
         setCurrentModelGuideDraft(defaultContent);
         refreshChainIfOpen();
     });
     $('nd_prompts_reset_all').addEventListener('click', () => {
-        if (!confirm('确认将当前预设的全部提示词恢复为默认值？（需点击保存才会生效）')) return;
-        const defaults = state._defaultPrompts || {};
         const activePreset = getActivePromptPresetForForm();
         if (!activePreset) {
             alert('没有可恢复的提示词预设');
             return;
         }
-        const isPov = ['默认-第一人称完整规则', '新版-第一人称完整规则'].includes(activePreset.name);
-        const topSystemVal = isPov ? (defaults.topSystemPov || '') : (defaults.topSystem || '');
-        const sceneRulesVal = defaults.sceneRules || '';
+        if (activePreset.builtin) return;
+        if (!confirm('确认将当前预设的全部提示词恢复为已保存的值？（未保存的修改将被丢弃）')) return;
+        const topSystemVal = activePreset.topSystem ?? '';
+        const sceneRulesVal = activePreset.sceneRules ?? '';
         $('nd_prompt_system').value = topSystemVal;
         $('nd_prompt_format').value = sceneRulesVal;
         promptTextDraftsByPreset.set(activePreset.id, new Map([
             ['topSystem', topSystemVal],
             ['sceneRules', sceneRulesVal],
         ]));
+        const savedOverrides = activePreset.modelGuideOverrides && typeof activePreset.modelGuideOverrides === 'object'
+            ? activePreset.modelGuideOverrides
+            : {};
         modelGuideDraftsByPreset.set(activePreset.id, new Map(
             Object.entries(state.modelGuideDefaults || {})
-                .filter(([, content]) => typeof content === 'string'),
+                .map(([guideId, content]) => [
+                    guideId,
+                    typeof savedOverrides[guideId] === 'string' ? savedOverrides[guideId] : content,
+                ]),
         ));
         applyModelGuideForCurrentModel();
         refreshChainIfOpen();
