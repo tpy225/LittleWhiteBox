@@ -83,7 +83,7 @@ import {
     normalizeNovelPromptGuideOverrides,
 } from "./novel-prompts.js";
 import { parseNovelPromptPresetImport } from "./novel-prompt-import.js";
-import { createScenePlannerDefaultPresets, isPovPromptPreset, SCENE_PLANNER_PRESET_INSTALL_NOTICE, SCENE_PLANNER_PRESET_NAMES } from "../../shared/scene-planner-presets.js";
+import { createScenePlannerDefaultPresets, isPovPromptPreset, PRO_PRESET_BUILTIN_NAME, SCENE_PLANNER_PRESET_INSTALL_NOTICE, SCENE_PLANNER_PRESET_NAMES } from "../../shared/scene-planner-presets.js";
 import {
     getNovelModelCapability,
     getNovelModelCapabilitiesForUi,
@@ -157,9 +157,9 @@ const MODULE_KEY = 'novelDraw';
 const DRAW_RUN_PROVIDER = 'novelai';
 const SERVER_FILE_KEY = 'settings';
 const HTML_PATH = `${extensionFolderPath}/modules/draw/providers/novelai/novel-draw.html`;
-// 后端发送模式走 SillyTavern server plugin 转发（需安装 plugins/littlewhitebox-image-jobs 并开启 enableServerPlugins），
+// 后端发送模式走 SillyTavern server plugin 转发（需安装 plugins/littlewhitebox-server 并开启 enableServerPlugins），
 // 用于绕过浏览器 CORS / 自签证书限制。历史插件 littlewhitebox-nai 是独立 ID，这里不探测、不回退。
-const NAI_BACKEND_BASE = '/api/plugins/littlewhitebox-image-jobs';
+const NAI_BACKEND_BASE = '/api/plugins/littlewhitebox-server';
 const NAI_BACKEND_GENERATE = `${NAI_BACKEND_BASE}/v1/generate-image`;
 const NAI_BACKEND_GENERATE_V2 = `${NAI_BACKEND_BASE}/v2/generate-image`;
 const NAI_BACKEND_GENERATE_STREAM = `${NAI_BACKEND_BASE}/v1/generate-image-stream`;
@@ -259,14 +259,14 @@ async function assertV5BackendCapability(signal) {
                 ? `版本过旧（当前 v${status.version || '未知'}）`
                 : '未就绪';
         throw new NovelDrawError(
-            `NovelAI V5 后端插件${reason}，请安装当前 littlewhitebox-image-jobs（兼容后端最低 v${NAI_BACKEND_V5_MIN_VERSION}）`,
+            `NovelAI V5 后端插件${reason}，请安装当前 littlewhitebox-server（兼容后端最低 v${NAI_BACKEND_V5_MIN_VERSION}）`,
             ErrorType.NETWORK,
         );
     }
     if (!isVersionAtLeast(status.version, NAI_BACKEND_V5_MIN_VERSION)
         || !status.capabilities?.includes('v5-msgpack-stream')) {
         throw new NovelDrawError(
-            `当前后端插件不支持 NovelAI V5 流协议，请安装当前 littlewhitebox-image-jobs（兼容后端最低 v${NAI_BACKEND_V5_MIN_VERSION}）`,
+            `当前后端插件不支持 NovelAI V5 流协议，请安装当前 littlewhitebox-server（兼容后端最低 v${NAI_BACKEND_V5_MIN_VERSION}）`,
             ErrorType.NETWORK,
         );
     }
@@ -330,6 +330,29 @@ const DEFAULT_PARAMS_PRESET_2 = {
     },
 };
 
+// 内置「官方」API 预设：官方端点 + 用户自己的 API Key。它与其他预设一样持久化在
+// apiPresets 中（id 固定为 OFFICIAL_API_PRESET_ID），渲染时置顶、不可删除。
+const OFFICIAL_API_PRESET_ID = 'official';
+const OFFICIAL_API_PRESET = Object.freeze({ id: OFFICIAL_API_PRESET_ID, name: '官方', builtin: true });
+
+// 把一条预设的一组值写进扁平字段（请求层唯一读取来源）。
+function applyApiPresetToFlatFields(settings, preset) {
+    settings.apiKey = String(preset.apiKey || '');
+    settings.apiBaseUrl = String(preset.apiBaseUrl || '').trim();
+    settings.sendMode = preset.sendMode === 'backend' ? 'backend' : 'frontend';
+    settings.insecureTLS = preset.insecureTLS === true;
+    settings.useImageBackendJobs = preset.useImageBackendJobs === true;
+}
+
+// 把当前扁平字段写回某条预设（提交编辑期的值）。
+function commitFlatFieldsToApiPreset(settings, preset) {
+    preset.apiKey = String(settings.apiKey || '');
+    preset.apiBaseUrl = String(settings.apiBaseUrl || '').trim();
+    preset.sendMode = settings.sendMode === 'backend' ? 'backend' : 'frontend';
+    preset.insecureTLS = settings.insecureTLS === true;
+    preset.useImageBackendJobs = settings.useImageBackendJobs === true;
+}
+
 const DEFAULT_SETTINGS = {
     configVersion: CONFIG_VERSION,
     updatedAt: 0,
@@ -339,6 +362,8 @@ const DEFAULT_SETTINGS = {
     sendMode: 'frontend',
     useImageBackendJobs: false,
     insecureTLS: false,
+    apiPresets: [],
+    selectedApiPresetId: OFFICIAL_API_PRESET_ID,
     selectedParamsPresetId: null,
     paramsPresets: [],
     vibeLibrary: { singles: [], groups: [] },
@@ -973,6 +998,20 @@ function normalizeParamsPreset(preset, index) {
     };
 }
 
+// 单套 API 预设：只存“编辑期的一组值”，请求层仍以扁平字段为唯一来源。
+function normalizeApiPreset(preset, index) {
+    const source = preset && typeof preset === 'object' && !Array.isArray(preset) ? preset : {};
+    return {
+        id: String(source.id || `api-${Date.now()}-${index}`),
+        name: String(source.name || `预设 ${index + 1}`),
+        apiKey: String(source.apiKey || ''),
+        apiBaseUrl: String(source.apiBaseUrl || '').trim(),
+        sendMode: source.sendMode === 'backend' ? 'backend' : 'frontend',
+        insecureTLS: source.insecureTLS === true,
+        useImageBackendJobs: source.useImageBackendJobs === true,
+    };
+}
+
 function normalizeSettings(saved = {}) {
     const source = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
     const rawWorldbooks = source.worldbooks && typeof source.worldbooks === 'object'
@@ -991,6 +1030,12 @@ function normalizeSettings(saved = {}) {
         sendMode: source.sendMode === 'backend' ? 'backend' : 'frontend',
         useImageBackendJobs: source.useImageBackendJobs === true,
         insecureTLS: source.insecureTLS === true,
+        apiPresets: Array.isArray(source.apiPresets)
+            ? source.apiPresets.map(normalizeApiPreset)
+            : [],
+        selectedApiPresetId: source.selectedApiPresetId == null
+            ? OFFICIAL_API_PRESET_ID
+            : String(source.selectedApiPresetId),
         selectedParamsPresetId: source.selectedParamsPresetId == null
             ? null
             : String(source.selectedParamsPresetId),
@@ -1093,6 +1138,29 @@ function normalizeSettings(saved = {}) {
         .filter(r => r && typeof r === 'object')
         .map(r => ({ start: String(r.start || ''), end: String(r.end || '') }));
 
+    // 官方预设也持久化在 apiPresets 中：缺失时用当前扁平字段创建它
+    // （正好等于旧用户原本的官方值，key 不丢），并置顶渲染。
+    if (!merged.apiPresets.some(preset => preset.id === OFFICIAL_API_PRESET_ID)) {
+        merged.apiPresets.unshift({
+            id: OFFICIAL_API_PRESET_ID,
+            name: OFFICIAL_API_PRESET.name,
+            apiKey: merged.apiKey,
+            apiBaseUrl: merged.apiBaseUrl,
+            sendMode: merged.sendMode,
+            insecureTLS: merged.insecureTLS,
+            useImageBackendJobs: merged.useImageBackendJobs,
+        });
+    }
+
+    // selectedApiPresetId 必须是现存预设之一，否则回落到官方。
+    if (!merged.apiPresets.some(preset => preset.id === merged.selectedApiPresetId)) {
+        merged.selectedApiPresetId = OFFICIAL_API_PRESET_ID;
+    }
+
+    // 不变式：扁平字段恒等于当前选中预设的值（请求层唯一读取来源）。
+    const activeApiPreset = merged.apiPresets.find(preset => preset.id === merged.selectedApiPresetId);
+    if (activeApiPreset) applyApiPresetToFlatFields(merged, activeApiPreset);
+
     return merged;
 }
 
@@ -1109,7 +1177,10 @@ async function loadSettings() {
         if (!saved
             || saved.configVersion !== CONFIG_VERSION
             || Number(saved._promptTemplateVersion) !== PROMPT_TEMPLATE_VERSION
-            || promptUpgrade.migrated) {
+            || promptUpgrade.migrated
+            // 旧数据里官方预设还不是持久化条目：一次性写回，之后再读即命中。
+            || !Array.isArray(saved.apiPresets)
+            || !saved.apiPresets.some(p => String(p?.id) === OFFICIAL_API_PRESET_ID)) {
             settingsCache.configVersion = CONFIG_VERSION;
             settingsCache.updatedAt = Date.now();
             const storageValue = mergeNovelDrawProviderSettingsIntoStorageRoot(saved, settingsCache);
@@ -1122,6 +1193,12 @@ async function loadSettings() {
         }
         if (promptUpgrade.proAdded) {
             showToast('提示词预设列表已新增「进阶-构图强化」，可在提示词设置中切换；当前预设保持不变', 'info', 8000);
+        }
+        if (promptUpgrade.proRefreshed) {
+            showToast('「进阶-构图强化」预设的规则已更新为新版', 'info', 8000);
+        }
+        if (promptUpgrade.proAppended) {
+            showToast(`已追加内置新版预设「${PRO_PRESET_BUILTIN_NAME}」，你原来改过的副本保持不变，可在提示词设置中切换`, 'info', 8000);
         }
         if (promptUpgrade.upstreamPresetCount > 0) {
             const customNotice = promptUpgrade.customPresetCount > 0
@@ -1641,10 +1718,10 @@ async function generateViaBackend({ url, legacyBaseUrl, apiKey, insecure, payloa
         }
     } catch (e) {
         if (e?.name === 'AbortError') throw e;
-        throw new NovelDrawError('后端代发失败（未安装 littlewhitebox-image-jobs 插件或 SillyTavern 未开启 server plugins）', ErrorType.NETWORK);
+        throw new NovelDrawError('后端代发失败（未安装 littlewhitebox-server 插件或 SillyTavern 未开启 server plugins）', ErrorType.NETWORK);
     }
     if (res.status === 404) {
-        throw imageHttpFailure(new NovelDrawError('后端端点不存在：请安装 plugins/littlewhitebox-image-jobs 并在 config.yaml 开启 enableServerPlugins 后重启酒馆', ErrorType.NETWORK), 404);
+        throw imageHttpFailure(new NovelDrawError('后端端点不存在：请安装 plugins/littlewhitebox-server 并在 config.yaml 开启 enableServerPlugins 后重启酒馆', ErrorType.NETWORK), 404);
     }
     if (!res.ok) {
         throw parseApiError(res.status, await res.text().catch(() => ''));
@@ -1679,11 +1756,11 @@ async function generateV5ViaBackend({ url, apiKey, insecure, payload, signal, ti
         });
     } catch (error) {
         if (error?.name === 'AbortError') throw error;
-        throw new NovelDrawError('V5 后端代发失败，请检查 littlewhitebox-image-jobs 插件', ErrorType.NETWORK);
+        throw new NovelDrawError('V5 后端代发失败，请检查 littlewhitebox-server 插件', ErrorType.NETWORK);
     }
     if (response.status === 404) {
         throw imageHttpFailure(new NovelDrawError(
-            `V5 后端端点不存在：请安装当前 littlewhitebox-image-jobs（兼容后端最低 v${NAI_BACKEND_V5_MIN_VERSION}）`,
+            `V5 后端端点不存在：请安装当前 littlewhitebox-server（兼容后端最低 v${NAI_BACKEND_V5_MIN_VERSION}）`,
             ErrorType.NETWORK,
         ), 404);
     }
@@ -1753,7 +1830,7 @@ async function testApiConnection(apiKey, baseUrl, opts = {}) {
                 await res.body?.cancel?.().catch(() => {});
                 res = await request(NAI_BACKEND_TEST);
             }
-            if (res.status === 404) throw new NovelDrawError('后端端点不存在：请安装 plugins/littlewhitebox-image-jobs 并开启 enableServerPlugins 后重启酒馆', ErrorType.NETWORK);
+            if (res.status === 404) throw new NovelDrawError('后端端点不存在：请安装 plugins/littlewhitebox-server 并开启 enableServerPlugins 后重启酒馆', ErrorType.NETWORK);
             const data = await res.json().catch(() => null);
             if (data?.ok === true) return { success: true };
             if (data?.status === 401) throw new NovelDrawError('API Key 无效', ErrorType.AUTH);
@@ -2027,14 +2104,14 @@ async function runNovelImageBatch({
             if (!hasImageBackendJobsCapability(backendStatus)) {
                 detachScope.dispose();
                 throw new NovelDrawError(
-                    '小白X后台批量任务不可用。请安装并启动当前 littlewhitebox-image-jobs，或关闭此选项后继续使用逐张后端发送。',
+                    '小白X后台批量任务不可用。请安装并启动当前 littlewhitebox-server，或关闭此选项后继续使用逐张后端发送。',
                     ErrorType.NETWORK,
                 );
             }
             if (prepared.some(item => item.isV5) && !hasNovelV5FinalImageCapability(backendStatus)) {
                 detachScope.dispose();
                 throw new NovelDrawError(
-                    '当前后端插件仍会把 NovelAI V5 原始流交给浏览器。请安装并启动当前 littlewhitebox-image-jobs，或关闭“小白X后台任务”。',
+                    '当前后端插件仍会把 NovelAI V5 原始流交给浏览器。请安装并启动当前 littlewhitebox-server，或关闭“小白X后台任务”。',
                     ErrorType.NETWORK,
                 );
             }
@@ -3079,7 +3156,8 @@ async function runPreparedNovelSlots(input) {
     try {
         const settings = input.settings || cloneSettingsObject(getRuntimeSettings());
         const preset = input.preset || cloneSettingsObject(getActiveParamsPreset());
-        const vibeReferences = await ensurePresetVibeReady(settings, preset, {
+        // 手动模式不立即出图，跳过 Vibe 预编码，等用户点该槽位「生成」时再走正常流程
+        const vibeReferences = input.manual ? [] : await ensurePresetVibeReady(settings, preset, {
             signal: job.controller.signal,
         });
         const recipe = createNovelGenerationRecipe({
@@ -3094,7 +3172,7 @@ async function runPreparedNovelSlots(input) {
         const monitorGeneration = backendJobMonitors.captureGeneration();
         return await submitPreparedChatImages({
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
-            presetId: preset.id, presetName: preset.name,
+            presetId: preset.id, presetName: preset.name, manual: input.manual === true,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: resolveNovelImageTransport(settings) === 'backend-job',
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,
@@ -3147,7 +3225,11 @@ async function generateAndInsertImages({
                 bodyText: sceneSource.content,
             });
 
-        if (isNovelImageBackendJobEnabled(settings)) {
+        // 手动生图：即使开了后端任务模式，规划也走浏览器侧，只落槽位不提交；
+        // 后端 Draw Run 无法只规划不执行。
+        const manualSlots = getSharedDrawSettings().autoGenerateImages === false;
+
+        if (!manualSlots && isNovelImageBackendJobEnabled(settings)) {
             job.phase = 'submitting';
             // Vibe 编码在浏览器侧完成（/ai/encode-vibe 直连），编码结果随 recipe 一起提交给后端
             const vibeReferences = await ensurePresetVibeReady(settings, preset, { signal });
@@ -3218,8 +3300,12 @@ async function generateAndInsertImages({
                 knownNames: presentCharacters.map(character => character.name),
             });
         }
-
         assertSceneSourceUnchanged(normalizeMessageSceneSourceText(message.mes), sceneSource.sourceHash);
+        if (manualSlots) {
+            // 只把规划好的槽位和 TAG 落入正文与图库，不提交 NAI；每张由用户点击生成
+            return await runPreparedNovelSlots({ ctx, message, messageId, sourceText: message.mes,
+                tasks, settings, preset, job, onStateChange, manual: true });
+        }
         return await runPreparedNovelSlots({ ctx, message, messageId, sourceText: message.mes,
             tasks, settings, preset, job, onStateChange });
     } catch (error) {
@@ -3236,6 +3322,8 @@ async function generateAndInsertImages({
 
 async function autoGenerateForLastAI() {
     const s = getSettings();
+    // 关闭「自动生图」只影响 NAI 提交阶段：自动模式下回复结束仍照常 call LLM
+    // 规划并摆好槽位（generateAndInsertImages 内的 manual 分支），逐张由用户点击。
     if (!isModuleEnabled() || s.mode !== 'auto') return;
 
     const ctx = getContext();
@@ -3377,7 +3465,18 @@ function hideOverlay() {
     window.removeEventListener('message', handleFrameMessage);
 }
 
+let _sendInitDataTimer = null;
 async function sendInitData() {
+    // Debounce: Termux/WebView 類環境會在設置 form 值時錯誤觸發 change 事件，
+    // 多個 SAVE_* 處理器同時調 sendInitData 造成無限循環 + 配置文件瘋狂上傳。
+    if (_sendInitDataTimer) { clearTimeout(_sendInitDataTimer); }
+    _sendInitDataTimer = setTimeout(async () => {
+        _sendInitDataTimer = null;
+        await _doSendInitData();
+    }, 300);
+}
+
+async function _doSendInitData() {
     console.log('[NovelDraw] sendInitData called');
     const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
     if (!iframe?.contentWindow) { console.warn('[NovelDraw] sendInitData: no iframe'); return; }
@@ -3395,10 +3494,16 @@ async function sendInitData() {
             sendMode: settings.sendMode || 'frontend',
             useImageBackendJobs: settings.useImageBackendJobs === true,
             insecureTLS: settings.insecureTLS === true,
+            apiPresets: settings.apiPresets || [],
+            selectedApiPresetId: settings.selectedApiPresetId || OFFICIAL_API_PRESET_ID,
+            officialApiPreset: OFFICIAL_API_PRESET,
             timeout: settings.timeout,
             requestDelay: settings.requestDelay,
             cacheDays: getSharedDrawSettings().cacheDays,
             imageTitleMode: getSharedDrawSettings().imageTitleMode,
+            autoGenerateImages: getSharedDrawSettings().autoGenerateImages !== false,
+            saveAsJpeg: getSharedDrawSettings().saveAsJpeg === true,
+            jpegQuality: getSharedDrawSettings().jpegQuality,
             selectedParamsPresetId: settings.selectedParamsPresetId,
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
@@ -3588,6 +3693,8 @@ async function handleFrameMessage(event) {
         case 'SAVE_API_KEY': {
             await updateSettingsPersistent((settings) => {
                 settings.apiKey = typeof data.apiKey === 'string' ? data.apiKey : settings.apiKey;
+                const active = settings.apiPresets.find(p => p.id === settings.selectedApiPresetId);
+                if (active) commitFlatFieldsToApiPreset(settings, active);
             }, '已保存', { target: 'api' });
             break;
         }
@@ -3612,6 +3719,9 @@ async function handleFrameMessage(event) {
                 if (typeof data.insecureTLS === 'boolean') {
                     settings.insecureTLS = data.insecureTLS;
                 }
+                // 扁平字段恒等于当前选中预设：同步回该条预设，避免切换时丢失本次编辑。
+                const active = settings.apiPresets.find(p => p.id === settings.selectedApiPresetId);
+                if (active) commitFlatFieldsToApiPreset(settings, active);
                 if (data.requestDelay?.min > 0 && data.requestDelay?.max > 0) {
                     settings.requestDelay = data.requestDelay;
                 }
@@ -3620,6 +3730,102 @@ async function handleFrameMessage(event) {
                 settings.timeout = nextTimeout;
             }, '已保存', { notify: false, silent: false });
             postStatus(providerOk && sharedOk ? 'success' : 'error', providerOk && sharedOk ? '已保存' : '保存失败', 'api');
+            break;
+        }
+
+        // ── 多套 API 预设：切换 / 保存 / 新增 / 删除 ──
+        // 预设只是「编辑期的一组值」，靠这些操作同步扁平字段（请求层唯一来源）生效。
+        case 'SWITCH_API_PRESET': {
+            const targetId = String(data.id || OFFICIAL_API_PRESET_ID);
+            if (!getSettings().apiPresets.some(p => p.id === targetId)) {
+                postStatus('error', '预设不存在', 'api-preset');
+                break;
+            }
+            // 同一次 mutation 内完成：先提交出方（当前选中条的扁平字段值），再载入入方。
+            const ok = await updateSettingsPersistent((settings) => {
+                const outgoingId = settings.selectedApiPresetId;
+                const outgoing = settings.apiPresets.find(p => p.id === outgoingId);
+                if (outgoing && outgoingId !== targetId) commitFlatFieldsToApiPreset(settings, outgoing);
+                const incoming = settings.apiPresets.find(p => p.id === targetId);
+                if (!incoming) return;
+                applyApiPresetToFlatFields(settings, incoming);
+                settings.selectedApiPresetId = targetId;
+            }, '已切换预设', { target: 'api-preset' });
+            if (ok) sendInitData();
+            break;
+        }
+
+        case 'SAVE_API_PRESET': {
+            const targetId = String(data.id || getSettings().selectedApiPresetId || OFFICIAL_API_PRESET_ID);
+            const fields = {
+                apiKey: typeof data.apiKey === 'string' ? data.apiKey.trim() : undefined,
+                apiBaseUrl: typeof data.apiBaseUrl === 'string' ? data.apiBaseUrl.trim() : undefined,
+                sendMode: (data.sendMode === 'frontend' || data.sendMode === 'backend') ? data.sendMode : undefined,
+                insecureTLS: typeof data.insecureTLS === 'boolean' ? data.insecureTLS : undefined,
+                useImageBackendJobs: typeof data.useImageBackendJobs === 'boolean' ? data.useImageBackendJobs : undefined,
+            };
+            const ok = await updateSettingsPersistent((settings) => {
+                settings.selectedApiPresetId = targetId;
+                // 扁平字段同步为该组值（请求层唯一来源）。
+                if (fields.apiKey !== undefined) settings.apiKey = fields.apiKey;
+                if (fields.apiBaseUrl !== undefined) settings.apiBaseUrl = fields.apiBaseUrl;
+                if (fields.sendMode !== undefined) settings.sendMode = fields.sendMode;
+                if (fields.insecureTLS !== undefined) settings.insecureTLS = fields.insecureTLS;
+                if (fields.useImageBackendJobs !== undefined) settings.useImageBackendJobs = fields.useImageBackendJobs;
+                // 写进当前选中的那条（官方或自订皆同）；找不到条目时只保留扁平字段。
+                const item = settings.apiPresets.find(p => p.id === targetId);
+                if (item) {
+                    if (fields.apiKey !== undefined) item.apiKey = fields.apiKey;
+                    if (fields.apiBaseUrl !== undefined) item.apiBaseUrl = fields.apiBaseUrl;
+                    if (fields.sendMode !== undefined) item.sendMode = fields.sendMode;
+                    if (fields.insecureTLS !== undefined) item.insecureTLS = fields.insecureTLS;
+                    if (fields.useImageBackendJobs !== undefined) item.useImageBackendJobs = fields.useImageBackendJobs;
+                }
+            }, '已保存', { target: 'api-preset' });
+            if (ok) sendInitData();
+            break;
+        }
+
+        case 'ADD_API_PRESET': {
+            const name = typeof data.name === 'string' ? data.name.trim() : '';
+            if (!name) {
+                postStatus('error', '请输入预设名称', 'api-preset');
+                break;
+            }
+            if (getSettings().apiPresets.some(p => p.name === name)) {
+                postStatus('error', '预设名称已存在', 'api-preset');
+                break;
+            }
+            const id = generateSlotId();
+            const ok = await updateSettingsPersistent((settings) => {
+                const preset = { id, name };
+                // 新条目复制当前扁平字段的值，建立后选中它。
+                commitFlatFieldsToApiPreset(settings, preset);
+                settings.apiPresets.push(preset);
+                settings.selectedApiPresetId = id;
+            }, '已创建', { target: 'api-preset' });
+            if (ok) sendInitData();
+            break;
+        }
+
+        case 'DEL_API_PRESET': {
+            const targetId = String(data.id || '');
+            if (!targetId || targetId === OFFICIAL_API_PRESET_ID) {
+                postStatus('error', '官方预设不可删除', 'api-preset');
+                break;
+            }
+            const ok = await updateSettingsPersistent((settings) => {
+                const idx = settings.apiPresets.findIndex(p => p.id === targetId);
+                if (idx < 0) return;
+                settings.apiPresets.splice(idx, 1);
+                if (settings.selectedApiPresetId === targetId) {
+                    // 删除的是当前选中项：回落到官方并载入官方自己的那组值。
+                    settings.selectedApiPresetId = OFFICIAL_API_PRESET_ID;
+                    const official = settings.apiPresets.find(p => p.id === OFFICIAL_API_PRESET_ID);
+                    if (official) applyApiPresetToFlatFields(settings, official);
+                }
+            }, '已删除', { target: 'api-preset' });
+            if (ok) sendInitData();
             break;
         }
 
@@ -3647,12 +3853,95 @@ async function handleFrameMessage(event) {
             break;
         }
 
+        case 'SAVE_JPEG': {
+            const nextJpeg = data.saveAsJpeg === true;
+            const nextQuality = Math.max(0.1, Math.min(1, Number(data.jpegQuality) || 0.8));
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.saveAsJpeg = nextJpeg;
+                settings.jpegQuality = nextQuality;
+            }, '已保存', { notify: false, silent: false });
+            postStatus(ok ? 'success' : 'error',
+                ok ? (nextJpeg ? `已启用 JPEG（品質 ${nextQuality}）` : '已关闭 JPEG 转换') : '保存失败',
+                'gallery');
+            if (ok) sendInitData();
+            break;
+        }
+
+        case 'BATCH_LOAD_PREVIEWS': {
+            const { getAllPreviewsLight } = await import('../../shared/gallery-cache.js');
+            try {
+                const previews = await getAllPreviewsLight();
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_PREVIEWS_LOADED', previews }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] batch load failed:', e);
+            }
+            break;
+        }
+
+        case 'BATCH_DELETE': {
+            const { deletePreview } = await import('../../shared/gallery-cache.js');
+            const ids = Array.isArray(data.ids) ? data.ids : [];
+            try {
+                for (const id of ids) await deletePreview(id);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DELETED', ok: true, count: ids.length }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] batch delete failed:', e);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DELETED', ok: false, message: e?.message || String(e) }, 'LittleWhiteBox-NovelDraw');
+            }
+            break;
+        }
+
+        case 'BATCH_DOWNLOAD': {
+            const { getPreview, getPreviewDisplayUrl } = await import('../../shared/gallery-cache.js');
+            const ids = Array.isArray(data.ids) ? data.ids : [];
+            try {
+                let saved = 0, failed = 0;
+                for (const id of ids) {
+                    const p = await getPreview(id);
+                    const url = p ? getPreviewDisplayUrl(p) : null;
+                    if (!url) { failed++; continue; }
+                    const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
+                    const isJpeg = (p.base64 || '').startsWith('data:image/jpeg');
+                    const name = `${p.characterName || 'image'}-${p.imgId}-${ts}.${isJpeg ? 'jpg' : 'png'}`;
+                    // 浏覽器原生下載（非保存到服務器）
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = name;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    saved++;
+                    await new Promise((r) => setTimeout(r, 120)); // 避免連續下載被瀏覽器吞掉
+                }
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DOWNLOADED', ok: true, saved, failed }, 'LittleWhiteBox-NovelDraw');
+            } catch (e) {
+                console.error('[NovelDraw] batch download failed:', e);
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'BATCH_DOWNLOADED', ok: false, message: e?.message || String(e) }, 'LittleWhiteBox-NovelDraw');
+            }
+            break;
+        }
+
         case 'SAVE_IMAGE_TITLE_MODE': {
             const nextMode = normalizeImageTitleMode(data.imageTitleMode, getSharedDrawSettings().imageTitleMode);
             const ok = await updateSharedDrawSettingsPersistent((settings) => {
                 settings.imageTitleMode = nextMode;
             }, '已保存', { notify: false, silent: false });
             if (ok) renderAllDrawPreviews?.({ force: true });
+            break;
+        }
+
+        case 'SAVE_AUTO_GENERATE_IMAGES': {
+            const nextAuto = data.autoGenerateImages === true;
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.autoGenerateImages = nextAuto;
+            }, '已保存', { notify: false, silent: false });
+            const message = !ok ? '保存失败' : nextAuto ? '已开启自动排队' : '已关闭自动排队，需逐张手动生成';
+            postStatus(ok ? 'success' : 'error', message, 'api');
             break;
         }
 
@@ -4472,9 +4761,22 @@ async function handleFrameMessage(event) {
             try {
                 const slotId = String(data.slotId || '');
                 if (!slotId) break;
-                const images = await getPreviewsBySlot(slotId);
+                // 分页返回：一次把上百张原图 base64 经 postMessage 克隆进 iframe 会产生内存峰值
+                const all = await getPreviewsBySlot(slotId);
+                const offset = Math.max(0, Number(data.offset) || 0);
+                const limit = Math.min(60, Math.max(1, Number(data.limit) || 24));
+                const images = all.slice(offset, offset + limit);
                 const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
-                if (iframe) postToIframe(iframe, { type: 'SLOT_PREVIEWS_LOADED', slotId, images }, 'LittleWhiteBox-NovelDraw');
+                if (iframe) postToIframe(iframe, {
+                    type: 'SLOT_PREVIEWS_LOADED',
+                    slotId,
+                    images,
+                    offset,
+                    limit,
+                    total: all.length,
+                    hasMore: offset + images.length < all.length,
+                    append: data.append === true,
+                }, 'LittleWhiteBox-NovelDraw');
             } catch (e) {
                 console.error('[NovelDraw] 加载 slot 历史失败:', e);
             }
@@ -4522,6 +4824,8 @@ async function handleFrameMessage(event) {
                     postStatus('success', '提交后台完成，可关闭页面');
                 } else if (result?.status === 'uncertain') {
                     postStatus('loading', '后台任务确认中，请勿重复提交');
+                } else if (result?.manual) {
+                    postStatus('success', `已规划 ${result.total} 张，逐张点击「生成」出图`);
                 } else {
                     postStatus('success', `完成! ${result.success} 张`);
                 }

@@ -5,6 +5,7 @@ import { parseChatImageTags, findRenderedChatImageTags } from './chat-message-im
 import { ensureChatImageTagFormat, markFreshImageTagChat } from './chat-image-tag-migration.js';
 import { createChatImageSession } from './chat-image-session.js';
 import { buildPendingImageHtml, ensureDrawImageStyles, isMessageBeingEdited, renderPreviewsForMessage } from './draw-common.js';
+import { getSharedDrawSettings } from './draw-settings.js';
 import { DRAW_SLOT_COPY } from './image-record.js';
 
 const events = createModuleEvents('chatMessageImages');
@@ -21,6 +22,7 @@ function report(error) {
 }
 const session = createChatImageSession({ context: getContext,
     provider: () => available() ? window.xiaobaixDraw.getProvider() : null,
+    autoGenerate: () => getSharedDrawSettings().autoGenerateImages !== false,
     changed: requestRefresh, report });
 
 function releaseProvisional(lease) {

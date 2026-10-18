@@ -6,7 +6,7 @@ import { SlashCommandParser } from "../../../slash-commands/SlashCommandParser.j
 import { SlashCommand } from "../../../slash-commands/SlashCommand.js";
 import { EventCenter } from "./core/event-manager.js";
 import { initPluginUpdate } from "./modules/plugin-update/plugin-update.js";
-import { initTasks } from "./modules/scheduled-tasks/scheduled-tasks.js";
+import { initTasks, initTaskSettings } from "./modules/scheduled-tasks/scheduled-tasks.js";
 import { initMessagePreview, addHistoryButtonsDebounced, removeOwnedHistoryButtons } from "./modules/message-preview.js";
 import { mountReplyProgressSettings } from './modules/reply-progress/index.js';
 import { createReplyProgressHostRuntime } from './modules/reply-progress/host.js';
@@ -721,6 +721,7 @@ async function setupSettings() {
         const response = await fetch(`${extensionFolderPath}/settings.html`);
         const settingsHtml = await response.text();
         $(settingsContainer).append(settingsHtml);
+        initTaskSettings();
 
         replyProgressSettingsView?.destroy();
         replyProgressSettingsView = mountReplyProgressSettings({

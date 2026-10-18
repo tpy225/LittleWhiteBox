@@ -107,3 +107,32 @@ test('shared character settings preserve explicit disabled state and default old
     assert.equal(normalized.characterTags[0].enabled, false);
     assert.equal(normalized.characterTags[1].enabled, true);
 });
+
+test('api presets and selected id pass through the NovelAI provider whitelist across both owner saves', () => {
+    const apiPresets = [{
+        id: 'custom-1',
+        name: '自订端点',
+        apiKey: 'pst-user-key',
+        apiBaseUrl: 'https://third-party.example',
+        sendMode: 'backend',
+        insecureTLS: true,
+        useImageBackendJobs: true,
+    }];
+
+    const providerSave = mergeNovelDrawProviderSettingsIntoStorageRoot(
+        { configVersion: 7, apiBaseUrl: '' },
+        { configVersion: 7, apiPresets, selectedApiPresetId: 'custom-1' },
+    );
+
+    assert.deepEqual(providerSave.apiPresets, apiPresets);
+    assert.equal(providerSave.selectedApiPresetId, 'custom-1');
+
+    // 共享设置保存时同样不能丢掉这两把（provider 专属）键。
+    const sharedSave = mergeSharedDrawSettingsIntoStorageRoot(
+        { ...providerSave, apiPresets, selectedApiPresetId: 'custom-1' },
+        { cacheDays: 5 },
+    );
+
+    assert.deepEqual(sharedSave.apiPresets, apiPresets);
+    assert.equal(sharedSave.selectedApiPresetId, 'custom-1');
+});

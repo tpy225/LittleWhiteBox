@@ -51,6 +51,9 @@ export const ImageState = {
 /** Tabler reload glyph; 1em/currentColor so it inherits each button's size and color. */
 export const RELOAD_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none;"><path d="M19.933 13.041a8 8 0 1 1 -9.925 -8.788c3.899 -1 7.935 1.007 9.425 4.747"></path><path d="M20 4v5h-5"></path></svg>';
 
+/** Pen glyph for the manual submit action on a pending slot, replacing the plain「生成」label. */
+export const PEN_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none;"><path d="m12 19 7-7 3 3-7 7-3-3z"></path><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="m2 2 7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg>';
+
 export const ErrorType = {
     INPUT: { code: 'input', label: '正文输入', desc: '正文没有可用的配图内容' },
     NETWORK: { code: 'network', label: '网络', desc: '连接超时或网络不稳定' },
@@ -631,6 +634,25 @@ async function resolveRenderPreviewForSlot(message, messageId, slotId) {
     return display;
 }
 
+// 关闭自动生图后：LLM 已规划好该图位的 TAG，但尚未提交 NAI。卡片上的钢笔图标
+// 复用 retry-image → redrawImageCard 单槽提交流程。按钮沿用例外的扁平图标样式，
+// 与失败卡一致，不呈现按钮外观；卡片整体高度也压缩到同一档。
+export function buildManualPlaceholderHtml({ slotId, imgId = '', messageId, tags = '', title = '', positive = '' }) {
+    const escapedTags = escapeHtml(tags);
+    const escapedPositive = escapeHtml(positive);
+    return `<div class="xb-nd-img" data-slot-id="${slotId}" data-img-id="${escapeHtml(imgId)}" data-tags="${escapedTags}" data-title="${escapeHtml(String(title || ''))}" data-positive="${escapedPositive}" data-mesid="${messageId}" data-state="manual" style="margin:0.8em 0;text-align:center;position:relative;display:block;width:100%;background:rgba(127,127,127,0.12);border:1px dashed rgba(212,165,116,0.55);border-radius:10px;padding:4px 8px;color:inherit;font-size:13px;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+<span style="font-size:13px;opacity:.85;">🎨 ${DRAW_SLOT_COPY.manualWaiting}</span>
+<div class="xb-nd-failed-btns" style="display:flex;gap:4px;flex:none;">
+    <button class="xb-nd-retry-btn" data-action="retry-image" style="padding:2px 6px;background:transparent;border:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;opacity:0.9;display:flex;align-items:center;" title="${DRAW_SLOT_COPY.generate}">${PEN_ICON_SVG}</button>
+    <button class="xb-nd-edit-btn" data-action="edit-tags" style="padding:2px 6px;background:transparent;border:none;color:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="${DRAW_SLOT_COPY.editTags}">✎</button>
+    <button class="xb-nd-remove-btn" data-action="remove-placeholder" style="padding:2px 6px;background:transparent;border:none;color:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0.9;" title="移除">✕</button>
+</div>
+</div>
+${buildTagEditor(tags, true)}
+</div>`;
+}
+
 export function buildFailedPlaceholderHtml({ slotId, imgId = '', messageId, tags, title = '', positive, errorType, errorMessage, historyCount = 0 }) {
     const escapedTags = escapeHtml(tags);
     const escapedPositive = escapeHtml(positive);
@@ -775,6 +797,15 @@ async function renderPreviewsForMessageNow(messageId, {
                     index: (activity || pendingSlot).index + 1,
                     total: (activity || pendingSlot).total,
                     label: activity?.label || (pendingSlot.state === PendingJobState.CANCELLING ? '正在取消' : DRAW_SLOT_COPY.generating),
+                });
+            } else if (displayData.isManual) {
+                replacementHtml = buildManualPlaceholderHtml({
+                    slotId,
+                    imgId: displayData.preview?.imgId,
+                    messageId,
+                    tags: displayData.failedInfo?.tags || '',
+                    positive: displayData.failedInfo?.positive || '',
+                    title: displayData.preview?.title || '',
                 });
             } else if (displayData.isFailed) {
                 const interrupted = displayData.isPending

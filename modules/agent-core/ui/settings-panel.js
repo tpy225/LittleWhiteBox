@@ -1,6 +1,7 @@
 import {
     HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE,
     HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE,
+    HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
     HOST_CHAT_COMPLETIONS_SOURCE_OPENAI,
     HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY,
     fetchHostChatCompletionsModels,
@@ -34,8 +35,10 @@ import {
 import {
     normalizeReasoningConfig,
 } from '../reasoning-config.js';
-import { DEFAULT_TAVILY_BASE_URL, normalizeTavilyBaseUrl } from '../tavily-search.js';
+import { WEB_PROVIDERS, normalizeWebSettings } from '../web/settings.js';
+import { bindWebSettingsGuide, readWebSettingsForm, syncWebSettingsForm } from './web-settings.js';
 import { resolveAgentAuth } from '../provider-auth.js';
+import { MODEL_LIST_AUTH_OPTIONS, normalizeModelListAuth, supportsModelListAuth } from '../model-list-auth.js';
 
 const MODEL_FILTERS = {
     chat: {
@@ -59,6 +62,19 @@ const SILLYTAVERN_CLAUDE_FALLBACK_MODELS = Object.freeze([
     'claude-opus-4-20250514',
     'claude-sonnet-4-0',
     'claude-sonnet-4-20250514',
+]);
+// Vertex AI model listing needs a region endpoint and credentials held by the SillyTavern
+// server. Follow-the-tavern users leave both fields blank, which /status cannot enumerate,
+// so this built-in list keeps the config page usable. Latest Google profile the repo knows
+// is google-gemini-3-flash (reasoning-capabilities.js); the model field stays free text.
+const SILLYTAVERN_VERTEX_FALLBACK_MODELS = Object.freeze([
+    'gemini-3-flash',
+    'gemini-3-pro',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
 ]);
 
 function refillSelect(select, options, placeholderLabel = '') {
@@ -133,13 +149,10 @@ function isToolModeProvider(provider = '') {
     return provider === 'openai-compatible' || provider === 'sillytavern-openai-compatible';
 }
 
-function isAnthropicProvider(provider = '') {
-    return provider === 'anthropic' || provider === 'sillytavern-claude';
-}
-
 function getSillyTavernChatCompletionSource(provider = '') {
     if (provider === 'sillytavern-claude') return HOST_CHAT_COMPLETIONS_SOURCE_CLAUDE;
     if (provider === 'sillytavern-google') return HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE;
+    if (provider === 'sillytavern-vertex') return HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI;
     return HOST_CHAT_COMPLETIONS_SOURCE_OPENAI;
 }
 
@@ -286,6 +299,23 @@ async function tryCandidateFetches({ urls, requestOptionsList, extractModels, pr
     throw new Error(`${providerLabel} 拉取模型失败：未获取到模型列表。`);
 }
 
+async function pullAnthropicModels(baseUrl, providerConfig, options = {}) {
+    const authProvider = normalizeModelListAuth(providerConfig.modelListAuth) === 'bearer' ? 'openai-compatible' : 'anthropic';
+    return await tryCandidateFetches({
+        urls: buildAnthropicCandidateUrls(baseUrl),
+        requestOptionsList: [{
+            headers: {
+                ...resolveAgentAuth(authProvider, providerConfig.apiKey).headers,
+                'anthropic-version': '2023-06-01',
+                Accept: 'application/json',
+            },
+            signal: options.signal,
+        }],
+        extractModels: extractAnthropicModels,
+        providerLabel: 'Anthropic',
+    });
+}
+
 async function pullSillyTavernClaudeModels(providerConfig, options = {}) {
     const auth = resolveAgentAuth('anthropic', providerConfig.apiKey);
     const customBaseUrl = normalizeBaseUrl(providerConfig.baseUrl || '');
@@ -295,19 +325,7 @@ async function pullSillyTavernClaudeModels(providerConfig, options = {}) {
 
     if (baseUrl && (auth.apiKey || customBaseUrl)) {
         try {
-            return await tryCandidateFetches({
-                urls: buildAnthropicCandidateUrls(baseUrl),
-                requestOptionsList: [{
-                    headers: {
-                        ...auth.headers,
-                        'anthropic-version': '2023-06-01',
-                        Accept: 'application/json',
-                    },
-                    signal: options.signal,
-                }],
-                extractModels: extractAnthropicModels,
-                providerLabel: 'Anthropic',
-            });
+            return await pullAnthropicModels(baseUrl, providerConfig, options);
         } catch (error) {
             if (customBaseUrl) {
                 throw error;
@@ -328,6 +346,24 @@ export async function pullModelsForProvider(providerConfig, options = {}) {
 
     if (provider === 'sillytavern-claude') {
         return filterModels(await pullSillyTavernClaudeModels(providerConfig, options));
+    }
+
+    if (provider === 'sillytavern-vertex') {
+        const silentFallback = !baseUrl && !apiKey;
+        try {
+            const models = filterModels(await fetchHostChatCompletionsModels(
+                providerConfig,
+                HOST_CHAT_COMPLETIONS_SOURCE_VERTEXAI,
+                { signal: options.signal },
+            ));
+            if (models.length || !silentFallback) return models;
+            // ST 未配置 Vertex 時會回 HTTP 200 + data: []，不 throw；此時在「跟隨酒館」
+            // 模式下改回內建清單，保住下拉可用。
+            return [...SILLYTAVERN_VERTEX_FALLBACK_MODELS];
+        } catch (error) {
+            if (!silentFallback) throw error;
+            return [...SILLYTAVERN_VERTEX_FALLBACK_MODELS];
+        }
     }
 
     if (isSillyTavernProvider(provider)) {
@@ -366,20 +402,8 @@ export async function pullModelsForProvider(providerConfig, options = {}) {
         });
     }
 
-    if (isAnthropicProvider(provider)) {
-        return await tryCandidateFetches({
-            urls: buildAnthropicCandidateUrls(baseUrl),
-            requestOptionsList: [{
-                headers: {
-                    ...auth.headers,
-                    'anthropic-version': '2023-06-01',
-                    Accept: 'application/json',
-                },
-                signal: options.signal,
-            }],
-            extractModels: extractAnthropicModels,
-            providerLabel: 'Anthropic',
-        });
+    if (supportsModelListAuth(provider)) {
+        return await pullAnthropicModels(baseUrl, providerConfig, options);
     }
 
     return await tryCandidateFetches({
@@ -466,6 +490,7 @@ export function createAgentSettingsPanel(deps = {}) {
             delegateBaseUrl: String(delegateProviderConfig.baseUrl || ''),
             delegateModel: String(delegateProviderConfig.model || ''),
             delegateApiKey: String(delegateProviderConfig.apiKey || ''),
+            delegateModelListAuth: normalizeModelListAuth(delegateProviderConfig.modelListAuth),
             delegateTemperature: normalizeTemperature(delegateProviderConfig.temperature, 1),
             delegateMaxTokens: normalizeMaxTokens(delegateProviderConfig.maxTokens),
             delegateSendTemperature: shouldSendTemperature(delegateProviderConfig),
@@ -484,6 +509,10 @@ export function createAgentSettingsPanel(deps = {}) {
             baseUrl: String(providerConfig.baseUrl || ''),
             model: String(providerConfig.model || ''),
             apiKey: String(providerConfig.apiKey || ''),
+            modelListAuth: normalizeModelListAuth(providerConfig.modelListAuth),
+            vertexAuthMode: providerConfig.vertexAuthMode || 'full',
+            vertexRegion: providerConfig.vertexRegion || 'us-central1',
+            serviceAccountJson: providerConfig.serviceAccountJson || '',
             temperature: normalizeTemperature(providerConfig.temperature, 1),
             maxTokens: normalizeMaxTokens(providerConfig.maxTokens),
             sendTemperature: shouldSendTemperature(providerConfig),
@@ -500,6 +529,10 @@ export function createAgentSettingsPanel(deps = {}) {
             delegateBaseUrl: String(providerConfig.baseUrl || ''),
             delegateModel: String(providerConfig.model || ''),
             delegateApiKey: String(providerConfig.apiKey || ''),
+            delegateModelListAuth: normalizeModelListAuth(providerConfig.modelListAuth),
+            delegateVertexAuthMode: providerConfig.vertexAuthMode || 'full',
+            delegateVertexRegion: providerConfig.vertexRegion || 'us-central1',
+            delegateServiceAccountJson: providerConfig.serviceAccountJson || '',
             delegateTemperature: normalizeTemperature(providerConfig.temperature, 1),
             delegateMaxTokens: normalizeMaxTokens(providerConfig.maxTokens),
             delegateSendTemperature: shouldSendTemperature(providerConfig),
@@ -527,8 +560,7 @@ export function createAgentSettingsPanel(deps = {}) {
             provider,
             modelConfigs,
             ...providerDraftFields,
-            tavilyApiKey: String(sourceConfig?.tavilyApiKey || ''),
-            tavilyBaseUrl: normalizeTavilyBaseUrl(sourceConfig?.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...normalizeWebSettings(sourceConfig),
             permissionMode: normalizePermissionMode(sourcePreset.permissionMode),
             jsApiPermission: normalizeJsApiPermission(sourceConfig?.jsApiPermission),
             ...delegateDraft,
@@ -553,11 +585,17 @@ export function createAgentSettingsPanel(deps = {}) {
             || root.querySelector('#xb-assistant-delegate-provider')?.value
             || draft.delegateProvider
             || 'openai-compatible';
-        const baseUrl = root.querySelector('#xb-assistant-base-url')?.value.trim() || '';
+        const isFollowTavern = provider === 'sillytavern-vertex';
+        const baseUrl = isFollowTavern
+            ? ''
+            : (root.querySelector('#xb-assistant-base-url')?.value.trim() || '');
         const model = root.querySelector('#xb-assistant-model')?.value.trim() || '';
-        const delegateBaseUrl = root.querySelector('#xb-assistant-delegate-base-url')?.value.trim()
-            ?? draft.delegateBaseUrl
-            ?? '';
+        const isDelegateFollowTavern = delegateProvider === 'sillytavern-vertex';
+        const delegateBaseUrl = isDelegateFollowTavern
+            ? ''
+            : (root.querySelector('#xb-assistant-delegate-base-url')?.value.trim()
+                ?? draft.delegateBaseUrl
+                ?? '');
         const delegateModel = root.querySelector('#xb-assistant-delegate-model')?.value.trim()
             ?? draft.delegateModel
             ?? '';
@@ -578,7 +616,12 @@ export function createAgentSettingsPanel(deps = {}) {
         const providerConfig = {
             baseUrl,
             model,
-            apiKey: root.querySelector('#xb-assistant-api-key')?.value.trim() || '',
+            apiKey: isFollowTavern
+                ? ''
+                : (root.querySelector('#xb-assistant-api-key')?.value.trim() || ''),
+            ...(supportsModelListAuth(provider) ? { modelListAuth: normalizeModelListAuth(
+                root.querySelector('#xb-assistant-model-list-auth')?.value ?? draft.modelListAuth,
+            ) } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-temperature')?.value, draft.temperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-max-tokens')?.value, draft.maxTokens),
             sendTemperature: root.querySelector('#xb-assistant-send-temperature')?.checked ?? Boolean(draft.sendTemperature ?? true),
@@ -590,7 +633,12 @@ export function createAgentSettingsPanel(deps = {}) {
         const delegateProviderConfig = {
             baseUrl: delegateBaseUrl,
             model: delegateModel,
-            apiKey: root.querySelector('#xb-assistant-delegate-api-key')?.value.trim() ?? draft.delegateApiKey ?? '',
+            apiKey: isDelegateFollowTavern
+                ? ''
+                : (root.querySelector('#xb-assistant-delegate-api-key')?.value.trim() ?? draft.delegateApiKey ?? ''),
+            ...(supportsModelListAuth(delegateProvider) ? { modelListAuth: normalizeModelListAuth(
+                root.querySelector('#xb-assistant-delegate-model-list-auth')?.value ?? draft.delegateModelListAuth,
+            ) } : {}),
             temperature: normalizeTemperature(root.querySelector('#xb-assistant-delegate-temperature')?.value, draft.delegateTemperature ?? 1),
             maxTokens: normalizeMaxTokens(root.querySelector('#xb-assistant-delegate-max-tokens')?.value, draft.delegateMaxTokens),
             sendTemperature: root.querySelector('#xb-assistant-delegate-send-temperature')?.checked ?? Boolean(draft.delegateSendTemperature ?? true),
@@ -622,6 +670,9 @@ export function createAgentSettingsPanel(deps = {}) {
             baseUrl: providerConfig.baseUrl,
             model: providerConfig.model,
             apiKey: providerConfig.apiKey,
+            modelListAuth: providerConfig.modelListAuth,
+            vertexAuthMode: providerConfig.vertexAuthMode,
+            vertexRegion: providerConfig.vertexRegion,
             temperature: providerConfig.temperature,
             maxTokens: providerConfig.maxTokens,
             sendTemperature: providerConfig.sendTemperature,
@@ -629,10 +680,7 @@ export function createAgentSettingsPanel(deps = {}) {
             reasoningEffort: providerConfig.reasoning.effort || '',
             reasoningBudgetTokens: providerConfig.reasoning.budgetTokens,
             toolMode: providerConfig.toolMode || draft.toolMode || 'native',
-            tavilyApiKey: root.querySelector('#xb-assistant-tavily-api-key')?.value.trim()
-                ?? draft.tavilyApiKey
-                ?? '',
-            tavilyBaseUrl: normalizeTavilyBaseUrl(draft.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...readWebSettingsForm(root, draft),
             permissionMode: normalizePermissionMode(root.querySelector('#xb-assistant-permission-mode')?.value || draft.permissionMode),
             jsApiPermission: normalizeJsApiPermission(root.querySelector('#xb-assistant-jsapi-permission')?.value || draft.jsApiPermission),
             delegatePresetName: resolveExistingPresetName(root.querySelector('#xb-assistant-delegate-preset-select')?.value || draft.delegatePresetName, draft.currentPresetName),
@@ -641,6 +689,9 @@ export function createAgentSettingsPanel(deps = {}) {
             delegateBaseUrl: delegateProviderConfig.baseUrl,
             delegateModel: delegateProviderConfig.model,
             delegateApiKey: delegateProviderConfig.apiKey,
+            delegateModelListAuth: delegateProviderConfig.modelListAuth,
+            delegateVertexAuthMode: delegateProviderConfig.vertexAuthMode,
+            delegateVertexRegion: delegateProviderConfig.vertexRegion,
             delegateTemperature: delegateProviderConfig.temperature,
             delegateMaxTokens: delegateProviderConfig.maxTokens,
             delegateSendTemperature: delegateProviderConfig.sendTemperature,
@@ -662,6 +713,12 @@ export function createAgentSettingsPanel(deps = {}) {
             baseUrl: String(draft.baseUrl || ''),
             model: String(draft.model || ''),
             apiKey: String(draft.apiKey || ''),
+            ...(supportsModelListAuth(draft.provider) ? { modelListAuth: normalizeModelListAuth(draft.modelListAuth) } : {}),
+            ...(draft.provider === 'sillytavern-vertex' ? {
+                vertexAuthMode: draft.vertexAuthMode || 'full',
+                vertexRegion: draft.vertexRegion || 'us-central1',
+                serviceAccountJson: draft.serviceAccountJson || '',
+            } : {}),
             temperature: normalizeTemperature(draft.temperature, 1),
             maxTokens: normalizeMaxTokens(draft.maxTokens),
             sendTemperature: Boolean(draft.sendTemperature ?? true),
@@ -681,6 +738,12 @@ export function createAgentSettingsPanel(deps = {}) {
             baseUrl: String(draft.delegateBaseUrl || ''),
             model: String(draft.delegateModel || ''),
             apiKey: String(draft.delegateApiKey || ''),
+            ...(supportsModelListAuth(draft.delegateProvider) ? { modelListAuth: normalizeModelListAuth(draft.delegateModelListAuth) } : {}),
+            ...(draft.delegateProvider === 'sillytavern-vertex' ? {
+                vertexAuthMode: draft.delegateVertexAuthMode || 'full',
+                vertexRegion: draft.delegateVertexRegion || 'us-central1',
+                serviceAccountJson: draft.delegateServiceAccountJson || '',
+            } : {}),
             temperature: normalizeTemperature(draft.delegateTemperature, 1),
             maxTokens: normalizeMaxTokens(draft.delegateMaxTokens),
             sendTemperature: Boolean(draft.delegateSendTemperature ?? true),
@@ -716,8 +779,8 @@ export function createAgentSettingsPanel(deps = {}) {
             baseUrl: draft.baseUrl || '',
             model: draft.model || '',
             apiKey: draft.apiKey || '',
-            tavilyApiKey: draft.tavilyApiKey || '',
-            tavilyBaseUrl: normalizeTavilyBaseUrl(draft.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...(supportsModelListAuth(draft.provider) ? { modelListAuth: normalizeModelListAuth(draft.modelListAuth) } : {}),
+            ...normalizeWebSettings(draft),
             temperature: draft.sendTemperature === false ? undefined : normalizeTemperature(draft.temperature, 1),
             sendTemperature: Boolean(draft.sendTemperature ?? true),
             maxTokens: normalizeMaxTokens(draft.maxTokens),
@@ -742,8 +805,8 @@ export function createAgentSettingsPanel(deps = {}) {
             baseUrl: draft.delegateBaseUrl || '',
             model: draft.delegateModel || '',
             apiKey: draft.delegateApiKey || '',
-            tavilyApiKey: draft.tavilyApiKey || '',
-            tavilyBaseUrl: normalizeTavilyBaseUrl(draft.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...(supportsModelListAuth(draft.delegateProvider) ? { modelListAuth: normalizeModelListAuth(draft.delegateModelListAuth) } : {}),
+            ...normalizeWebSettings(draft),
             temperature: draft.delegateSendTemperature === false ? undefined : normalizeTemperature(draft.delegateTemperature, 1),
             sendTemperature: Boolean(draft.delegateSendTemperature ?? true),
             maxTokens: normalizeMaxTokens(draft.delegateMaxTokens),
@@ -926,6 +989,17 @@ export function createAgentSettingsPanel(deps = {}) {
         );
     }
 
+    function syncModelListAuthControls(root, provider, value, scope = 'main') {
+        const prefix = scope === 'delegate' ? '#xb-assistant-delegate' : '#xb-assistant';
+        const wrap = root.querySelector(`${prefix}-model-list-auth-wrap`);
+        const select = root.querySelector(`${prefix}-model-list-auth`);
+        if (wrap) wrap.style.display = supportsModelListAuth(provider) ? '' : 'none';
+        if (select) {
+            refillSelect(select, MODEL_LIST_AUTH_OPTIONS);
+            select.value = normalizeModelListAuth(value);
+        }
+    }
+
     function syncConfigToForm(root) {
         if (!state.config) return;
         syncConfigPage(root);
@@ -953,7 +1027,6 @@ export function createAgentSettingsPanel(deps = {}) {
         const delegateBaseUrlInput = root.querySelector('#xb-assistant-delegate-base-url');
         const delegateModelInput = root.querySelector('#xb-assistant-delegate-model');
         const delegateApiKeyInput = root.querySelector('#xb-assistant-delegate-api-key');
-        const tavilyApiKeyInput = root.querySelector('#xb-assistant-tavily-api-key');
         const delegatePulledSelect = root.querySelector('#xb-assistant-delegate-model-pulled');
         const delegateMaxTokensInput = root.querySelector('#xb-assistant-delegate-max-tokens');
         const delegateToolModeWrap = root.querySelector('#xb-assistant-delegate-tool-mode-wrap');
@@ -975,15 +1048,27 @@ export function createAgentSettingsPanel(deps = {}) {
         if (baseUrlInput) baseUrlInput.value = draft.baseUrl || '';
         if (modelInput) modelInput.value = draft.model || '';
         if (apiKeyInput) apiKeyInput.value = draft.apiKey || '';
+        syncModelListAuthControls(root, provider, draft.modelListAuth);
         if (maxTokensInput) maxTokensInput.value = String(normalizeMaxTokens(draft.maxTokens));
         if (temperatureInput) temperatureInput.value = String(normalizeTemperature(draft.temperature, 1));
         if (sendTemperatureInput) sendTemperatureInput.checked = Boolean(draft.sendTemperature ?? true);
-        if (tavilyApiKeyInput) tavilyApiKeyInput.value = draft.tavilyApiKey || '';
+        syncWebSettingsForm(root, draft);
         if (toolModeWrap) toolModeWrap.style.display = isToolModeProvider(provider) ? '' : 'none';
         if (toolModeSelect) {
             refillSelect(toolModeSelect, TOOL_MODE_OPTIONS);
             toolModeSelect.value = draft.toolMode || 'native';
         }
+        const isVertex = provider === 'sillytavern-vertex';
+        const isDelegateVertex = delegateProvider === 'sillytavern-vertex';
+        // 跟随酒馆：baseUrl / apiKey 由酒馆主界面连線决定，这里不可填
+        if (baseUrlInput) baseUrlInput.disabled = isVertex;
+        if (apiKeyInput) apiKeyInput.disabled = isVertex;
+        const keyToggle = root.querySelector('#xb-assistant-toggle-key');
+        if (keyToggle) keyToggle.disabled = isVertex;
+        if (delegateBaseUrlInput) delegateBaseUrlInput.disabled = isDelegateVertex;
+        if (delegateApiKeyInput) delegateApiKeyInput.disabled = isDelegateVertex;
+        const delegateKeyToggle = root.querySelector('#xb-assistant-delegate-toggle-key');
+        if (delegateKeyToggle) delegateKeyToggle.disabled = isDelegateVertex;
         if (permissionModeSelect) {
             refillSelect(permissionModeSelect, AGENT_PERMISSION_MODE_OPTIONS);
             permissionModeSelect.value = normalizePermissionMode(draft.permissionMode);
@@ -1001,6 +1086,7 @@ export function createAgentSettingsPanel(deps = {}) {
         if (delegateBaseUrlInput) delegateBaseUrlInput.value = draft.delegateBaseUrl || '';
         if (delegateModelInput) delegateModelInput.value = draft.delegateModel || '';
         if (delegateApiKeyInput) delegateApiKeyInput.value = draft.delegateApiKey || '';
+        syncModelListAuthControls(root, delegateProvider, draft.delegateModelListAuth, 'delegate');
         const delegateTemperatureInput = root.querySelector('#xb-assistant-delegate-temperature');
         const delegateSendTemperatureInput = root.querySelector('#xb-assistant-delegate-send-temperature');
         if (delegateMaxTokensInput) delegateMaxTokensInput.value = String(normalizeMaxTokens(draft.delegateMaxTokens));
@@ -1046,8 +1132,7 @@ export function createAgentSettingsPanel(deps = {}) {
         return {
             workspaceFileName: config?.workspaceFileName || '',
             jsApiPermission: normalizeJsApiPermission(config?.jsApiPermission),
-            tavilyApiKey: String(config?.tavilyApiKey || ''),
-            tavilyBaseUrl: normalizeTavilyBaseUrl(config?.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...normalizeWebSettings(config),
             currentPresetName: config?.currentPresetName || DEFAULT_PRESET_NAME,
             delegatePresetName: config?.delegatePresetName || config?.currentPresetName || DEFAULT_PRESET_NAME,
             delegateConfig: config?.delegateConfig || {},
@@ -1105,8 +1190,7 @@ export function createAgentSettingsPanel(deps = {}) {
         const nextConfig = {
             ...state.config,
             jsApiPermission: normalizeJsApiPermission(draft.jsApiPermission),
-            tavilyApiKey: String(draft.tavilyApiKey || ''),
-            tavilyBaseUrl: normalizeTavilyBaseUrl(draft.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...normalizeWebSettings(draft),
             currentPresetName: nextPresetName,
             delegatePresetName: resolveExistingPresetName(draft.delegatePresetName, nextPresetName),
             delegateConfig: buildDelegateConfigFromDraft(draft),
@@ -1178,8 +1262,7 @@ export function createAgentSettingsPanel(deps = {}) {
         const nextConfig = {
             ...state.config,
             jsApiPermission: normalizeJsApiPermission(draft.jsApiPermission),
-            tavilyApiKey: String(draft.tavilyApiKey || state.config?.tavilyApiKey || ''),
-            tavilyBaseUrl: normalizeTavilyBaseUrl(draft.tavilyBaseUrl || state.config?.tavilyBaseUrl || DEFAULT_TAVILY_BASE_URL),
+            ...normalizeWebSettings(draft),
             currentPresetName: nextPresetName,
             delegatePresetName: resolveExistingPresetName(draft.delegatePresetName, nextPresetName),
             delegateConfig: buildDelegateConfigFromDraft(draft),
@@ -1215,6 +1298,7 @@ export function createAgentSettingsPanel(deps = {}) {
             const draft = syncConfigDraft(root);
             state.config = normalizeAgentConfig({
                 ...state.config,
+                ...normalizeWebSettings(draft),
                 jsApiPermission: normalizeJsApiPermission(draft.jsApiPermission),
                 currentPresetName: nextPresetName,
                 delegatePresetName: resolveExistingPresetName(draft.delegatePresetName, nextPresetName),
@@ -1245,6 +1329,12 @@ export function createAgentSettingsPanel(deps = {}) {
             syncConfigDraft(root);
         });
 
+        for (const prefix of ['#xb-assistant', '#xb-assistant-delegate']) {
+            root.querySelector(`${prefix}-model-list-auth`)?.addEventListener('change', () => {
+                syncConfigDraft(root);
+            });
+        }
+
         root.querySelector('#xb-assistant-max-tokens')?.addEventListener('input', () => {
             syncConfigDraft(root);
         });
@@ -1257,9 +1347,82 @@ export function createAgentSettingsPanel(deps = {}) {
             syncConfigDraft(root);
         });
 
-        root.querySelector('#xb-assistant-tavily-api-key')?.addEventListener('input', () => {
+        root.querySelector('#xb-assistant-vertex-auth')?.addEventListener('change', () => {
             syncConfigDraft(root);
         });
+        root.querySelector('#xb-assistant-vertex-region')?.addEventListener('input', () => {
+            syncConfigDraft(root);
+        });
+        root.querySelector('#xb-assistant-delegate-vertex-auth')?.addEventListener('change', () => {
+            syncConfigDraft(root);
+        });
+        root.querySelector('#xb-assistant-delegate-vertex-region')?.addEventListener('input', () => {
+            syncConfigDraft(root);
+        });
+
+        // SA JSON 編輯按鈕（顯示/隱藏 textarea）
+        root.querySelector('#xb-assistant-vertex-sa-edit')?.addEventListener('click', () => {
+            const ta = root.querySelector('#xb-assistant-vertex-sa');
+            const indicator = root.querySelector('#xb-assistant-vertex-sa-indicator');
+            const btn = root.querySelector('#xb-assistant-vertex-sa-edit');
+            if (!ta) return;
+            const isShowing = ta.style.display === 'block';
+            if (!isShowing) {
+                // 打開編輯模式：同步 draft 到 textarea
+                const draft = syncConfigDraft(root);
+                ta.value = draft.serviceAccountJson || '';
+                ta.style.display = 'block';
+                btn.textContent = '完成';
+                if (indicator) indicator.style.display = 'none';
+                ta.focus();
+            } else {
+                // 完成：把 textarea 值寫回 draft（保存時走正規路徑持久化）
+                const val = ta.value.trim();
+                const draft = syncConfigDraft(root);
+                if (val) draft.serviceAccountJson = val;
+                ta.style.display = 'none';
+                btn.textContent = '編輯';
+                if (indicator) {
+                    indicator.value = val ? '已設定' : '未設定（貼上 SA JSON 後自動保存）';
+                    indicator.style.display = '';
+                }
+            }
+        });
+        root.querySelector('#xb-assistant-delegate-vertex-sa-edit')?.addEventListener('click', () => {
+            const ta = root.querySelector('#xb-assistant-delegate-vertex-sa');
+            const indicator = root.querySelector('#xb-assistant-delegate-vertex-sa-indicator');
+            const btn = root.querySelector('#xb-assistant-delegate-vertex-sa-edit');
+            if (!ta) return;
+            const isShowing = ta.style.display === 'block';
+            if (!isShowing) {
+                const draft = syncConfigDraft(root);
+                ta.value = draft.delegateServiceAccountJson || '';
+                ta.style.display = 'block';
+                btn.textContent = '完成';
+                if (indicator) indicator.style.display = 'none';
+                ta.focus();
+            } else {
+                const val = ta.value.trim();
+                const draft = syncConfigDraft(root);
+                if (val) draft.delegateServiceAccountJson = val;
+                ta.style.display = 'none';
+                btn.textContent = '編輯';
+                if (indicator) {
+                    indicator.value = val ? '已設定' : '未設定';
+                    indicator.style.display = '';
+                }
+            }
+        });
+
+        bindWebSettingsGuide(root);
+        root.querySelector('#xb-assistant-web-provider')?.addEventListener('change', () => {
+            const draft = syncConfigDraft(root);
+            syncWebSettingsForm(root, draft);
+        });
+        for (const { id } of WEB_PROVIDERS) {
+            root.querySelector(`#xb-assistant-${id}-api-key`)?.addEventListener('input', () => syncConfigDraft(root));
+            bindInputVisibilityToggle(root, `#xb-assistant-toggle-${id}-key`, `#xb-assistant-${id}-api-key`);
+        }
 
         root.querySelector('#xb-assistant-model-pulled')?.addEventListener('change', (event) => {
             const value = event.currentTarget.value;
@@ -1272,7 +1435,6 @@ export function createAgentSettingsPanel(deps = {}) {
         });
 
         bindInputVisibilityToggle(root, '#xb-assistant-toggle-key', '#xb-assistant-api-key');
-        bindInputVisibilityToggle(root, '#xb-assistant-toggle-tavily-key', '#xb-assistant-tavily-api-key');
 
         root.querySelector('#xb-assistant-delegate-provider')?.addEventListener('change', (event) => {
             const nextProvider = event.currentTarget.value;

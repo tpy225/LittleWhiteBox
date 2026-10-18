@@ -34,9 +34,8 @@ export function createHistoryCompactionController(deps) {
         DEFAULT_PRESERVED_TURNS,
         MIN_PRESERVED_TURNS,
         SUMMARY_TRIGGER_TOKENS,
-        HISTORY_SUMMARY_MAX_TOKENS,
         buildContextMeterLabel,
-        forceUpdateContextStats,
+        updateContextStats,
         toProviderMessages,
     } = deps;
 
@@ -86,14 +85,6 @@ export function createHistoryCompactionController(deps) {
         });
 
         return lines.join('\n').trim();
-    }
-
-    function resolveHistorySummaryMaxTokens(providerConfig = {}) {
-        const configuredMaxTokens = Number(providerConfig?.maxTokens);
-        if (Number.isFinite(configuredMaxTokens) && configuredMaxTokens > 0) {
-            return Math.min(Math.floor(configuredMaxTokens), HISTORY_SUMMARY_MAX_TOKENS);
-        }
-        return HISTORY_SUMMARY_MAX_TOKENS;
     }
 
     function buildFallbackSummary(turns, existingSummary = '') {
@@ -147,7 +138,7 @@ export function createHistoryCompactionController(deps) {
                 tools: [],
                 toolChoice: 'none',
                 temperature: Math.min(providerConfig.temperature ?? 0.2, 0.2),
-                maxTokens: resolveHistorySummaryMaxTokens(providerConfig),
+                maxTokens: providerConfig.maxTokens,
                 reasoning: { mode: 'inherit', output: 'hide' },
                 signal,
             });
@@ -161,10 +152,11 @@ export function createHistoryCompactionController(deps) {
     }
 
     async function ensureContextBudget(adapter, signal, options = {}) {
+        signal?.throwIfAborted();
         const preservedOptions = [DEFAULT_PRESERVED_TURNS, MIN_PRESERVED_TURNS];
         let contextMessages = getActiveContextMessages();
         let providerMessages = toProviderMessages(contextMessages, options);
-        await forceUpdateContextStats(providerMessages, null, signal);
+        updateContextStats(providerMessages);
 
         if (state.contextStats.usedTokens <= SUMMARY_TRIGGER_TOKENS) {
             return providerMessages;
@@ -194,7 +186,8 @@ export function createHistoryCompactionController(deps) {
 
             contextMessages = getActiveContextMessages();
             providerMessages = toProviderMessages(contextMessages, options);
-            await forceUpdateContextStats(providerMessages, null, signal);
+            signal?.throwIfAborted();
+            updateContextStats(providerMessages);
             if (state.contextStats.usedTokens <= SUMMARY_TRIGGER_TOKENS) {
                 showToast(`已压缩较早历史，当前上下文 ${buildContextMeterLabel()}`);
                 render();

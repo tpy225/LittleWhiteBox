@@ -6,42 +6,34 @@ import { createContextStatsController } from '../app-src/runtime/context-stats.j
 import { createHistoryCompactionController } from '../app-src/runtime/history-compaction.js';
 import { setHostChatCompletionsRequestHeadersProvider } from '../../../shared/host-llm/chat-completions/client.js';
 import { createAssistantRuntime } from '../app-src/runtime.js';
-import { resolveConversationTokens, estimateConversationTokens } from '../../agent-core/runtime/context-tokens.js';
+import { estimateConversationTokens } from '../../agent-core/runtime/context-tokens.js';
 
-test('assistant meter invalidates resolved counts when replayed reasoning or its mode changes', async () => {
+test('assistant estimates track the current replayed reasoning and tool definitions', () => {
     const state = { historySummary: '', contextStats: {} };
     const config = { provider: 'openai-compatible', model: 'deepseek-chat', reasoning: { mode: 'on' } };
     const tools = [{ type: 'function', function: { name: 'Read', parameters: {} } }];
     const preserved = { role: 'assistant', content: '', reasoning_content: 'thinking '.repeat(1000) };
     const messages = [{ role: 'assistant', content: '', providerPayload: { openaiCompatibleMessage: preserved } },
         { role: 'user', content: 'next' }];
-    let calls = 0;
-    const controller = createContextStatsController({ state, MAX_CONTEXT_TOKENS: 258000, TOOL_DEFINITIONS: tools,
-        getActiveProviderConfig: () => config,
-        countTokens: async input => { calls++; return { tokens: estimateConversationTokens(input), source: 'tokenizer' }; },
-    });
-    controller.updateContextStats(messages);
-    const initial = state.contextStats.usedTokens;
+    const controller = createContextStatsController({ state, MAX_CONTEXT_TOKENS: 258000,
+        getToolDefinitions: () => tools, getActiveProviderConfig: () => config });
+    const initial = controller.updateContextStats(messages);
     assert.equal(initial, estimateConversationTokens({ messages, tools, providerConfig: config }));
-    assert.equal(await controller.forceUpdateContextStats(messages), initial);
-    await controller.forceUpdateContextStats(messages);
-    assert.equal(calls, 1);
+    assert.equal(state.contextStats.source, 'estimated');
     preserved.reasoning_content += 'more reasoning '.repeat(1000);
-    controller.updateContextStats(messages);
-    assert.equal(state.contextStats.source, 'estimated');
-    assert.ok(await controller.forceUpdateContextStats(messages) > initial);
-    assert.equal(calls, 2);
+    assert.ok(controller.updateContextStats(messages) > initial);
     config.reasoning.mode = 'off';
-    controller.updateContextStats(messages);
-    assert.equal(state.contextStats.source, 'estimated');
-    assert.ok(await controller.forceUpdateContextStats(messages) < initial);
-    assert.equal(calls, 3);
+    const withoutReasoning = controller.updateContextStats(messages);
+    assert.ok(withoutReasoning < initial);
     preserved.reasoning_content += 'not replayed';
-    await controller.forceUpdateContextStats(messages);
-    assert.equal(calls, 3);
+    assert.equal(controller.updateContextStats(messages), withoutReasoning);
+    tools.push({ type: 'function', function: { name: 'Search', parameters: { query: { type: 'string' } } } });
+    assert.ok(controller.updateContextStats(messages) > withoutReasoning);
+    assert.equal(controller.updateContextStats(messages, []),
+        estimateConversationTokens({ messages, tools: [], providerConfig: config }));
 });
 
-test('replayed historical reasoning alone triggers assistant compaction even when Host counting is unavailable', async () => {
+test('replayed historical reasoning alone triggers local compaction and cancellation leaves history untouched', async () => {
     const state = { messages: [
         { role: 'user', content: 'old' },
         { role: 'assistant', content: 'answer', providerPayload: { openaiCompatibleMessage: {
@@ -52,20 +44,24 @@ test('replayed historical reasoning alone triggers assistant compaction even whe
     const config = { provider: 'openai-compatible', model: 'deepseek-chat', reasoning: { mode: 'on' } };
     const tools = [{ type: 'function', function: { name: 'Read', parameters: {} } }];
     const meter = createContextStatsController({ state, MAX_CONTEXT_TOKENS: 258000, TOOL_DEFINITIONS: tools,
-        getActiveProviderConfig: () => config,
-        countTokens: input => resolveConversationTokens({ ...input, requestHeaders: () => { throw new Error('unavailable'); } }),
-    });
+        getActiveProviderConfig: () => config });
     assert.ok(estimateConversationTokens({ messages: state.messages, tools }) < 228000);
-    assert.ok(await meter.forceUpdateContextStats(state.messages) > 228000);
+    assert.ok(meter.updateContextStats(state.messages) > 228000);
     const controller = createHistoryCompactionController({ state, ...meter,
         render() {}, persistSession() {}, showToast() {}, getActiveProviderConfig: () => config,
         buildTextWithAttachmentSummary: text => text, trimForSummary: text => text,
         SUMMARY_SYSTEM_PROMPT, DEFAULT_PRESERVED_TURNS: 1, MIN_PRESERVED_TURNS: 1,
-        SUMMARY_TRIGGER_TOKENS: 228000, HISTORY_SUMMARY_MAX_TOKENS: 10000,
+        SUMMARY_TRIGGER_TOKENS: 228000,
         toProviderMessages: messages => [{ role: 'system', content: state.historySummary }, ...messages],
     });
     let summaries = 0;
-    const result = await controller.ensureContextBudget({ chat: async () => { summaries++; return { text: 'summary' }; } });
+    const adapter = { chat: async () => { summaries++; return { text: 'summary' }; } };
+    const originalMessages = structuredClone(state.messages);
+    await assert.rejects(controller.ensureContextBudget(adapter, AbortSignal.abort()), { name: 'AbortError' });
+    assert.deepEqual(state.messages, originalMessages);
+    assert.equal(state.historySummary, '');
+    assert.equal(summaries, 0);
+    const result = await controller.ensureContextBudget(adapter);
     assert.equal(summaries, 1);
     assert.equal(state.historySummary, 'summary');
     assert.deepEqual(state.messages, [{ role: 'user', content: 'next' }]);
@@ -74,151 +70,56 @@ test('replayed historical reasoning alone triggers assistant compaction even whe
     assert.ok(result.every(m => !m.providerPayload));
 });
 
-test('context meter estimates during render and sends one complete payload only at the exact budget boundary', async () => {
-    setHostChatCompletionsRequestHeadersProvider(() => ({ 'X-CSRF-Token': 'test-csrf' }));
-    const originalFetch = globalThis.fetch;
-    const requests = [];
-    globalThis.fetch = async (url, options) => {
-        requests.push({ url, options });
-        return {
-            ok: true,
-            json: async () => ({ count: 47, ids: Array(47).fill(1) }),
-        };
-    };
-
-    try {
-        const state = {
-            historySummary: '',
-            contextStats: {
-                usedTokens: 0,
-                budgetTokens: 258000,
-                summaryActive: false,
-            },
-        };
-        const toolDefinitions = [{ type: 'function', function: { name: 'Read' } }];
-        const controller = createContextStatsController({
-            state,
-            getActiveProviderConfig: () => ({ provider: 'openai-compatible', model: 'gpt-4o-mini' }),
-            getToolDefinitions: () => toolDefinitions,
-            TOOL_DEFINITIONS: [],
-            MAX_CONTEXT_TOKENS: 258000,
-        });
-        const messages = [
-            { role: 'system', content: 'Rules.' },
-            { role: 'user', content: 'Inspect the file.' },
-        ];
-
-        controller.updateContextStats(messages);
-        assert.equal(requests.length, 0);
-
-        await controller.forceUpdateContextStats(messages);
-        assert.equal(requests.length, 1);
-        assert.equal(requests[0].url, '/api/tokenizers/openai/encode?model=gpt-4o-mini');
-        assert.equal(requests[0].options.headers['X-CSRF-Token'], 'test-csrf');
-        assert.deepEqual(JSON.parse(JSON.parse(requests[0].options.body).text), [
-            ...messages,
-            {
-                role: 'system',
-                content: `TOOLS\n${JSON.stringify(toolDefinitions)}`,
-            },
-        ]);
-        assert.equal(state.contextStats.usedTokens, 47);
-    } finally {
-        globalThis.fetch = originalFetch;
-        setHostChatCompletionsRequestHeadersProvider(null);
-    }
-});
-
-test('history summary prompt preserves structured cross-domain memory', () => {
-    assert.match(SUMMARY_SYSTEM_PROMPT, /目标是省上下文，不是失忆/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /# 当前目标/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /# 已确认内容/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /# 关键细节/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /# 未解决问题 \/ 下一步/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /# 用户偏好与约束/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /技术排查/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /写卡\/小说\/剧情/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /闲聊\/长期协作/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /不超过 10000 tokens/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /先判断对话类型/);
-    assert.match(SUMMARY_SYSTEM_PROMPT, /不要把具体事实洗成/);
-});
-
-test('fallback estimates are not cached as resolved; late cancelled counts cannot overwrite the latest meter', async () => {
-    const state = { historySummary: '', contextStats: { usedTokens: 0 } };
-    let calls = 0;
-    let late;
-    const controller = createContextStatsController({ state, MAX_CONTEXT_TOKENS: 258000, TOOL_DEFINITIONS: [],
-        getActiveProviderConfig: () => ({ provider: 'openai-compatible' }),
-        countTokens: async options => {
-            calls++;
-            if (calls === 1) return { tokens: estimateConversationTokens(options), source: 'estimated' };
-            if (calls === 3) return new Promise(resolve => { late = resolve; });
-            return { tokens: calls === 2 ? 194088 : 500, source: 'tokenizer' };
-        },
-    });
-    const messages = [{ role: 'user', content: '材料' }];
-    controller.updateContextStats(messages);
-    const estimated = state.contextStats.usedTokens;
-    assert.equal(await controller.forceUpdateContextStats(messages), estimated);
-    assert.equal(state.contextStats.usedTokens, estimated);
-    assert.equal(state.contextStats.source, 'estimated');
-    assert.equal(await controller.forceUpdateContextStats(messages), 194088);
-    assert.equal(state.contextStats.source, 'resolved');
-    assert.equal(await controller.forceUpdateContextStats(messages), 194088);
-    assert.equal(calls, 2);
-    const cancelled = controller.forceUpdateContextStats([{ role: 'user', content: '旧请求' }]);
-    const rejected = assert.rejects(cancelled, { name: 'AbortError' });
-    await controller.forceUpdateContextStats([{ role: 'user', content: '新请求' }]);
-    late({ tokens: 99999, source: 'tokenizer' });
-    await rejected;
-    assert.equal(state.contextStats.usedTokens, 500);
-});
-
-test('assistant continues after unavailable counting or uncompressible tool input and restarts after compaction', async t => {
-    for (const mode of ['403', 'oversize-tool', 'session', 'compact-session']) {await t.test(mode, async t => {
+test('assistant tool continuations never request Host counting and restart native sessions after local compaction', async t => {
+    let headerRequests = 0;
+    setHostChatCompletionsRequestHeadersProvider(() => { headerRequests++; return {}; });
+    t.after(() => setHostChatCompletionsRequestHeadersProvider(null));
+    for (const mode of ['stateless', 'session', 'oversize-tool', 'compact-session']) { await t.test(mode, async t => {
         const state = { messages: [{ role: 'user', content: '开始任务' }], historySummary: '', archivedTurnCount: 0 };
-        if (mode === 'compact-session') state.messages.unshift({ role: 'user', content: '旧任务' }, { role: 'assistant', content: '旧答复' });
-        const requests = []; const pending = new Map(); let counts = 0;
+        if (mode === 'compact-session') state.messages.unshift(
+            { role: 'user', content: '旧任务' }, { role: 'assistant', content: 'r'.repeat(500000) });
+        const toolText = mode === 'oversize-tool' ? 'r'.repeat(900000)
+            : mode === 'compact-session' ? 'r'.repeat(350000) : '工具结果';
+        const requests = [], pending = new Map();
         const run = { id: 'test', controller: new AbortController(), toolRequestIds: new Set() };
         state.activeRun = run;
-        t.mock.method(globalThis, 'fetch', async () => new Response('', { status: 403 }));
+        const fetch = t.mock.method(globalThis, 'fetch', async () => new Response('', { status: 403 }));
         const runtime = createAssistantRuntime({ state, pendingToolCalls: pending, pendingApprovals: new Map(),
             render() {}, persistSession() {}, showToast() {}, createRequestId: () => 'tool-request',
-            post(type, payload) {if (type === 'xb-assistant:tool-call') pending.get(payload.requestId).resolve({ ok: true, text: '工具结果' });},
+            post(type, payload) { if (type === 'xb-assistant:tool-call') pending.get(payload.requestId).resolve({ ok: true, text: toolText }); },
             safeJsonParse: JSON.parse, describeError: String, isAbortError: e => e?.name === 'AbortError',
             formatToolResultDisplay: message => ({ details: message.content }),
             buildTextWithAttachmentSummary: text => text, buildUserContentParts: message => message.content,
             normalizeAttachments: value => value || [], normalizeThoughtBlocks: value => value || [],
             getActiveProviderConfig: () => ({ provider: 'google', model: 'gemini-test' }),
             SYSTEM_PROMPT: '规则', SUMMARY_SYSTEM_PROMPT: '总结', HISTORY_SUMMARY_PREFIX: '记忆',
-            MAX_CONTEXT_TOKENS: 258000, SUMMARY_TRIGGER_TOKENS: 228000, HISTORY_SUMMARY_MAX_TOKENS: 10000,
+            MAX_CONTEXT_TOKENS: 258000, SUMMARY_TRIGGER_TOKENS: 228000,
             DEFAULT_PRESERVED_TURNS: 1, MIN_PRESERVED_TURNS: 1, MAX_TOOL_ROUNDS: 4, REQUEST_TIMEOUT_MS: 1000,
             TOOL_DEFINITIONS: [], TOOL_NAMES: { READ: 'Read' },
-            countTokens: async options => {
-                counts++;
-                if (mode === '403') return resolveConversationTokens({ ...options, requestHeaders: () => ({}) });
-                if (mode === 'oversize-tool' && options.messages.some(m => m.role === 'tool')) return { tokens: 300000, source: 'tokenizer' };
-                if (mode === 'compact-session' && counts === 2) return { tokens: 240000, source: 'tokenizer' };
-                return { tokens: 100, source: 'tokenizer' };
-            },
-            createAdapter: () => ({ supportsSessionToolLoop: true, async chat(request) {
+            createAdapter: () => ({ supportsSessionToolLoop: mode !== 'stateless', async chat(request) {
                 if (request.toolChoice === 'none') return { text: '历史摘要' };
                 requests.push(request);
                 return requests.length === 1 ? { text: '', toolCalls: [{ id: 'read', name: 'Read', arguments: '{}' }] } : { text: '完成' };
             } }),
         });
         await runtime.runAssistantLoop(run);
-        assert.equal(requests.length, 2); assert.ok(counts >= 2);
+        assert.equal(requests.length, 2);
+        assert.equal(fetch.mock.callCount(), 0);
+        assert.equal(headerRequests, 0);
         assert.equal(state.messages.at(-1).content, '完成');
-        if (mode === '403') assert.equal(state.contextStats.source, 'estimated');
-        if (mode !== 'compact-session') assert.equal(requests[1].toolResponses.length, 1);
+        assert.equal(state.contextStats.source, 'estimated');
+        if (mode === 'session' || mode === 'oversize-tool') assert.equal(requests[1].toolResponses.length, 1);
         else {
             assert.equal(requests[1].toolResponses, undefined);
             assert.ok(Array.isArray(requests[1].messages));
-            assert.ok(!requests[1].messages.some(m => m.content === '旧任务'));
+            assert.ok(requests[1].messages.some(m => m.role === 'tool'));
         }
-    });}
+        if (mode === 'compact-session') {
+            assert.ok(state.historySummary);
+            assert.ok(!requests[1].messages.some(m => m.content === '旧任务'));
+            assert.ok(state.contextStats.usedTokens < 228000);
+        }
+    }); }
 });
 
 test('history compaction source includes full archived tool details', async () => {
@@ -289,11 +190,10 @@ test('history compaction source includes full archived tool details', async () =
         DEFAULT_PRESERVED_TURNS: 1,
         MIN_PRESERVED_TURNS: 1,
         SUMMARY_TRIGGER_TOKENS: 1,
-        HISTORY_SUMMARY_MAX_TOKENS: 10000,
         buildContextMeterLabel() {
             return '999 tokens';
         },
-        async forceUpdateContextStats() {
+        updateContextStats() {
             state.contextStats.usedTokens = 999;
         },
         toProviderMessages(messages) {
@@ -309,7 +209,7 @@ test('history compaction source includes full archived tool details', async () =
         },
     }, new AbortController().signal);
 
-    assert.equal(summaryRequest?.maxTokens, 10000);
+    assert.equal(summaryRequest?.maxTokens, 12000);
     assert.deepEqual(summaryRequest?.reasoning, { mode: 'inherit', output: 'hide' });
     assert.match(summarySource, /已有历史摘要（当前记忆底稿/);
     assert.match(summarySource, /modules\/old\.js/);
@@ -366,9 +266,8 @@ test('history compaction propagates cancellation without mutating archived histo
         DEFAULT_PRESERVED_TURNS: 1,
         MIN_PRESERVED_TURNS: 1,
         SUMMARY_TRIGGER_TOKENS: 1,
-        HISTORY_SUMMARY_MAX_TOKENS: 10000,
         buildContextMeterLabel() { return '999 tokens'; },
-        async forceUpdateContextStats() { state.contextStats.usedTokens = 999; },
+        updateContextStats() { state.contextStats.usedTokens = 999; },
         toProviderMessages(messages) { return messages; },
     });
     const abortError = new DOMException('The operation was aborted.', 'AbortError');

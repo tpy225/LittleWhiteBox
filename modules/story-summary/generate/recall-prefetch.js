@@ -1,11 +1,13 @@
 import { createAbortError, throwIfSignalAborted } from '../../../shared/common/abort-utils.js';
 import { createRecallDiagnostics } from '../recall-diagnostics.js';
 import { RECALL_TIMEOUT_MS, RECALL_TIMEOUT_REASONS } from './recall-failure.js';
+import { usesStoryRecall } from './recall-policy.js';
 
 const DEFAULT_POLL_MS = 16;
+const QUERY_WAIT_NOTICE_MS = 30_000;
 
 export function getRecallPrefetchStartAction(type, params, isDryRun) {
-    if (isDryRun) return 'ignore';
+    if (isDryRun || !usesStoryRecall(type)) return 'ignore';
     const normalizedType = type || 'normal';
     if (normalizedType !== 'normal' || params?.automatic_trigger) return 'cancel-only';
     return 'watch';
@@ -66,6 +68,40 @@ export function createRecallPrefetchCoordinator(options) {
         slot.abortFromSource = null;
     }
 
+    function clearQueryNotice(slot) {
+        if (slot.queryNoticeTimer !== null) unschedule(slot.queryNoticeTimer);
+        slot.queryNoticeTimer = null;
+        slot.queryNotice?.clear();
+    }
+
+    async function withQueryEmbedding(slot, request) {
+        throwIfSignalAborted(slot.controller.signal);
+        // Each query attempt has its own timeout. Its intentional retry loop
+        // consumes no preparation budget; all other work keeps that budget.
+        const remaining = Math.max(0, slot.deadlineAt - now());
+        if (!remaining) {
+            expireSlot(slot);
+            throwIfSignalAborted(slot.controller.signal);
+        }
+        if (slot.expiryTimer !== null) unschedule(slot.expiryTimer);
+        slot.expiryTimer = null;
+        slot.deadlineAt = Infinity;
+        slot.queryNotice ??= options.createRetryNotice?.();
+        slot.queryNoticeTimer = schedule(() => {
+            slot.queryNoticeTimer = null;
+            slot.queryNotice?.show();
+        }, QUERY_WAIT_NOTICE_MS);
+        try {
+            return await request();
+        } finally {
+            clearQueryNotice(slot);
+            if (!slot.controller.signal.aborted && slot.phase !== 'idle') {
+                slot.deadlineAt = now() + remaining;
+                scheduleExpiry(slot);
+            }
+        }
+    }
+
     function abortSlot(slot, reason, abortDispatch = false, retainForJoin = false) {
         if (!slot || slot.phase === 'idle') return;
         if (slot.phase === 'cancelled') {
@@ -77,6 +113,7 @@ export function createRecallPrefetchCoordinator(options) {
         slot.phase = 'cancelled';
         slot.diagnostics.finishedAt ??= now();
         clearTimers(slot);
+        clearQueryNotice(slot);
         detachDispatch(slot);
         detachSource(slot);
         if (abortDispatch) slot.runContext?.abort?.(true);
@@ -103,17 +140,18 @@ export function createRecallPrefetchCoordinator(options) {
     function startCompute(slot) {
         if (slot.outcome) return;
         clearTimers(slot);
-        slot.computeStartedAt = now();
         // Watching for a USER message consumes no recall computation budget.
-        slot.deadlineAt = slot.computeStartedAt + maxAgeMs;
+        if (slot.computeStartedAt === null) {
+            slot.computeStartedAt = now();
+            slot.deadlineAt = slot.computeStartedAt + maxAgeMs;
+        }
         slot.diagnostics.startedAt = now();
         slot.diagnostics.stage = 'prepare';
         scheduleExpiry(slot);
-        slot.outcome = settle(Promise.resolve().then(() => {
-            if (slot.controller.signal.aborted) {
-                throw slot.controller.signal.reason || createAbortError('Story Summary recall cancelled');
-            }
-            return prepare(slot.type, slot.controller.signal, slot.diagnostics);
+        slot.outcome = settle(Promise.resolve().then(async () => {
+            throwIfSignalAborted(slot.controller.signal);
+            return prepare(slot.type, slot.controller.signal, slot.diagnostics,
+                request => withQueryEmbedding(slot, request));
         })).then(outcome => {
             // Both success and failure are final outcomes. A late host join must
             // neither expire a finished result nor replace its original error.
@@ -173,6 +211,8 @@ export function createRecallPrefetchCoordinator(options) {
             outcome: null,
             pollTimer: null,
             expiryTimer: null,
+            queryNoticeTimer: null,
+            queryNotice: null,
             runContext: null,
             dispatchSignal: null,
             abortFromDispatch: null,
@@ -254,11 +294,9 @@ export function createRecallPrefetchCoordinator(options) {
         return { slot, path: 'fallback' };
     }
 
-    function join({ chatId, type, focusRef, runContext }) {
+    function join({ chatId, type, focusRef, runContext, sourceSignal = null }) {
         const slot = current;
         const context = getContext();
-        const chat = Array.isArray(context?.chat) ? context.chat : [];
-        const focusIndex = chat.length - 1;
         const sameChat = !!slot
             && slot.chatId === String(chatId || '')
             && String(context?.chatId || '') === slot.chatId;
@@ -285,22 +323,19 @@ export function createRecallPrefetchCoordinator(options) {
             };
         }
 
-        const canReuse = !!slot
-            && sameGeneration
-            && slot.capturedRef
-            && slot.capturedRef === focusRef
-            && slot.messageIndex === focusIndex
-            && chat[slot.messageIndex] === slot.capturedRef;
+        // The slot belongs to this Generate, not to a mutable host message
+        // object. Local edits/new floors cannot spend another recall or revoke it.
+        const canReuse = sameGeneration && slot.computeStartedAt !== null;
 
         if (!canReuse) {
-            const sourceSignal = sameGeneration ? slot?.sourceSignal : null;
+            const generationSignal = sourceSignal || (sameGeneration ? slot?.sourceSignal : null);
             if (slot) abortSlot(slot, 'prefetch-mismatch', true);
             return startJoined({
                 chatId,
                 type,
                 focusRef,
                 runContext,
-                sourceSignal,
+                sourceSignal: generationSignal,
             });
         }
 
@@ -325,9 +360,12 @@ export function createRecallPrefetchCoordinator(options) {
         try {
             // The coordinator owns the only deadline. Waiting must still end
             // immediately if prepare ignores cancellation or never settles.
-            const outcome = await Promise.race([slot.outcome, cancelled]);
-            throwIfSignalAborted(signal);
-            return outcome;
+            for (;;) {
+                const pending = slot.outcome;
+                const outcome = await Promise.race([pending, cancelled]);
+                throwIfSignalAborted(signal);
+                if (pending === slot.outcome) return outcome;
+            }
         } finally {
             signal.removeEventListener('abort', onAbort);
         }
@@ -361,10 +399,23 @@ export function createRecallPrefetchCoordinator(options) {
     function finish(slot) {
         if (!slot) return;
         clearTimers(slot);
+        clearQueryNotice(slot);
         detachDispatch(slot);
         detachSource(slot);
         if (current === slot) current = null;
         slot.phase = 'idle';
+    }
+
+    function getActive() {
+        return current && !['cancelled', 'idle'].includes(current.phase) ? current : null;
+    }
+
+    function discardUnjoined() {
+        const slot = getActive();
+        if (!slot || slot.joinedAt !== null) return;
+        // An unattributed idle notification may belong to quiet. Discard only
+        // speculative work, never retain a cancellation for the host to join.
+        abortSlot(slot, 'host-idle');
     }
 
     return Object.freeze({
@@ -373,6 +424,8 @@ export function createRecallPrefetchCoordinator(options) {
         waitForOutcome,
         cancel,
         finish,
+        discardUnjoined,
+        getActive,
         getCurrent: () => current,
     });
 }

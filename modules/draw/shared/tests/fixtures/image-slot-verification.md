@@ -65,7 +65,7 @@
 在仓库根目录使用现有依赖：
 
 ```powershell
-node --test modules/draw/shared/tests/*.test.js modules/draw/providers/*/tests/*.test.js integrations/tauritavern/tests/*.test.js server-plugin/littlewhitebox-image-jobs/tests/*.test.js
+node --test modules/draw/shared/tests/*.test.js modules/draw/providers/*/tests/*.test.js integrations/tauritavern/tests/*.test.js server-plugin/littlewhitebox-server/tests/*.test.js
 node --import tsx --test modules/xiaobai-os/tests/dice*.test.js
 node scripts/check-relative-imports.mjs
 node node_modules/vue-tsc/bin/vue-tsc.js --noEmit -p tsconfig.xiaobai-os.json

@@ -107,7 +107,7 @@ test('Draw Run cancel posts to the run-scoped endpoint and validates the returne
     const run = await client.cancelRun('run-test-201');
     assert.equal(run.id, 'run-test-201');
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, '/api/plugins/littlewhitebox-image-jobs/v1/draw-runs/run-test-201/cancel');
+    assert.equal(calls[0].url, '/api/plugins/littlewhitebox-server/v1/draw-runs/run-test-201/cancel');
     assert.equal(calls[0].options.method, 'POST');
 });
 

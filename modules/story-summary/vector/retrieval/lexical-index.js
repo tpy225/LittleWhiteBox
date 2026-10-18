@@ -1,11 +1,12 @@
 import { getContext } from '../../../../../../../extensions.js';
-import { getSummaryStore } from '../../data/store.js';
+import { getPublishedSummaryStore as getSummaryStore } from '../../data/store.js';
 import { getAllChunks } from '../storage/chunk-store.js';
 import { xbLog } from '../../../../core/debug-core.js';
 import { getTokenizerSnapshot, injectEntities } from '../utils/tokenizer.js';
 import { getEntityVocabulary } from './entity-lexicon.js';
 import { normalizeEntityTerm } from './entity-matcher.js';
 import { LexicalCorpus } from './lexical-corpus.js';
+import { trackVectorActivity } from '../runtime/vector-activity.js';
 
 const MODULE_ID = 'lexical-index';
 
@@ -285,7 +286,8 @@ function startIndexSync(chatId, updates = []) {
     const build = { chatId, updates, promise: null };
     const isCurrent = () => activeBuild === build && getContext().chatId === chatId;
     activeBuild = build;
-    build.promise = Promise.resolve().then(async () => {
+    build.promise = Promise.resolve().then(() => trackVectorActivity({ chatId, phase: 'lexical-index', unit: 'batches' }, async activity => {
+        let completed = 0;
         if (!isCurrent()) return null;
         let index = cachedChatId === chatId ? cachedIndex : null;
         if (index) {
@@ -308,7 +310,12 @@ function startIndexSync(chatId, updates = []) {
             const tokenizer = getTokenizerSnapshot();
             index ||= new LexicalCorpus(tokenizer);
             const updates = build.updates.splice(0);
+            // This index is shared by foreground readers and background updates.
+            // Its total can grow while building; do not claim an exact remainder.
+            activity.update({ state: 'indexing', activeUnits: updates.length });
             await index.applyBatch(updates, tokenizer, isCurrent);
+            completed += updates.length;
+            activity.update({ completed, activeUnits: 0 });
             if (!isCurrent()) return null;
             if (build.updates.length || index.tokenizer !== getTokenizerSnapshot()) continue;
             cachedIndex = index;
@@ -319,7 +326,7 @@ function startIndexSync(chatId, updates = []) {
             return index;
         }
         return null;
-    }).catch(error => {
+    })).catch(error => {
         if (isCurrent()) {
             cachedIndex = null;
             cachedChatId = null;
@@ -346,7 +353,8 @@ export function invalidateLexicalIndex() {
 
 function applyUpdate(update, chatId) {
     if (!chatId || getContext().chatId !== chatId) return null;
-    if (!update.clearChunks && update.floor === undefined && !update.docs?.length && !update.removeIds?.length) return null;
+    if (!update.clearChunks && !update.clearEvents && update.floor === undefined && update.fromFloor === undefined
+        && !update.docs?.length && !update.removeIds?.length) return null;
     if (activeBuild?.chatId === chatId) {
         activeBuild.updates.push(update);
         return activeBuild.promise;
@@ -372,6 +380,14 @@ export function clearChunkDocuments(chatId = getContext().chatId) {
 
 export function removeDocumentsByFloor(floor, chatId = getContext().chatId) {
     return applyUpdate({ floor }, chatId);
+}
+
+export function removeDocumentsFromFloor(fromFloor, chatId = getContext().chatId) {
+    return applyUpdate({ fromFloor }, chatId);
+}
+
+export function replaceEventDocuments(events, chatId = getContext().chatId) {
+    return applyUpdate({ clearEvents: true, docs: collectDocuments([], events).docs }, chatId);
 }
 
 export function addEventDocuments(events, chatId = getContext().chatId) {

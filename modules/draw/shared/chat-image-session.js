@@ -8,7 +8,7 @@ const MAIN_TYPES = new Set(['', 'normal', 'regenerate', 'swipe', 'continue']);
 // One observation belongs to one actual host call. Rendering cannot create it.
 // Claims live only on the message object; durable ownership is the existing
 // preview input and (for backend transport) the existing image job journal.
-export function createChatImageSession({ context, provider, changed, report }) {
+export function createChatImageSession({ context, provider, changed, report, autoGenerate = () => true }) {
     let observation = null;
     let targetRevision = 0;
     const claims = new WeakMap();
@@ -157,7 +157,8 @@ export function createChatImageSession({ context, provider, changed, report }) {
             if (!source.startsWith(initialBody)) return;
             // DICE's makeFirst listener has already applied its current body.
             const candidates = parseChatImageTags(source).filter(tag => tag.end > initialBody.length);
-            if (candidates.length) await claim(ctx, index, candidates, true);
+            // 手动模式：不接管标签，等用户点占位卡上的钢笔图标；未认领态不再挂操作按钮
+            if (candidates.length && autoGenerate() !== false) await claim(ctx, index, candidates, true);
         },
         view(message, index, candidate) {
             const own = claims.get(message)?.get(message.swipe_id ?? 0)?.findLast(item => !item.invalid
@@ -167,8 +168,11 @@ export function createChatImageSession({ context, provider, changed, report }) {
                 if (own.phase === 'failed') return { phase: 'failed', label: own.error.message, action: DRAW_SLOT_COPY.retry };
             }
             if (observation && validTarget(context(), observation, index)
-                && candidate.end > observation.initialBody.length) return { phase: 'streaming', label: DRAW_SLOT_COPY.waiting };
-            return { phase: 'unclaimed', label: DRAW_SLOT_COPY.unclaimed, action: DRAW_SLOT_COPY.generate };
+                && candidate.end > observation.initialBody.length) {
+                return { phase: 'streaming',
+                    label: autoGenerate() === false ? DRAW_SLOT_COPY.manualWaiting : DRAW_SLOT_COPY.waiting };
+            }
+            return { phase: 'unclaimed', label: DRAW_SLOT_COPY.unclaimed };
         },
         async retry({ ctx, message, messageId, source, swipeIndex, candidate }) {
             const live = context();

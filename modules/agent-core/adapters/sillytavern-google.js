@@ -3,6 +3,7 @@ import {
     assertHostChatCompletionsClient,
     browserHostChatCompletionsClient,
     buildHostGoogleGeneratePayload,
+    HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE,
 } from '../../../shared/host-llm/chat-completions/client.js';
 import {
     buildEffectiveReasoningConfig,
@@ -240,7 +241,7 @@ function emitStreamProgress(task, payload) {
     });
 }
 
-function createGoogleStreamAccumulator(task, effectiveReasoning, config = {}) {
+function createGoogleStreamAccumulator(task, effectiveReasoning, config = {}, provider = 'sillytavern-google') {
     let text = '';
     let toolCalls = [];
     let thoughts = [];
@@ -273,13 +274,23 @@ function createGoogleStreamAccumulator(task, effectiveReasoning, config = {}) {
                 role: 'model',
                 parts: parts.length ? parts : (text ? [{ text }] : []),
             });
+            if (!finishReason) {
+                console.warn('[SillyTavernGoogle] 流式回應未含 finishReason，事件與累積內容如下', {
+                    provider,
+                    model,
+                    text,
+                    partsCount: parts.length,
+                    toolCallsCount: toolCalls.length,
+                    thoughtsCount: thoughts.length,
+                });
+            }
             return {
                 text,
                 toolCalls,
                 thoughts,
-                finishReason: requireResponseCompletion('google', finishReason),
+                finishReason: requireResponseCompletion('google', finishReason, false, text),
                 model,
-                provider: 'sillytavern-google',
+                provider,
                 providerPayload: buildProviderPayload(content),
             };
         },
@@ -287,6 +298,9 @@ function createGoogleStreamAccumulator(task, effectiveReasoning, config = {}) {
 }
 
 export class SillyTavernGoogleAdapter {
+    provider = 'sillytavern-google';
+    source = HOST_CHAT_COMPLETIONS_SOURCE_MAKERSUITE;
+
     constructor(config, hostClient = browserHostChatCompletionsClient) {
         this.config = config;
         this.hostClient = assertHostChatCompletionsClient(hostClient);
@@ -298,13 +312,13 @@ export class SillyTavernGoogleAdapter {
 
     buildPayload(
         task,
-        effectiveReasoning = resolveTaskReasoning('sillytavern-google', this.config, task.reasoning),
+        effectiveReasoning = resolveTaskReasoning(this.provider, this.config, task.reasoning),
     ) {
         const reasoning = effectiveReasoning;
         // SillyTavern's JSON wrapper omits stop reasons; SSE preserves the provider's terminal evidence.
         const stream = true;
         const messages = this.buildMessages(task);
-        const payload = buildHostGoogleGeneratePayload(this.config, task, messages, stream);
+        const payload = buildHostGoogleGeneratePayload(this.config, task, messages, stream, this.source);
         if (reasoning.mode === 'on') {
             payload.reasoning_effort = reasoning.effort;
             payload.include_reasoning = isReasoningOutputVisible(reasoning);
@@ -320,7 +334,7 @@ export class SillyTavernGoogleAdapter {
 
     async inspectRequest(task, options = {}) {
         const effectiveReasoning = options.effectiveReasoning
-            || resolveTaskReasoning('sillytavern-google', this.config, task.reasoning);
+            || resolveTaskReasoning(this.provider, this.config, task.reasoning);
         const payload = options.payload || this.buildPayload(task, effectiveReasoning);
         const request = await this.hostClient.buildHostChatCompletionGenerateRequest(
             payload,
@@ -332,7 +346,7 @@ export class SillyTavernGoogleAdapter {
     buildRequestInspection(
         request,
         task = {},
-        effectiveReasoning = resolveTaskReasoning('sillytavern-google', this.config, task.reasoning),
+        effectiveReasoning = resolveTaskReasoning(this.provider, this.config, task.reasoning),
     ) {
         const controlFields = {
             ...(Object.hasOwn(request?.body || {}, 'reasoning_effort')
@@ -343,7 +357,7 @@ export class SillyTavernGoogleAdapter {
                 : {}),
         };
         return {
-            provider: 'sillytavern-google',
+            provider: this.provider,
             model: this.config.model,
             transport: 'sillytavern-chat-completions',
             request: redactRequestSecrets(request),
@@ -357,7 +371,7 @@ export class SillyTavernGoogleAdapter {
 
     async chat(task) {
         const effectiveReasoning = resolveTaskReasoning(
-            'sillytavern-google',
+            this.provider,
             this.config,
             task.reasoning,
         );
@@ -368,7 +382,7 @@ export class SillyTavernGoogleAdapter {
         };
 
         try {
-            const accumulator = createGoogleStreamAccumulator(task, effectiveReasoning, this.config);
+            const accumulator = createGoogleStreamAccumulator(task, effectiveReasoning, this.config, this.provider);
             await this.hostClient.streamHostChatCompletion(payload, event => accumulator.accept(event), { signal: task.signal, onRequest });
             return { ...accumulator.result(), requestInspection };
         } catch (error) {

@@ -3,6 +3,7 @@
 
 import { getContext } from "../../../../../../extensions.js";
 import { saveBase64AsFile } from "../../../../../../utils.js";
+import { getSharedDrawSettings } from './draw-settings.js';
 import { hasPreviewImage, DRAW_SLOT_COPY, PreviewStatus } from './image-record.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -86,6 +87,83 @@ export function toAbsoluteMediaUrl(path) {
     } catch {
         return raw;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 持久化缩略图
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 画廊分组封面只用 256px 缩略图（对齐 chatu8）：避免把整角色的原图 base64 经
+// postMessage 克隆进 iframe 造成内存峰值。缩略图随记录持久化，旧记录首次被
+// 索引时懒补建。任何失败都返回 null，绝不阻断主流程。
+const THUMB_MAX_DIM = 256;
+
+function normalizeImageDataUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return raw.startsWith('data:') ? raw : `data:image/jpeg;base64,${raw}`;
+}
+
+export function createThumbnailDataUrl(base64) {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const dataUrl = normalizeImageDataUrl(base64);
+    if (!dataUrl) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+        img.onload = () => {
+            try {
+                const w0 = img.naturalWidth || img.width;
+                const h0 = img.naturalHeight || img.height;
+                if (!w0 || !h0) return finish(null);
+                const scale = Math.min(1, THUMB_MAX_DIM / Math.max(w0, h0));
+                const w = Math.max(1, Math.round(w0 * scale));
+                const h = Math.max(1, Math.round(h0 * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                // JPEG 无 alpha 通道，先铺白底防止透明 PNG 变黑
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(img, 0, 0, w, h);
+                finish(canvas.toDataURL('image/jpeg', 0.7));
+            } catch {
+                finish(null);
+            }
+        };
+        img.onerror = () => finish(null);
+        img.src = dataUrl;
+    });
+}
+
+/** 將 data URL 重編碼成 JPEG，節省快取與伺服器空間；透明 PNG 先鋪白底。
+ *  已是 JPEG、或轉換失敗時回傳原值。 */
+export function convertImageToJpeg(base64, quality = 0.8) {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(base64);
+    const dataUrl = normalizeImageDataUrl(base64);
+    if (!dataUrl || /^data:image\/jpeg;/i.test(dataUrl)) return Promise.resolve(base64);
+    return new Promise((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+        img.onload = () => {
+            try {
+                if (!img.naturalWidth && !img.width) return finish(base64);
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+                finish(canvas.toDataURL('image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8))));
+            } catch { finish(base64); }
+        };
+        img.onerror = () => finish(base64);
+        img.src = dataUrl;
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -666,34 +744,64 @@ export async function storePreview(opts) {
     const resolvedCharacterName = String(characterName || getChatCharacterName());
     const resolvedSlotId = slotId || imgId;
 
+    // 開啟「生成後存成 JPEG」時自動把原圖轉成 JPEG（節省快取/伺服器空間，PNG→JPEG 約縮 80-90%）
+    let workingBase64 = base64;
+    if (workingBase64) {
+        try {
+            const settings = getSharedDrawSettings();
+            if (settings?.saveAsJpeg) {
+                const converted = await convertImageToJpeg(workingBase64, settings.jpegQuality);
+                if (converted && converted !== workingBase64) {
+                    console.debug('[gallery-cache] storePreview JPEG 轉換成功，',
+                        Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100),
+                        '%');
+                    workingBase64 = converted;
+                }
+            }
+        } catch (e) {
+            console.warn('[gallery-cache] JPEG 轉換失敗，保留原圖：', e?.message);
+        }
+    }
+
+    // 有新原图时顺手生成持久化缩略图；无原图的状态更新保留旧缩略图
+    let thumbBase64 = workingBase64 ? await createThumbnailDataUrl(workingBase64) : null;
+
     return new Promise((resolve, reject) => {
         try {
             const tx = database.transaction(DB_STORE, 'readwrite');
-            tx.objectStore(DB_STORE).put({
-                imgId,
-                slotId: resolvedSlotId,
-                messageId,
-                chatId: resolvedChatId,
-                characterName: resolvedCharacterName,
-                source,
-                bookId,
-                bookTitle,
-                chapterPath,
-                chapterTitle,
-                base64,
-                tags,
-                title: String(title || ''),
-                positive,
-                savedUrl,
-                status,
-                errorType,
-                errorMessage,
-                characterPrompts,
-                negativePrompt,
-                presetId: String(presetId || ''),
-                presetName: String(presetName || ''),
-                timestamp: Date.now()
-            });
+            const store = tx.objectStore(DB_STORE);
+            const getReq = store.get(imgId);
+            getReq.onsuccess = () => {
+                const previous = getReq.result;
+                if (!thumbBase64 && previous?.thumbBase64) thumbBase64 = previous.thumbBase64;
+                store.put({
+                    imgId,
+                    slotId: resolvedSlotId,
+                    messageId,
+                    chatId: resolvedChatId,
+                    characterName: resolvedCharacterName,
+                    source,
+                    bookId,
+                    bookTitle,
+                    chapterPath,
+                    chapterTitle,
+                    base64: workingBase64,
+                    thumbBase64,
+                    tags,
+                    title: String(title || ''),
+                    positive,
+                    savedUrl,
+                    status,
+                    errorType,
+                    errorMessage,
+                    characterPrompts,
+                    negativePrompt,
+                    presetId: String(presetId || ''),
+                    presetName: String(presetName || ''),
+                    timestamp: Date.now()
+                });
+            };
+            getReq.onerror = () => reject(getReq.error);
             tx.oncomplete = () => {
                 invalidateCache(resolvedSlotId);
                 publishCacheChange([resolvedSlotId]);
@@ -744,6 +852,41 @@ export async function getPreview(imgId) {
             reject(e);
         }
     });
+}
+
+/** 取所有預覽的輕量版本，用於批量管理網格；對缺 thumbBase64 的舊記錄懶補建 */
+export async function getAllPreviewsLight() {
+    const database = await openDB();
+    const allRaw = await new Promise((resolve, reject) => {
+        try {
+            const tx = database.transaction(DB_STORE, 'readonly');
+            const store = tx.objectStore(DB_STORE);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+        } catch (e) { reject(e); }
+    });
+    // 懶補建：舊記錄可能有 base64 但缺 thumbBase64（256px 縮略圖首次訪問時生成）
+    for (const r of allRaw) {
+        if (r && r.imgId && !r.thumbBase64 && r.base64) {
+            const thumb = await createThumbnailDataUrl(r.base64);
+            if (thumb) {
+                await persistThumbnailQuiet(r.imgId, thumb);
+                r.thumbBase64 = thumb;
+            }
+        }
+    }
+    return allRaw
+        .filter((r) => r && r.imgId)
+        .map((r) => ({
+            imgId: String(r.imgId),
+            thumbBase64: r.thumbBase64 || null,
+            savedUrl: r.savedUrl || '',
+            characterName: String(r.characterName || ''),
+            slotId: String(r.slotId || ''),
+            timestamp: Number(r.timestamp) || 0,
+        }))
+        .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 export async function getPreviewsBySlot(slotId) {
@@ -825,6 +968,12 @@ export async function getDisplayPreviewForSlot(slotId) {
     });
 
     if (successPreviews.length === 0) {
+        const manual = previews.find(p => p?.status === PreviewStatus.MANUAL);
+        if (manual) {
+            return { preview: manual, selectedImgId, historyCount: 0, hasData: false,
+                isFailed: false, isManual: true,
+                failedInfo: { tags: manual.tags || '', positive: manual.positive || '' } };
+        }
         return asFailure(failedPreviews[0]);
     }
 
@@ -1146,43 +1295,88 @@ export async function getThumbnailCandidates(presetId = '') {
 
 // 畫廊分組輕量索引：圖多時不能把某角色全部原圖 base64 物化進內存（幾百張即數百 MB，
 // 移動端 WebView 會直接 OOM 重載）。統一走 cursor 逐條到達，每個 slot 只保留最新一張
-// 完整記錄做封面，其餘僅計數；slot 的完整歷史在打開燈箱時經 getPreviewsBySlot 按需取。
-export async function getCharacterGalleryIndex(charName) {
+// 做封面，返回時剝離原圖只帶 256px 縮略圖；slot 的完整歷史在打開燈箱時按需取。
+// 安静地把补建好的缩略图写回记录（不走 updatePreviewRecord，避免逐张触发缓存变更事件）
+async function persistThumbnailQuiet(imgId, thumbBase64) {
     const database = await openDB();
     return new Promise((resolve) => {
         try {
-            const tx = database.transaction(DB_STORE, 'readonly');
+            const tx = database.transaction(DB_STORE, 'readwrite');
             const store = tx.objectStore(DB_STORE);
-            const slots = {};
-            const pushItem = (item) => {
-                if ((item.characterName || 'Unknown') !== charName) return;
-                if (item.status === 'failed' || (!item.base64 && !item.savedUrl)) return;
-
-                const slotId = item.slotId || item.imgId;
-                const entry = slots[slotId];
-                if (!entry) {
-                    slots[slotId] = { latest: item, count: 1 };
-                } else {
-                    entry.count += 1;
-                    if (Number(item.timestamp) > Number(entry.latest.timestamp)) entry.latest = item;
-                }
+            const req = store.get(imgId);
+            req.onsuccess = () => {
+                const record = req.result;
+                if (!record) { resolve(false); return; }
+                record.thumbBase64 = thumbBase64;
+                store.put(record);
             };
-            const finish = () => resolve(slots);
-
-            store.openCursor().onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (!cursor) {
-                    finish();
-                    return;
-                }
-                pushItem(cursor.value);
-                cursor.continue();
-            };
-            tx.onerror = () => resolve({});
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = tx.onabort = () => resolve(false);
         } catch {
-            resolve({});
+            resolve(false);
         }
     });
+}
+
+// 只返回分组封面所需的轻量索引：256px 缩略图或已保存路径，绝不带原图 base64。
+// 旧记录缺缩略图时在此串行补建并持久化（每个 slot 只处理最新一张）。
+export async function getCharacterGalleryIndex(charName) {
+    const database = await openDB();
+    const latestBySlot = await new Promise((resolve) => {
+        try {
+            const tx = database.transaction(DB_STORE, 'readonly');
+            const store = tx.objectStore(DB_STORE);
+            const slots = new Map();
+            store.openCursor().onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor) { resolve(slots); return; }
+                const item = cursor.value;
+                if ((item.characterName || 'Unknown') === charName
+                    && item.status !== 'failed' && item.status !== PreviewStatus.MANUAL
+                    && (item.base64 || item.savedUrl)) {
+                    const slotId = item.slotId || item.imgId;
+                    const entry = slots.get(slotId);
+                    if (!entry) slots.set(slotId, { latest: item, count: 1 });
+                    else {
+                        entry.count += 1;
+                        if (Number(item.timestamp) > Number(entry.latest.timestamp)) entry.latest = item;
+                    }
+                }
+                cursor.continue();
+            };
+            tx.onerror = () => resolve(new Map());
+        } catch {
+            resolve(new Map());
+        }
+    });
+
+    // 旧记录懒补建缩略图（串行，单角色 slot 量级，256px 单次约 10ms）
+    for (const entry of latestBySlot.values()) {
+        const record = entry.latest;
+        if (record.base64 && !record.thumbBase64) {
+            const thumb = await createThumbnailDataUrl(record.base64);
+            if (thumb) {
+                await persistThumbnailQuiet(record.imgId, thumb);
+                record.thumbBase64 = thumb;
+            }
+        }
+    }
+
+    // 剥离原图，封面只带缩略图/服务器路径
+    const slots = {};
+    for (const [slotId, entry] of latestBySlot) {
+        const record = entry.latest;
+        slots[slotId] = {
+            count: entry.count,
+            latest: {
+                imgId: record.imgId,
+                timestamp: record.timestamp,
+                savedUrl: record.savedUrl || null,
+                thumbBase64: record.thumbBase64 || null,
+            },
+        };
+    }
+    return slots;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1193,7 +1387,7 @@ function ensureGalleryStyles() {
     if (document.getElementById('nd-gallery-styles')) return;
     const style = document.createElement('style');
     style.id = 'nd-gallery-styles';
-    style.textContent = `#nd-gallery-overlay{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:100003;display:none;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px)}#nd-gallery-overlay.visible{display:flex;flex-direction:column;align-items:center;justify-content:center}.nd-gallery-close{position:absolute;top:calc(env(safe-area-inset-top, 0px) + 16px);right:16px;width:40px;height:40px;border:none;background:rgba(255,255,255,0.1);border-radius:50%;color:#fff;font-size:20px;cursor:pointer;z-index:10}.nd-gallery-close:hover{background:rgba(255,255,255,0.2)}.nd-gallery-main{display:flex;align-items:center;gap:16px;max-width:90vw;max-height:70vh}.nd-gallery-nav{width:48px;height:48px;border:none;background:rgba(255,255,255,0.1);border-radius:50%;color:#fff;font-size:24px;cursor:pointer;flex-shrink:0}.nd-gallery-nav:hover{background:rgba(255,255,255,0.2)}.nd-gallery-nav:disabled{opacity:0.3;cursor:not-allowed}.nd-gallery-img-wrap{position:relative;max-width:calc(90vw - 140px);max-height:70vh}.nd-gallery-img{max-width:100%;max-height:70vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.5)}.nd-gallery-saved-badge{position:absolute;top:12px;left:12px;background:rgba(62,207,142,0.9);padding:4px 10px;border-radius:6px;font-size:11px;color:#fff;font-weight:600}.nd-gallery-thumbs{display:flex;gap:8px;margin-top:20px;padding:12px;background:rgba(0,0,0,0.3);border-radius:12px;max-width:90vw;overflow-x:auto}.nd-gallery-thumb{width:64px;height:64px;border-radius:8px;object-fit:cover;cursor:pointer;border:2px solid transparent;opacity:0.6;transition:all 0.15s;flex-shrink:0}.nd-gallery-thumb:hover{opacity:0.9}.nd-gallery-thumb.active{border-color:#d4a574;opacity:1}.nd-gallery-thumb.saved{border-color:rgba(62,207,142,0.8)}.nd-gallery-actions{display:flex;gap:12px;margin-top:16px}.nd-gallery-btn{padding:10px 20px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;background:rgba(255,255,255,0.1);color:#fff;font-size:13px;cursor:pointer;transition:all 0.15s}.nd-gallery-btn:hover{background:rgba(255,255,255,0.2)}.nd-gallery-btn.primary{background:rgba(212,165,116,0.3);border-color:rgba(212,165,116,0.5)}.nd-gallery-btn.danger{color:#f87171;border-color:rgba(248,113,113,0.3)}.nd-gallery-btn.danger:hover{background:rgba(248,113,113,0.15)}.nd-gallery-info{text-align:center;margin-top:12px;font-size:12px;color:rgba(255,255,255,0.6)}`;
+    style.textContent = `#nd-gallery-overlay{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:100003;display:none;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);flex-direction:column}.nd-gallery-overlay.visible{display:flex}.nd-gallery-close{position:absolute;top:calc(env(safe-area-inset-top, 0px) + 16px);right:16px;width:40px;height:40px;border:none;background:rgba(255,255,255,0.1);border-radius:50%;color:#fff;font-size:20px;cursor:pointer;z-index:10}.nd-gallery-close:hover{background:rgba(255,255,255,0.2)}.nd-gallery-main{display:flex;align-items:center;gap:16px;max-width:90vw;max-height:60vh}.nd-gallery-nav{width:48px;height:48px;border:none;background:rgba(255,255,255,0.1);border-radius:50%;color:#fff;font-size:24px;cursor:pointer;flex-shrink:0}.nd-gallery-nav:hover{background:rgba(255,255,255,0.2)}.nd-gallery-nav:disabled{opacity:0.3;cursor:not-allowed}.nd-gallery-img-wrap{position:relative;max-width:calc(90vw - 140px);max-height:60vh}.nd-gallery-img{max-width:100%;max-height:60vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.5)}.nd-gallery-saved-badge{position:absolute;top:12px;left:12px;background:rgba(62,207,142,0.9);padding:4px 10px;border-radius:6px;font-size:11px;color:#fff;font-weight:600}.nd-gallery-thumbs{display:flex;gap:8px;margin-top:16px;padding:12px;background:rgba(0,0,0,0.3);border-radius:12px;max-width:90vw;overflow-x:auto}.nd-gallery-thumb{width:64px;height:64px;border-radius:8px;object-fit:cover;cursor:pointer;border:2px solid transparent;opacity:0.6;transition:all 0.15s;flex-shrink:0}.nd-gallery-thumb:hover{opacity:0.9}.nd-gallery-thumb.active{border-color:#d4a574;opacity:1}.nd-gallery-thumb.saved{border-color:rgba(62,207,142,0.8)}.nd-gallery-actions{display:flex;gap:12px;margin-top:12px;align-items:center}.nd-gallery-btn{padding:10px 20px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;background:rgba(255,255,255,0.1);color:#fff;font-size:13px;cursor:pointer;transition:all 0.15s}.nd-gallery-btn:hover{background:rgba(255,255,255,0.2)}.nd-gallery-btn.primary{background:rgba(212,165,116,0.3);border-color:rgba(212,165,116,0.5)}.nd-gallery-btn.danger{color:#f87171;border-color:rgba(248,113,113,0.3)}.nd-gallery-btn.danger:hover{background:rgba(248,113,113,0.15)}.nd-gallery-info{text-align:center;margin-top:8px;font-size:12px;color:rgba(255,255,255,0.6)}.nd-gallery-prompt-wrap{max-width:90vw;margin-top:12px;border-radius:8px;background:rgba(0,0,0,0.4);overflow:hidden}.nd-gallery-prompt-head{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;color:rgba(255,255,255,0.85);font-size:12px;user-select:none}.nd-gallery-prompt-head:hover{background:rgba(255,255,255,0.08)}.nd-gallery-prompt-head .arrow{transition:transform 0.15s}.nd-gallery-prompt-wrap.open .nd-gallery-prompt-head .arrow{transform:rotate(180deg)}.nd-gallery-prompt-body{display:none;padding:12px;font-size:12px;color:rgba(255,255,255,0.85);line-height:1.5;max-height:28vh;overflow-y:auto}.nd-gallery-prompt-wrap.open .nd-gallery-prompt-body{display:block}.nd-gallery-prompt-section{margin-bottom:10px}.nd-gallery-prompt-section:last-child{margin-bottom:0}.nd-gallery-prompt-section h4{margin:0 0 4px 0;font-size:11px;color:rgba(212,165,116,0.8);font-weight:600;text-transform:uppercase;letter-spacing:0.05em}.nd-gallery-prompt-section pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:inherit;color:inherit;background:rgba(0,0,0,0.25);padding:6px 10px;border-radius:4px;max-height:120px;overflow-y:auto}.nd-batch-overlay{position:fixed;inset:0;z-index:100004;background:rgba(0,0,0,0.92);display:none;flex-direction:column;padding:24px}.nd-batch-overlay.visible{display:flex}.nd-batch-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;color:#fff}.nd-batch-head h3{margin:0;font-size:16px;font-weight:600}.nd-batch-actions{display:flex;gap:8px}.nd-batch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;overflow-y:auto;flex:1;padding-right:8px}.nd-batch-item{position:relative;border-radius:8px;overflow:hidden;cursor:pointer;border:2px solid transparent;transition:border-color 0.15s;background:#111}.nd-batch-item.checked{border-color:#d4a574}.nd-batch-item img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}.nd-batch-checkbox{position:absolute;top:6px;left:6px;width:22px;height:22px;background:rgba(0,0,0,0.7);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;opacity:0.6;transition:opacity 0.15s}.nd-batch-item.checked .nd-batch-checkbox{opacity:1;background:rgba(212,165,116,0.9)}.nd-batch-count{color:rgba(255,255,255,0.7);font-size:12px;margin-left:12px}`;
     document.head.appendChild(style);
 }
 
@@ -1206,7 +1400,7 @@ function createGalleryOverlay() {
     overlay.id = 'nd-gallery-overlay';
     // Template-only UI markup.
     // eslint-disable-next-line no-unsanitized/property
-    overlay.innerHTML = `<button class="nd-gallery-close" id="nd-gallery-close">✕</button><div class="nd-gallery-main"><button class="nd-gallery-nav" id="nd-gallery-prev">‹</button><div class="nd-gallery-img-wrap"><img class="nd-gallery-img" id="nd-gallery-img" src="" alt=""><div class="nd-gallery-saved-badge" id="nd-gallery-saved-badge" style="display:none">已保存</div></div><button class="nd-gallery-nav" id="nd-gallery-next">›</button></div><div class="nd-gallery-thumbs" id="nd-gallery-thumbs"></div><div class="nd-gallery-actions" id="nd-gallery-actions"><button class="nd-gallery-btn primary" id="nd-gallery-use">使用此图</button><button class="nd-gallery-btn" id="nd-gallery-save">💾 保存到服务器</button><button class="nd-gallery-btn danger" id="nd-gallery-delete">🗑️ 删除</button></div><div class="nd-gallery-info" id="nd-gallery-info"></div>`;
+    overlay.innerHTML = `<button class="nd-gallery-close" id="nd-gallery-close">✕</button><div class="nd-gallery-main"><button class="nd-gallery-nav" id="nd-gallery-prev">‹</button><div class="nd-gallery-img-wrap"><img class="nd-gallery-img" id="nd-gallery-img" src="" alt=""><div class="nd-gallery-saved-badge" id="nd-gallery-saved-badge" style="display:none">已保存</div></div><button class="nd-gallery-nav" id="nd-gallery-next">›</button></div><div class="nd-gallery-thumbs" id="nd-gallery-thumbs"></div><div class="nd-gallery-actions" id="nd-gallery-actions"><button class="nd-gallery-btn primary" id="nd-gallery-use">使用此图</button><button class="nd-gallery-btn" id="nd-gallery-save">💾 保存到服务器</button><button class="nd-gallery-btn danger" id="nd-gallery-delete">🗑️ 删除</button></div><div class="nd-gallery-info" id="nd-gallery-info"></div><div class="nd-gallery-prompt-wrap" id="nd-gallery-prompt-wrap" hidden><div class="nd-gallery-prompt-head" id="nd-gallery-prompt-head"><span>完整提示词</span><span class="arrow">▾</span></div><div class="nd-gallery-prompt-body" id="nd-gallery-prompt-body"><div class="nd-gallery-prompt-section"><h4>Tags</h4><pre id="nd-gallery-prompt-tags"></pre></div><div class="nd-gallery-prompt-section"><h4>正向 (Positive)</h4><pre id="nd-gallery-prompt-positive"></pre></div><div class="nd-gallery-prompt-section"><h4>角色 (Character)</h4><pre id="nd-gallery-prompt-char"></pre></div><div class="nd-gallery-prompt-section"><h4>負向 (Negative)</h4><pre id="nd-gallery-prompt-negative"></pre></div></div></div>`;
     document.body.appendChild(overlay);
 
     document.getElementById('nd-gallery-close').addEventListener('click', closeGallery);
@@ -1215,6 +1409,9 @@ function createGalleryOverlay() {
     document.getElementById('nd-gallery-use').addEventListener('click', useCurrentGalleryImage);
     document.getElementById('nd-gallery-save').addEventListener('click', saveCurrentGalleryImage);
     document.getElementById('nd-gallery-delete').addEventListener('click', deleteCurrentGalleryImage);
+    document.getElementById('nd-gallery-prompt-head').addEventListener('click', () => {
+        document.getElementById('nd-gallery-prompt-wrap').classList.toggle('open');
+    });
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGallery(); });
 }
 
@@ -1311,6 +1508,23 @@ function renderGallery() {
     const displayVersion = previews.length - currentIndex;
     const date = new Date(current.timestamp).toLocaleString();
     document.getElementById('nd-gallery-info').textContent = `版本 ${displayVersion} / ${previews.length} · ${date}`;
+
+    // 填入提示詞
+    const promptWrap = document.getElementById('nd-gallery-prompt-wrap');
+    const hasPrompt = current.tags || current.positive || current.negativePrompt || current.characterPrompts;
+    if (promptWrap) promptWrap.hidden = !hasPrompt;
+    const setPre = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const text = (typeof value === 'string' && value.trim()) ? value : '（無）';
+        // 已被 escapeText 過的資料直接顯示即可；未 escape 的這裡也不需處理，因為是用戶自己看的 prompt 原文
+        // eslint-disable-next-line no-unsanitized/property
+        el.textContent = text;
+    };
+    setPre('nd-gallery-prompt-tags', current.tags);
+    setPre('nd-gallery-prompt-positive', current.positive);
+    setPre('nd-gallery-prompt-char', current.characterPrompts);
+    setPre('nd-gallery-prompt-negative', current.negativePrompt);
 }
 
 function navigateGallery(delta) {
@@ -1418,4 +1632,128 @@ export function destroyGalleryCache() {
         db = null;
     }
     dbOpening = null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 批量管理 UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+let batchOverlayCreated = false;
+let batchState = null;
+
+function createBatchOverlay() {
+    if (batchOverlayCreated) return;
+    batchOverlayCreated = true;
+    ensureGalleryStyles();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'nd-batch-overlay';
+    // eslint-disable-next-line no-unsanitized/property
+    overlay.innerHTML = `<div class="nd-batch-head"><h3 id="nd-batch-title">批量管理</h3><div class="nd-batch-actions"><button class="nd-gallery-btn" id="nd-batch-select-all">全選</button><button class="nd-gallery-btn" id="nd-batch-select-none">取消全選</button><button class="nd-gallery-btn" id="nd-batch-download">⬇️ 下載</button><button class="nd-gallery-btn danger" id="nd-batch-delete">🗑️ 批量刪除</button><button class="nd-gallery-btn" id="nd-batch-close">完成</button></div></div><div class="nd-batch-grid" id="nd-batch-grid"></div><div class="nd-batch-count" id="nd-batch-count"></div>`;
+    document.body.appendChild(overlay);
+
+    document.getElementById('nd-batch-close').addEventListener('click', closeBatchManage);
+    document.getElementById('nd-batch-select-all').addEventListener('click', () => setBatchChecked(true));
+    document.getElementById('nd-batch-select-none').addEventListener('click', () => setBatchChecked(false));
+    document.getElementById('nd-batch-delete').addEventListener('click', async () => {
+        const ids = getBatchSelectedIds();
+        if (!ids.length) return showToast('未選圖片', 'error');
+        if (!confirm(`確認刪除 ${ids.length} 張圖片？此操作不可撤銷。`)) return;
+        try {
+            for (const id of ids) await deletePreview(id);
+            showToast(`已刪除 ${ids.length} 張`);
+            await openGalleryBatchManage(batchState.slotId); // 刷新
+            publishCacheChange([batchState.slotId]);
+        } catch (e) {
+            showToast(`刪除失敗：${e?.message || e}`, 'error');
+        }
+    });
+    document.getElementById('nd-batch-download').addEventListener('click', async () => {
+        const ids = getBatchSelectedIds();
+        if (!ids.length) return showToast('未選圖片', 'error');
+        try {
+            let saved = 0, failed = 0;
+            for (const id of ids) {
+                const p = batchState.previews.find((x) => x.imgId === id);
+                const url = p ? getPreviewDisplayUrl(p) : null;
+                if (!url) { failed++; continue; }
+                const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
+                await saveBase64AsFile(url, `image-${p.imgId}-${ts}.png`);
+                saved++;
+            }
+            showToast(`已下載 ${saved} 張${failed ? `，${failed} 張失敗` : ''}`);
+        } catch (e) {
+            showToast(`下載失敗：${e?.message || e}`, 'error');
+        }
+    });
+}
+
+function setBatchChecked(checked) {
+    const grid = document.getElementById('nd-batch-grid');
+    if (!grid) return;
+    grid.querySelectorAll('.nd-batch-item').forEach((el) => el.classList.toggle('checked', checked));
+    updateBatchCount();
+}
+
+function getBatchSelectedIds() {
+    const grid = document.getElementById('nd-batch-grid');
+    if (!grid) return [];
+    return [...grid.querySelectorAll('.nd-batch-item.checked')]
+        .map((el) => el.dataset.imgid)
+        .filter(Boolean);
+}
+
+function updateBatchCount() {
+    const count = getBatchSelectedIds().length;
+    const el = document.getElementById('nd-batch-count');
+    if (el) el.textContent = count ? `已選 ${count} 張` : '點選圖片開始挑選';
+}
+
+export async function openGalleryBatchManage(slotId) {
+    createBatchOverlay();
+    let previews;
+    if (slotId) {
+        previews = (await getPreviewsBySlot(slotId)).filter(hasPreviewImage);
+    } else {
+        // 全體批量管理：抓所有 slot 的最新圖
+        previews = [];
+        const summary = await getGallerySummary();
+        for (const [sid, entry] of Object.entries(summary)) {
+            if (entry?.latest) {
+                const full = await getPreview(entry.latest.imgId);
+                if (hasPreviewImage(full)) previews.push(full);
+            }
+        }
+        // 再補上有歷史的 slot 的所有圖
+        const allPreviews = await Object.keys(summary).reduce(async (acc, sid) => {
+            const list = await getPreviewsBySlot(sid);
+            return [...(await acc), ...list.filter(hasPreviewImage)];
+        }, Promise.resolve([]));
+        // 去重
+        const seen = new Set();
+        previews = allPreviews.filter((p) => { if (seen.has(p.imgId)) return false; seen.add(p.imgId); return true; });
+    }
+    const reversed = previews.slice().reverse();
+    batchState = { slotId, previews };
+
+    const grid = document.getElementById('nd-batch-grid');
+    grid.innerHTML = reversed.map((p) => {
+        const src = getPreviewDisplayUrl(p);
+        return `<div class="nd-batch-item" data-imgid="${p.imgId}"><div class="nd-batch-checkbox">✓</div><img src="${src}" alt="" loading="lazy"></div>`;
+    }).join('');
+    grid.querySelectorAll('.nd-batch-item').forEach((el) => {
+        el.addEventListener('click', () => {
+            el.classList.toggle('checked');
+            updateBatchCount();
+        });
+    });
+
+    document.getElementById('nd-batch-title').textContent = `批量管理（共 ${previews.length} 張）`;
+    updateBatchCount();
+    document.getElementById('nd-batch-overlay').classList.add('visible');
+}
+
+export function closeBatchManage() {
+    const el = document.getElementById('nd-batch-overlay');
+    if (el) el.classList.remove('visible');
 }

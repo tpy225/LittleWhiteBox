@@ -12,10 +12,12 @@ import {
     saveStateVectors,
     getStateAtoms,
     getStateVectorDescriptors,
-    getL0FloorStatus,
+    getL0Index,
 } from '../storage/state-store.js';
+import { L0_FLOOR_MAX_ATTEMPTS, summarizeL0Floors } from './l0-floor-status.js';
+import { trackVectorActivity } from '../runtime/vector-activity.js';
 import { createAnchorExtractionDraft } from '../../data/anchor-extraction.js';
-import { assertMemoryWritable } from '../../data/memory-commit.js';
+import { assertMemoryWritable, waitForMemoryCommit } from '../../data/memory-commit.js';
 import { sameMemory } from '../../maintenance/domain.js';
 import { invalidateSummaryAnchors, getSummaryStore } from '../../data/store.js';
 import { embed } from '../llm/siliconflow.js';
@@ -40,8 +42,6 @@ const MODULE_ID = 'state-integration';
 const DEFAULT_CONCURRENCY = 10;
 const STAGGER_DELAY = 15;
 const DEBUG_CONCURRENCY = true;
-// 单个楼层跨会话的累计失败上限。达到后视为终态，不再入队重试。
-const L0_FLOOR_MAX_ATTEMPTS = 3;
 
 let initialized = false;
 
@@ -62,47 +62,7 @@ export function initStateIntegration() {
 
 export async function getAnchorStats() {
     const { chat } = getContext();
-    if (!chat?.length) {
-        return { extracted: 0, total: 0, pending: 0, incomplete: 0, empty: 0, fail: 0, terminalFail: 0 };
-    }
-
-    // 统计 AI 楼层
-    const aiFloors = [];
-    for (let i = 0; i < chat.length; i++) {
-        if (!chat[i]?.is_user) aiFloors.push(i);
-    }
-
-    let ok = 0;
-    let empty = 0;
-    let fail = 0;
-    let retriableFail = 0;
-
-    for (const f of aiFloors) {
-        const s = getL0FloorStatus(f);
-        if (!s) continue;
-        if (s.status === 'ok') ok++;
-        else if (s.status === 'empty') empty++;
-        else if (s.status === 'fail') {
-            fail++;
-            if ((s.attempts || 0) < L0_FLOOR_MAX_ATTEMPTS) retriableFail++;
-        }
-    }
-
-    const total = aiFloors.length;
-    // 未处理楼层 + 还会被重试的 fail = 真实待办。fail 必须算进来，否则上层会误以为
-    // L0 已经做完；但已达尝试上限的 fail 是终态、不再入队，算进去会让统计永远停在"没做完"。
-    const pending = Math.max(0, total - ok - empty - (fail - retriableFail));
-    const incomplete = Math.max(0, total - ok - empty);
-
-    return {
-        extracted: ok + empty,
-        total,
-        pending,
-        incomplete,
-        empty,
-        fail,
-        terminalFail: fail - retriableFail,
-    };
+    return summarizeL0Floors(chat, getL0Index().byFloor);
 }
 
 // ============================================================================
@@ -126,14 +86,21 @@ function buildL0InputText(userMessage, aiMessage) {
 
 
 export async function incrementalExtractAtoms(chatId, chat, onProgress, options = {}) {
-    getSummaryStore();
-    const draft = createAnchorExtractionDraft(chatId, chat || []);
-    const result = await incrementalExtractAtomsInner(chatId, chat, onProgress, options, draft);
-    if (!result.cancelled) await draft.commit();
-    return result;
+    return trackVectorActivity({ chatId, phase: 'l0-extraction', api: getVectorConfig()?.l0Api, unit: 'floors' }, async activity => {
+        await waitForMemoryCommit(options.signal);
+        getSummaryStore();
+        const draft = createAnchorExtractionDraft(chatId, chat || []);
+        const result = await incrementalExtractAtomsInner(chatId, chat, onProgress, options, draft, activity);
+        const commit = options.commit || (task => task());
+        if (!result.cancelled) await commit(async () => {
+            await waitForMemoryCommit(options.signal);
+            await draft.commit();
+        });
+        return result;
+    });
 }
 
-async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, draft) {
+async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, draft, activity) {
     const { getStatus: getL0FloorStatus, setStatus: setL0FloorStatus, addAtoms: saveStateAtoms } = draft;
     const {
         maxFloors = Infinity,
@@ -208,6 +175,7 @@ async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, d
     }
 
     // 限制单次提取楼层数（自动触发时使用）
+    const deferredFloors = Math.max(0, pendingPairs.length - maxFloors);
     if (pendingPairs.length > maxFloors) {
         pendingPairs.length = maxFloors;
     }
@@ -225,8 +193,9 @@ async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, d
     let llmFailed = 0;
     let firstFailure = null;
     const total = pendingPairs.length;
+    activity.update({ total, deferredUnits: deferredFloors, state: 'extracting' });
     let builtAtoms = 0;
-    let active = 0;
+    const activeFloors = new Set();
     let peakActive = 0;
     const tStart = performance.now();
 
@@ -240,7 +209,9 @@ async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, d
         const floor = pair.aiFloor;
         const prev = getL0FloorStatus(floor);
 
-        active++;
+        activeFloors.add(floor);
+        const active = activeFloors.size;
+        activity.update({ activeUnits: active, activeFloors: [...activeFloors] });
         if (active > peakActive) peakActive = active;
         if (DEBUG_CONCURRENCY && (idx % 10 === 0)) {
             xbLog.info(MODULE_ID, `L0 pool start idx=${idx} active=${active} peak=${peakActive} worker=${workerId}`);
@@ -289,14 +260,15 @@ async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, d
             });
             llmFailed++;
         } finally {
-            active--;
+            activeFloors.delete(floor);
             if (!isCancelled() && !targetStale) {
                 completed++;
                 onProgress?.(`提取: ${completed}/${total}`, completed, total);
             }
+            activity.update({ completed, activeUnits: activeFloors.size, activeFloors: [...activeFloors] });
             if (DEBUG_CONCURRENCY && (completed % 25 === 0 || completed === total)) {
                 const elapsed = Math.max(1, Math.round(performance.now() - tStart));
-                xbLog.info(MODULE_ID, `L0 pool progress=${completed}/${total} active=${active} peak=${peakActive} elapsedMs=${elapsed}`);
+                xbLog.info(MODULE_ID, `L0 pool progress=${completed}/${total} active=${activeFloors.size} peak=${peakActive} elapsedMs=${elapsed}`);
             }
         }
     };
@@ -414,11 +386,18 @@ export async function getL0VectorBuildStatus(chatId, options = {}) {
  * 楼层提取状态。所有 Embedding 批次成功后才整批写库，失败时下轮仍可从事实数据重建。
  */
 export async function vectorizeMissingStateAtoms(chatId, onProgress, options = {}) {
+    return trackVectorActivity({ chatId, phase: 'l0-vectorization', api: (options.vectorConfig || getVectorConfig())?.embeddingApi, unit: 'atoms' },
+        activity => vectorizeMissingStateAtomsInner(chatId, onProgress, options, activity));
+}
+
+async function vectorizeMissingStateAtomsInner(chatId, onProgress, options, activity) {
+    await waitForMemoryCommit(options.signal);
     assertMemoryWritable(chatId);
     const {
         vectorConfig = getVectorConfig(),
         signal = null,
         shouldCancel = null,
+        commit = task => task(),
     } = options;
     const isCancelled = () => signal?.aborted || shouldCancel?.() === true;
     const cancelledResult = () => ({
@@ -459,6 +438,7 @@ export async function vectorizeMissingStateAtoms(chatId, onProgress, options = {
     }
 
     const atoms = status.missingAtoms;
+    activity.update({ total: atoms.length, state: 'embedding' });
     if (!atoms.length) {
         return {
             success: true,
@@ -482,6 +462,7 @@ export async function vectorizeMissingStateAtoms(chatId, onProgress, options = {
             const semBatch = atomBatch.map(atom => atom.semantic);
             const rBatch = atomBatch.map(buildRAggregateText);
             const payload = semBatch.concat(rBatch);
+            activity.update({ activeUnits: atomBatch.length });
             const vectors = await embed(payload, {
                 apiConfig: vectorConfig.embeddingApi,
                 timeout: 30000,
@@ -513,6 +494,7 @@ export async function vectorizeMissingStateAtoms(chatId, onProgress, options = {
             }
 
             onProgress?.(allItems.length, atoms.length);
+            activity.update({ completed: allItems.length, activeUnits: 0 });
         }
 
         if (isCancelled()) return cancelledResult();
@@ -538,10 +520,15 @@ export async function vectorizeMissingStateAtoms(chatId, onProgress, options = {
 
     try {
         if (isCancelled()) return cancelledResult();
-        assertMemoryWritable(chatId);
-        const currentAtoms = new Map(getStateAtoms().map(atom => [atom.atomId, atom]));
-        if (atoms.some(atom => !sameMemory(atom, currentAtoms.get(atom.atomId)))) return cancelledResult();
-        await saveStateVectors(chatId, allItems, fingerprint);
+        const saved = await commit(async () => {
+            await waitForMemoryCommit(signal);
+            assertMemoryWritable(chatId);
+            const currentAtoms = new Map(getStateAtoms().map(atom => [atom.atomId, atom]));
+            if (isCancelled() || atoms.some(atom => !sameMemory(atom, currentAtoms.get(atom.atomId)))) return false;
+            await saveStateVectors(chatId, allItems, fingerprint);
+            return true;
+        });
+        if (!saved) return cancelledResult();
     } catch (error) {
         if (isCancelled()) return cancelledResult();
         xbLog.error(MODULE_ID, 'L0 StateVector 写入失败', error);
