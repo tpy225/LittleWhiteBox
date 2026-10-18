@@ -146,14 +146,23 @@ export function createAssistantHostWindow(options) {
         return Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : 0;
     }
 
+    function getAssistantMobileVisualOffsetTop() {
+        return window.visualViewport?.offsetTop || 0;
+    }
+
     function getAssistantMobileViewportHeight() {
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-        const topOffset = getAssistantMobileTopOffset();
-        return `calc(${viewportHeight}px - ${topOffset}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`;
+        const offsetTop = getAssistantMobileVisualOffsetTop();
+        const topBarHeight = getAssistantMobileTopOffset();
+        const baseTop = Math.max(offsetTop, topBarHeight);
+        return `calc(${viewportHeight}px + ${offsetTop}px - ${baseTop}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`;
     }
 
     function getAssistantMobileTopCss() {
-        return `calc(${getAssistantMobileTopOffset()}px + env(safe-area-inset-top, 0px))`;
+        const offsetTop = getAssistantMobileVisualOffsetTop();
+        const topBarHeight = getAssistantMobileTopOffset();
+        const baseTop = Math.max(offsetTop, topBarHeight);
+        return `calc(${baseTop}px + env(safe-area-inset-top, 0px))`;
     }
 
     function getIframe() {
@@ -918,6 +927,7 @@ function createWindowInteractionController(options) {
         initializeDesktopMode();
         window.addEventListener('resize', updateOverlayHeight);
         window.visualViewport?.addEventListener('resize', updateOverlayHeight);
+        window.visualViewport?.addEventListener('scroll', updateOverlayHeight);
         if (isAssistantMobileDevice()) {
             initializeMobileMode();
         }
@@ -933,6 +943,7 @@ function createWindowInteractionController(options) {
         }
         window.removeEventListener('resize', updateOverlayHeight);
         window.visualViewport?.removeEventListener('resize', updateOverlayHeight);
+        window.visualViewport?.removeEventListener('scroll', updateOverlayHeight);
     };
 
     return {

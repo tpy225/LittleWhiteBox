@@ -5487,6 +5487,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (suppressChangeEvents) return;
         state.selectedParamsPresetId = $('nd_params_preset').value;
         applyParamsPreset();
+        // 切換預設必須同步回寫到擴展側，否則生圖仍讀到上一次保存/懸浮窗選的預設
+        postToParent({ type: 'SAVE_PARAMS_PRESET', selectedParamsPresetId: state.selectedParamsPresetId });
     });
 
     // 预设缩略图：头像式方框，点击上传/更换，× 移除；本地图片转 dataURL
