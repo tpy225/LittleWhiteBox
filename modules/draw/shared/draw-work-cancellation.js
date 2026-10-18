@@ -1,5 +1,25 @@
 import { drawCancellationJournal } from './draw-cancellation-journal.js';
-import { acknowledgePendingImageJobCancellations } from './pending-image-jobs.js';
+import { requestPendingImageJobCancellation } from './pending-image-jobs.js';
+
+// 把取消意图同步投影到后台任务交付日志。二改的 pending-image-jobs 用
+// requestPendingImageJobCancellation(jobId) 记录取消意图；后端 run 由 client
+// 负责。这里不依赖原 upstream 的 acknowledgePendingImageJobCancellations。
+async function acknowledgePendingImageJobCancellations(entry) {
+    const ids = [...new Set([...(entry.jobIds || []), ...(entry.runIds || [])])];
+    await Promise.all(ids.map((id) => requestPendingImageJobCancellation(id).catch(() => null)));
+}
+
+// 兼容不同 client：优先 cancelWork（批量），否则逐 runId 调 cancelRun。
+async function invokeClientCancel(client, entry) {
+    if (typeof client?.cancelWork === 'function') {
+        return client.cancelWork({ owner: entry.owner, jobIds: entry.jobIds, runIds: entry.runIds });
+    }
+    const calls = [];
+    if (typeof client?.cancelRun === 'function') {
+        for (const runId of entry.runIds) calls.push(client.cancelRun(runId).catch(() => null));
+    }
+    await Promise.all(calls);
+}
 
 const barriers = new WeakMap();
 const signalJobs = new WeakMap();
@@ -31,7 +51,7 @@ export async function waitForDrawCancellation(signal) {
 }
 
 async function completeCancellation(entry, client, journal) {
-    await client.cancelWork({ owner: entry.owner, jobIds: entry.jobIds, runIds: entry.runIds });
+    await invokeClientCancel(client, entry);
     // Backend jobs are process-local and may already be absent. Their ACK must
     // survive in the delivery journal before we drop the only local intent.
     await acknowledgePendingImageJobCancellations(entry);

@@ -120,6 +120,8 @@ import {
 import { submitRecoverableImageJob } from "../../shared/recoverable-image-jobs.js";
 import { submitProviderDrawRun } from "../../shared/draw-run-production.js";
 import { cancelPendingDrawRuns, captureDrawCancellationTarget } from "../../shared/draw-run-controls.js";
+import { createDrawRunClient } from "../../shared/draw-run-client.js";
+import { cancelDrawWork, resumeDrawCancellations } from "../../shared/draw-work-cancellation.js";
 import { migrateLegacyNovelPromptSettings } from "./novel-prompt-migration.js";
 import { WorldbookProcessor } from "../../shared/worldbook-processor.js";
 import {
@@ -424,6 +426,17 @@ const novelImageRequestQueue = createSerialImageRequestQueue({
     getCooldownMs: () => getNovelImageRequestDelay(),
 });
 const imageBackendJobsClient = createImageBackendJobsClient({ getHeaders: getRequestHeaders });
+// 取消意图日志（IndexedDB）专用的 draw-run client，用于恢复未完成的取消。
+const cancellationRunClient = createDrawRunClient({ getHeaders: getRequestHeaders });
+
+function getCancellationOwner() {
+    try {
+        const ctx = getContext?.();
+        const name = ctx?.name2 || ctx?.name1;
+        if (name) return String(name);
+    } catch { /* ignore */ }
+    return 'default';
+}
 let ensureNovelDrawPanelRef = null;
 let overlayResizeHandler = null;
 let afterAiGateDispose = null;
@@ -613,6 +626,17 @@ function abortGeneration(messageId = null, { reason = 'user', target = captureDr
             aborted = true;
         }
         if (reason === 'user' && cancelPendingDrawRun(messageId, target)) aborted = true;
+        // 把用户取消意图写入取消日志（IndexedDB），供刷新/崩溃后的 resumeDrawCancellations 补发。
+        // 实际取消仍由 cancelPendingDrawRuns 主导；这里是持久化兜底，失败不影响主流程。
+        if (reason === 'user') {
+            const runIds = target.entries.map((e) => e.runId).filter(Boolean);
+            if (runIds.length) {
+                void cancelDrawWork(
+                    { owner: getCancellationOwner(), jobIds: [], runIds },
+                    cancellationRunClient,
+                ).catch((error) => console.warn('[NovelDraw] 记录取消意图失败:', error));
+            }
+        }
         return aborted;
     }
 
@@ -5042,6 +5066,9 @@ export async function initNovelDraw() {
     setupEventDelegation();
     startSharedDrawPreviewRuntime();
     startGroupPresetWatcher({ immediate: false });
+    // 恢复上次未完成的取消意图（IndexedDB 持久化，刷新/崩溃后补发取消）。
+    void resumeDrawCancellations(cancellationRunClient, getCancellationOwner())
+        .catch((error) => console.warn('[NovelDraw] 恢复取消意图失败:', error));
 
     // ════════════════════════════════════════════════════════════════════
     // 动态导入 floating-panel（避免循环依赖）
