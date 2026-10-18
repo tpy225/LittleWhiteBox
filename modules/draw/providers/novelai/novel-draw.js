@@ -52,6 +52,15 @@ import { attachDrawAgentSettingsSurface } from "../../shared/agent-settings-surf
 import { createSerialImageRequestQueue } from "../../shared/serial-image-request-queue.js";
 import { isCharacterEnabled } from "../../shared/character-selection.js";
 import { characterLibraryFromSettings } from "../../shared/character-library.js";
+import {
+    applyGroupPresetForCurrentChat,
+    getActiveCharacterAvatars,
+    listHostCharacters,
+    onGroupPresetApplied,
+    onGroupPresetContextChanged,
+    saveGroupPresets,
+    startGroupPresetWatcher,
+} from "../../shared/character-group-presets-runtime.js";
 import { joinTags } from "../../shared/character-prompts.js";
 import {
     buildContinuityBlockForRequest,
@@ -3413,6 +3422,7 @@ function createOverlay() {
     // Guarded by isTrustedMessage (origin + source).
     // eslint-disable-next-line no-restricted-syntax
     window.addEventListener('message', handleFrameMessage);
+    subscribeGroupPresetRefresh();
 }
 
 function showOverlay() {
@@ -3441,6 +3451,7 @@ function hideOverlay() {
     }
 
     window.removeEventListener('message', handleFrameMessage);
+    unsubscribeGroupPresetRefresh();
 }
 
 let _sendInitDataTimer = null;
@@ -3491,6 +3502,8 @@ async function _doSendInitData() {
             characterGroups: settings.characterGroups || [],
             characterGroupPresets: settings.characterGroupPresets || [],
             characterGroupPresetApplied: settings.characterGroupPresetApplied || null,
+            hostCharacters: listHostCharacters(),
+            activeAvatars: getActiveCharacterAvatars(),
             autoLearnCharacters: !!settings.autoLearnCharacters,
             autoLearnMode: settings.autoLearnMode || 'new_only',
             continuityEnabled: settings.continuityEnabled !== false,
@@ -3529,9 +3542,41 @@ async function _doSendInitData() {
     }
 }
 
-function postStatus(state, text, target = '') {
+function postStatus(state, text, target = '', extra = {}) {
     const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
-    if (iframe) postToIframe(iframe, { type: 'STATUS', state, text, target }, 'LittleWhiteBox-NovelDraw');
+    if (iframe) postToIframe(iframe, { type: 'STATUS', state, text, target, ...extra }, 'LittleWhiteBox-NovelDraw');
+}
+
+function postGroupPresetContext() {
+    const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+    if (!iframe?.contentWindow || !frameReady) return;
+    postToIframe(iframe, {
+        type: 'GROUP_PRESET_CONTEXT',
+        activeAvatars: getActiveCharacterAvatars(),
+        hostCharacters: listHostCharacters(),
+    }, 'LittleWhiteBox-NovelDraw');
+}
+
+let groupPresetUnsubscribers = [];
+function subscribeGroupPresetRefresh() {
+    unsubscribeGroupPresetRefresh();
+    groupPresetUnsubscribers = [
+        onGroupPresetApplied(() => { if (frameReady) void sendInitData(); }),
+        onGroupPresetContextChanged(() => postGroupPresetContext()),
+    ];
+}
+
+function unsubscribeGroupPresetRefresh() {
+    groupPresetUnsubscribers.splice(0).forEach((off) => { try { off(); } catch { /* 忽略 */ } });
+}
+
+function describeGroupPresetApply(result) {
+    if (result?.status === 'applied') {
+        return result.changed ? `已应用“${result.presetName}”：${result.changedCount} 个分组开关变化` : `“${result.presetName}”的分组开关已是目标状态，无变化`;
+    }
+    if (result?.status === 'preset-missing') return '预设不存在，请刷新后重试';
+    if (result?.status === 'no-presets') return '还没有可应用的预设';
+    return `应用分组预设失败${result?.message ? `：${result.message}` : ''}`;
 }
 
 function getAgentSettingsSurfaceRoot() {
@@ -4579,6 +4624,33 @@ async function handleFrameMessage(event) {
             break;
         }
 
+        case 'SAVE_GROUP_PRESETS': {
+            const seq = Number(data.seq) || 0;
+            const result = await saveGroupPresets(data.presets);
+            if (result.saved) {
+                postStatus('success', '分组预设已保存', 'group-presets', { seq, presets: result.presets });
+            } else {
+                const reason = result.message || (result.status === 'invalid' ? '预设数据格式不正确' : '保存失败');
+                postStatus('error', `分组预设保存失败：${reason}`, 'group-presets', { seq });
+                await sendInitData();
+            }
+            break;
+        }
+
+        case 'APPLY_GROUP_PRESET': {
+            const requestId = typeof data.requestId === 'string' ? data.requestId : '';
+            const result = await applyGroupPresetForCurrentChat({ force: true, presetId: String(data.presetId || '') });
+            const applied = result?.status === 'applied';
+            const text = describeGroupPresetApply(result);
+            postStatus(applied ? 'success' : 'error', text, 'group-presets', {
+                requestId,
+                result: applied
+                    ? { status: 'applied', changed: Boolean(result.changed), changedCount: result.changedCount || 0 }
+                    : { status: 'error', message: result?.status === 'save-failed' || result?.status === 'error' ? (result.message || '') : text },
+            });
+            break;
+        }
+
         case 'SAVE_DANBOORU_LOCAL_DB': {
             const enabled = !!data.enabled;
             if (enabled) {
@@ -4938,6 +5010,7 @@ export async function initNovelDraw() {
 
     setupEventDelegation();
     startSharedDrawPreviewRuntime();
+    startGroupPresetWatcher({ immediate: false });
 
     // ════════════════════════════════════════════════════════════════════
     // 动态导入 floating-panel（避免循环依赖）

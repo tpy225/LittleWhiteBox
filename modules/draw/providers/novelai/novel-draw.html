@@ -8,6 +8,7 @@
 <title>Novel Draw</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="../../shared/agent-settings-surface.css">
+<link rel="stylesheet" href="../../shared/character-group-presets-ui.css">
 <script type="module" src="../../shared/draw-usage.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -1726,6 +1727,17 @@ select.input { cursor: pointer; }
                             </div>
                         </div>
                     </section>
+                    <section class="char-group-presets-section" style="margin-top:16px;">
+                        <div class="card">
+                            <div class="char-list-card-header">
+                                <div>
+                                    <div class="card-title">🎛️ 分组预设</div>
+                                    <p class="form-hint" style="margin-top:6px;">把分组开关存成预设，绑定角色卡后切换聊天自动应用</p>
+                                </div>
+                            </div>
+                            <div id="nd_group_preset_root"></div>
+                        </div>
+                    </section>
                 </div>
             </div>
 
@@ -2090,6 +2102,9 @@ let state = {
     characterTags: [],
     characterGroups: [],
     characterGroupPresets: [],
+    characterGroupPresetApplied: null,
+    activeAvatars: [],
+    hostCharacters: null,
     plannerMaxRetries: 3,
     autoLearnCharacters: true,
     autoLearnMode: 'new_only',
@@ -2114,6 +2129,10 @@ const expandedGalleryChars = new Set();
 let galleryScrollEl = null;
 let galleryScrollTop = 0;
 let editingCharId = null;
+// 分组预设模块（动态加载）
+let GPM = null; // character-group-presets.js
+let GP = null;  // character-group-presets-ui.js
+let groupPresetPanel = null;
 const saveBtnStates = new WeakMap();
 const promptTextDraftsByPreset = new Map();
 const modelGuideDraftsByPreset = new Map();
@@ -2960,6 +2979,107 @@ function handleGroupAction(action, gid) {
         postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     }
+}
+
+// ── 分组预设面板 ────────────────────────────────────────────
+// 预设保存 / 应用都经宿主（SAVE_GROUP_PRESETS / APPLY_GROUP_PRESET）；组件受控，数据从 state 读，
+// 改动先乐观写进 state 再发给宿主。INIT_DATA 重绘只调 panel.render()，不销毁重建。
+let groupPresetSaveSeq = 0;
+let groupPresetRequestSeq = 0;
+const groupPresetPendingSaves = new Map();
+const GROUP_PRESET_SAVE_RECEIPT_TIMEOUT_MS = 15000;
+let groupPresetHostPresets = null;
+const groupPresetApplyWaiters = new Map();
+const GROUP_PRESET_APPLY_TIMEOUT_MS = 15000;
+
+function getCharacterLibraryForPresets() {
+    return { characters: state.characterTags || [], groups: state.characterGroups || [] };
+}
+
+function groupPresetToast(message, level = 'info') {
+    try {
+        const t = globalThis.toastr;
+        if (t) {
+            if (level === 'error') t.error?.(String(message || ''));
+            else if (level === 'success') t.success?.(String(message || ''));
+            else t.info?.(String(message || ''));
+        }
+    } catch { /* 提示失败不影响功能 */ }
+}
+
+function realignGroupPresetsWithHost() {
+    if (Array.isArray(groupPresetHostPresets)) state.characterGroupPresets = groupPresetHostPresets;
+    renderGroupPresetPanel();
+}
+
+function saveGroupPresetsToHost(presets) {
+    state.characterGroupPresets = presets;
+    const seq = ++groupPresetSaveSeq;
+    const timer = setTimeout(() => {
+        if (!groupPresetPendingSaves.delete(seq)) return;
+        if (!groupPresetPendingSaves.size) realignGroupPresetsWithHost();
+    }, GROUP_PRESET_SAVE_RECEIPT_TIMEOUT_MS);
+    groupPresetPendingSaves.set(seq, timer);
+    postToParent({ type: 'SAVE_GROUP_PRESETS', presets, seq });
+}
+
+function applyGroupPresetViaHost(presetId) {
+    const requestId = `gp-apply-${++groupPresetRequestSeq}`;
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            groupPresetApplyWaiters.delete(requestId);
+            resolve({ status: 'error', message: '宿主没有响应' });
+        }, GROUP_PRESET_APPLY_TIMEOUT_MS);
+        groupPresetApplyWaiters.set(requestId, (result) => {
+            clearTimeout(timer);
+            resolve(result || { status: 'error', message: '宿主没有返回结果' });
+        });
+        postToParent({ type: 'APPLY_GROUP_PRESET', presetId, requestId });
+    });
+}
+
+function handleGroupPresetStatus(data) {
+    if (data.requestId && groupPresetApplyWaiters.has(data.requestId)) {
+        const resolve = groupPresetApplyWaiters.get(data.requestId);
+        groupPresetApplyWaiters.delete(data.requestId);
+        resolve(data.result);
+        return;
+    }
+    if (data.seq) {
+        clearTimeout(groupPresetPendingSaves.get(data.seq));
+        groupPresetPendingSaves.delete(data.seq);
+        if (data.state === 'success' && Array.isArray(data.presets) && !groupPresetPendingSaves.size) {
+            groupPresetHostPresets = data.presets;
+            state.characterGroupPresets = data.presets;
+            renderGroupPresetPanel();
+        }
+    }
+    if (data.state === 'error') groupPresetToast(data.text || '分组预设操作失败', 'error');
+}
+
+function renderGroupPresetPanel() {
+    if (!GP) return;
+    if (groupPresetPanel) {
+        groupPresetPanel.render();
+        return;
+    }
+    const container = $('nd_group_preset_root');
+    if (!container) return;
+    groupPresetPanel = GP.createGroupPresetPanel({
+        document,
+        container,
+        getLibrary: getCharacterLibraryForPresets,
+        getPresets: () => state.characterGroupPresets || [],
+        getApplied: () => state.characterGroupPresetApplied || null,
+        getActiveAvatars: () => state.activeAvatars || [],
+        listHostCharacters: () => {
+            if (!Array.isArray(state.hostCharacters)) throw new Error('宿主角色列表未就绪');
+            return state.hostCharacters;
+        },
+        onPresetsChange: presets => saveGroupPresetsToHost(presets),
+        onApply: presetId => applyGroupPresetViaHost(presetId),
+        toast: groupPresetToast,
+    });
 }
 
 // ── Danbooru 搜索（本地 DB）─────────────────────────────────
@@ -4904,6 +5024,7 @@ window.addEventListener('message', event => {
             }
             applyStateToUI();
             shuffleCredits();
+            renderGroupPresetPanel();
             break;
 
         case 'CACHE_DATA':
@@ -4985,6 +5106,10 @@ window.addEventListener('message', event => {
 
             
         case 'STATUS':
+            if (data.target === 'group-presets') {
+                handleGroupPresetStatus(data);
+                break;
+            }
             if (data.target === 'worldbook') {
                 updateStatus($('nd_wb_status'), data.state, data.text);
                 if (data.state === 'success' || data.state === 'error') handleSaveResult(data.state === 'success');
@@ -5009,7 +5134,13 @@ window.addEventListener('message', event => {
             }
             if (data.state === 'success' || data.state === 'error') handleSaveResult(data.state === 'success');
             break;
-            
+
+        case 'GROUP_PRESET_CONTEXT':
+            if (Array.isArray(data.activeAvatars)) state.activeAvatars = data.activeAvatars;
+            if (Array.isArray(data.hostCharacters)) state.hostCharacters = data.hostCharacters;
+            renderGroupPresetPanel();
+            break;
+
         case 'GALLERY_IMAGE_DELETED':
             // 列表是輕量索引，刪除後準確的封面／張數需重取該角色索引（刪除是低頻操作）。
             if (modalData.charName) {
@@ -5863,9 +5994,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════════
-    // 通知父窗口准备就绪
+    // 动态加载分组预设模块，通知父窗口准备就绪
     // ═══════════════════════════════════════════════════════════════════════
-    postToParent({ type: 'FRAME_READY' });
+    Promise.all([
+        import('../../shared/character-group-presets.js')
+            .then((m) => { GPM = m; })
+            .catch((e) => { console.error('[ND-UI] 分组预设逻辑模块加载失败:', e); }),
+        import('../../shared/character-group-presets-ui.js')
+            .then((m) => { GP = m; })
+            .catch((e) => { console.error('[ND-UI] 分组预设面板模块加载失败:', e); }),
+    ]).finally(() => postToParent({ type: 'FRAME_READY' }));
 });
 </script>
 </body>
