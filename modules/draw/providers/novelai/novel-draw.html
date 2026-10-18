@@ -1712,6 +1712,10 @@ select.input { cursor: pointer; }
                                 </div>
                                 <div class="char-list-count" id="nd_char_result_count">0 / 0</div>
                             </div>
+                            <div class="char-group-toolbar" style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+                                <button id="nd_group_add" class="btn btn-sm" type="button"><i class="fa-solid fa-folder-plus"></i> 新建分组</button>
+                                <span class="form-hint" style="font-size:11px;">关闭分组后组内角色不参与出图</span>
+                            </div>
                             <div class="char-list-body">
                                 <div id="nd_char_list" class="char-grid"></div>
                                 <div id="nd_char_empty" class="char-empty">
@@ -2084,6 +2088,9 @@ let state = {
     selectedParamsPresetId: null,
     paramsPresets: [],
     characterTags: [],
+    characterGroups: [],
+    characterGroupPresets: [],
+    plannerMaxRetries: 3,
     autoLearnCharacters: true,
     autoLearnMode: 'new_only',
     continuityEnabled: true,
@@ -2688,7 +2695,7 @@ function renderCharList() {
     empty.style.display = 'none';
     empty.classList.remove('filtered');
     
-    list.innerHTML = filteredChars.map(c => {
+    const renderCard = (c) => {
         const isEditing = editingCharId === c.id;
         const isEnabled = c.enabled !== false;
         const charId = escapeHtml(c.id);
@@ -2740,6 +2747,13 @@ function renderCharList() {
                             <label class="form-label">类型</label>
                             <select class="input char-edit-type">${typeOptions}</select>
                             <input type="text" class="input char-edit-type-custom${selectedType === 'custom' ? '' : ' hidden'}" value="${selectedType === 'custom' ? escapeHtml(savedType) : ''}" placeholder="如: mature female" style="margin-top:4px;">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">分组</label>
+                            <select class="input char-edit-group">
+                                <option value="">未分组</option>
+                                ${(state.characterGroups || []).map(g => `<option value="${escapeHtml(g.id)}"${c.groupId === g.id ? ' selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+                            </select>
                         </div>
                     </div>
                     <div class="form-group">
@@ -2796,7 +2810,38 @@ function renderCharList() {
         <div class="char-card${isEnabled ? '' : ' disabled'}" data-id="${charId}">
             ${summary}
         </div>`;
-    }).join('');
+    };
+
+    // 按分组组织：先未分组，再按 characterGroups 顺序
+    const groups = state.characterGroups || [];
+    const groupOrder = ['', ...groups.map(g => g.id)];
+    const groupMap = new Map();
+    for (const c of filteredChars) {
+        const gid = c.groupId || '';
+        if (!groupMap.has(gid)) groupMap.set(gid, []);
+        groupMap.get(gid).push(c);
+    }
+    let html = '';
+    for (const gid of groupOrder) {
+        const gChars = groupMap.get(gid);
+        if (!gChars || !gChars.length) continue;
+        const g = groups.find(x => x.id === gid);
+        const gName = gid ? (g?.name || '未命名分组') : '未分组';
+        const gEnabled = !gid || g?.enabled !== false;
+        html += `<div class="char-group" data-group-id="${escapeHtml(gid)}">
+            <div class="char-group-header" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-input);border-radius:6px;margin:8px 0;">
+                <button type="button" class="btn btn-sm btn-icon" data-action="toggle-group" data-group-id="${escapeHtml(gid)}" title="${gEnabled ? '停用分组' : '启用分组'}" aria-pressed="${gEnabled}">
+                    <i class="fa-solid ${gEnabled ? 'fa-eye' : 'fa-eye-slash'}"></i>
+                </button>
+                <span style="font-weight:600;${gEnabled ? '' : 'opacity:0.5;text-decoration:line-through;'}">${escapeHtml(gName)}</span>
+                <span class="form-hint" style="font-size:11px;">${gChars.length} 个角色</span>
+                ${gid ? `<button type="button" class="btn btn-sm btn-icon" data-action="rename-group" data-group-id="${escapeHtml(gid)}" title="重命名"><i class="fa-solid fa-pen"></i></button>
+                <button type="button" class="btn btn-sm btn-icon" data-action="delete-group" data-group-id="${escapeHtml(gid)}" title="删除分组（角色移入未分组）"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+            </div>
+            ${gChars.map(renderCard).join('')}
+        </div>`;
+    }
+    list.innerHTML = html;
     
     list.querySelectorAll('.char-edit-type').forEach(sel => {
         sel.addEventListener('change', function() {
@@ -2814,7 +2859,7 @@ function handleCharAction(action, id, card, trigger) {
         const char = state.characterTags.find(c => c.id === id);
         if (!char) return;
         char.enabled = char.enabled === false;
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         card?.classList.toggle('disabled', !char.enabled);
         const status = card?.querySelector('.char-status');
         if (status) {
@@ -2868,6 +2913,7 @@ function handleCharAction(action, id, card, trigger) {
         
         char.name = name;
         char.type = type;
+        char.groupId = card.querySelector('.char-edit-group')?.value || '';
         char.aliases = (card.querySelector('.char-edit-aliases')?.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
         char.appearance = card.querySelector('.char-edit-appearance')?.value?.trim() || '';
         char.negativeTags = card.querySelector('.char-edit-neg')?.value?.trim() || '';
@@ -2875,13 +2921,43 @@ function handleCharAction(action, id, card, trigger) {
         char.dynamicStates = collectNamedTagEditorValues(card, 'dynstate');
 
         editingCharId = null;
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     } else if (action === 'delete') {
         const char = state.characterTags.find(c => c.id === id);
         if (!confirm(`确定删除角色“${char?.name || '未命名角色'}”？此操作不可撤销。`)) return;
         state.characterTags = state.characterTags.filter(c => c.id !== id);
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
+    }
+}
+
+// ── 分组操作 ────────────────────────────────────────────────
+function handleGroupAction(action, gid) {
+    const groups = state.characterGroups || [];
+    if (action === 'toggle-group') {
+        if (!gid) return;
+        const g = groups.find(x => x.id === gid);
+        if (!g) return;
+        g.enabled = g.enabled === false ? true : false;
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
+    } else if (action === 'rename-group') {
+        const g = groups.find(x => x.id === gid);
+        if (!g) return;
+        const name = prompt('分组名称', g.name);
+        if (name === null) return;
+        const trimmed = name.trim();
+        if (!trimmed) { alert('分组名称不能为空'); return; }
+        g.name = trimmed;
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
+    } else if (action === 'delete-group') {
+        if (!gid) return;
+        if (!confirm('确定删除此分组？组内角色将移入“未分组”。')) return;
+        state.characterGroups = groups.filter(x => x.id !== gid);
+        state.characterTags.forEach(c => { if (c.groupId === gid) c.groupId = ''; });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     }
 }
@@ -2970,7 +3046,7 @@ function renderLocalDanbooruResults(query, results, charId) {
                 char.appearance = appearanceTags.map(t => t.replace(/_/g, ' ')).join(', ');
             }
 
-            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
             panel.classList.add('hidden');
             panel.innerHTML = '';
             editingCharId = null;
@@ -5393,9 +5469,28 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nd_char_list').addEventListener('click', e => {
         const btn = e.target.closest('[data-action]');
         if (!btn) return;
+        const action = btn.dataset.action;
+        const gid = btn.dataset.groupId;
+        if (gid !== undefined) {
+            handleGroupAction(action, gid);
+            return;
+        }
         const card = btn.closest('.char-card');
         const id = btn.dataset.id || card?.dataset.id;
-        if (id) handleCharAction(btn.dataset.action, id, card, btn);
+        if (id) handleCharAction(action, id, card, btn);
+    });
+
+    // 新建分组
+    $('nd_group_add')?.addEventListener('click', () => {
+        const name = prompt('分组名称', '新分组');
+        if (name === null) return;
+        const trimmed = name.trim();
+        if (!trimmed) { alert('分组名称不能为空'); return; }
+        if (!state.characterGroups) state.characterGroups = [];
+        const id = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        state.characterGroups.push({ id, name: trimmed, enabled: true });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
+        renderCharList();
     });
 
     // auto-learn (toggle + subordinate checkbox)
@@ -5434,7 +5529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.characterTags?.length) { alert('没有角色可清除'); return; }
         if (!confirm(`确定清除全部 ${state.characterTags.length} 个角色？此操作不可撤销。`)) return;
         state.characterTags = [];
-        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+        postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
         renderCharList();
     });
     
@@ -5472,7 +5567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (existing) Object.assign(existing, imported, { id: existing.id });
                 else state.characterTags.push(imported);
             }
-            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags });
+            postToParent({ type: 'SAVE_CHARACTER_TAGS', characterTags: state.characterTags, characterGroups: state.characterGroups });
             renderCharList();
             alert(`导入 ${d.characters.length} 个角色`);
         } catch (err) {
