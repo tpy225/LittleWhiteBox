@@ -1769,6 +1769,17 @@ select.input { cursor: pointer; }
                         <button id="nd_clear_all" class="btn btn-sm btn-danger"><i class="fa-solid fa-trash"></i> 清空全部</button>
                         <button id="nd_refresh_stats" class="btn btn-sm btn-icon"><i class="fa-solid fa-arrows-rotate"></i></button>
                         </div>
+                        <!-- 批量模式操作欄（點「批量」後展開在這一行下方） -->
+                        <div id="nd_batch_bar" style="display:none;margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(20,20,25,0.6);border:1px solid var(--border);gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+                            <span id="nd_batch_count" style="font-size:13px;color:var(--text-secondary);"></span>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <button class="btn btn-sm" id="nd_batch_select_all">全選</button>
+                                <button class="btn btn-sm" id="nd_batch_select_none">取消</button>
+                                <button class="btn btn-sm btn-primary" id="nd_batch_download"><i class="fa-solid fa-download"></i> 下載</button>
+                                <button class="btn btn-sm btn-danger" id="nd_batch_delete"><i class="fa-solid fa-trash"></i> 刪除</button>
+                                <button class="btn btn-sm" id="nd_batch_done">完成</button>
+                            </div>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -1996,18 +2007,6 @@ select.input { cursor: pointer; }
                     <pre class="gallery-modal-prompt-text" id="nd_modal_negative"></pre>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- 批量模式底部操作欄 -->
-    <div id="nd_batch_bar" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:rgba(20,20,25,0.97);backdrop-filter:blur(10px);border-top:1px solid var(--border);padding:10px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
-        <span id="nd_batch_count" style="font-size:13px;color:var(--text-secondary);"></span>
-        <div style="display:flex;gap:8px;align-items:center;">
-            <button class="btn btn-sm" id="nd_batch_select_all">全選</button>
-            <button class="btn btn-sm" id="nd_batch_select_none">取消</button>
-            <button class="btn btn-sm btn-primary" id="nd_batch_download"><i class="fa-solid fa-download"></i> 下載</button>
-            <button class="btn btn-sm btn-danger" id="nd_batch_delete"><i class="fa-solid fa-trash"></i> 刪除</button>
-            <button class="btn btn-sm" id="nd_batch_done">完成</button>
         </div>
     </div>
 
