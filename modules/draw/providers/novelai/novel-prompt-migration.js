@@ -275,22 +275,19 @@ function refreshProPresetRules(settings, currentDefaults) {
 
 /**
  * Force-refresh every built-in preset to the currently bundled content and lock it
- * read-only. Runs once per release via `_builtinPresetVersion`. Unlike the opening
- * migration, this overwrites user edits intentionally: built-in templates are not
- * editable in the UI, so any saved divergence is stale and must be replaced.
+ * read-only. Built-in templates are immutable in the UI, so any saved divergence
+ * (from older releases or a stock-name rename) is stale and replaced. Unlike the
+ * opening migration, this is not a one-time step: it runs on every load and only
+ * reports a change when the saved content no longer matches the bundled defaults,
+ * so future template edits are picked up automatically without bumping a marker.
  */
 function refreshBuiltinPresetContent(settings, currentDefaults) {
     const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
-    if (Number(source._builtinPresetVersion) >= 1) {
-        return { settings: source, refreshed: false };
-    }
-    for (const key of ['topSystem', 'topSystemPov', 'sceneRules']) {
+    // 模板尚未加载时不刷新：等默认值就绪的那次加载再做，避免空模板覆盖内置预设。
+    for (const key of ['topSystem', 'topSystemPov', 'sceneRules', 'sceneRulesPro']) {
         if (typeof currentDefaults?.[key] !== 'string' || !currentDefaults[key].trim()) {
-            throw new Error(`提示词模板尚未加载：${key}`);
+            return { settings: source, refreshed: false };
         }
-    }
-    if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
-        throw new Error('提示词模板尚未加载：sceneRulesPro');
     }
     const existing = Array.isArray(source.promptPresets) ? source.promptPresets : [];
     let refreshed = false;
@@ -299,12 +296,19 @@ function refreshBuiltinPresetContent(settings, currentDefaults) {
         const isPov = isPovPromptPreset(preset.name);
         const isPro = preset.name === SCENE_PLANNER_PRESET_NAMES.pro
             || preset.name === PRO_PRESET_BUILTIN_NAME;
+        const expectedTopSystem = isPov ? currentDefaults.topSystemPov : currentDefaults.topSystem;
+        const expectedSceneRules = isPro ? currentDefaults.sceneRulesPro : currentDefaults.sceneRules;
+        if (preset.builtin === true
+            && preset.topSystem === expectedTopSystem
+            && preset.sceneRules === expectedSceneRules) {
+            return preset;
+        }
         refreshed = true;
         return {
             ...preset,
             builtin: true,
-            topSystem: isPov ? currentDefaults.topSystemPov : currentDefaults.topSystem,
-            sceneRules: isPro ? currentDefaults.sceneRulesPro : currentDefaults.sceneRules,
+            topSystem: expectedTopSystem,
+            sceneRules: expectedSceneRules,
         };
     });
     return {
