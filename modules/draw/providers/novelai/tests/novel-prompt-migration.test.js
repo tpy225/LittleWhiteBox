@@ -112,11 +112,43 @@ test('drops retired fields at the format boundary and preserves both model guide
     });
 });
 
-test('new NovelAI installations receive the three current presets', () => {
+test('new NovelAI installations receive the three current presets and open on the enhanced one', () => {
     const result = migrateLegacyNovelPromptSettings(null, CURRENT, TARGET);
     assert.equal(result.presets.length, 3);
-    assert.equal(result.settings.selectedPromptPresetId, result.presets[0].id);
+    assert.deepEqual(result.presets.map(preset => preset.name), Object.values(SCENE_PLANNER_PRESET_NAMES));
+    assert.equal(result.proSelected, true);
+    assert.equal(result.settings.selectedPromptPresetId, result.presets[2].id);
     assert.equal(result.settings._promptTemplateVersion, TARGET);
+});
+
+test('a user on a current version keeps their custom preset while built-ins refresh behind them', () => {
+    const builtin = { id: 'normal', name: SCENE_PLANNER_PRESET_NAMES.normal, builtin: true, topSystem: 'old', sceneRules: 'old' };
+    const custom = { id: 'mine', name: '我的自定义', topSystem: 'system', sceneRules: 'rules' };
+    const result = migrateLegacyNovelPromptSettings({
+        _promptTemplateVersion: TARGET,
+        _proPresetVersion: 3,
+        promptPresets: [builtin, custom],
+        selectedPromptPresetId: 'mine',
+    }, CURRENT, TARGET);
+    // 自定義預設原樣保留，選擇不變；內置預設在背景刷新為當前內容並鎖定。
+    assert.equal(result.settings.selectedPromptPresetId, 'mine');
+    assert.equal(result.proSelected, false);
+    assert.deepEqual(result.presets[1], custom);
+    assert.deepEqual(result.presets[0], {
+        ...builtin, topSystem: CURRENT.topSystem, sceneRules: CURRENT.sceneRules,
+    });
+    assert.equal(result.builtinRefreshed, true);
+});
+
+test('an upgrade hands an existing user to the standard preset, never the enhanced one', () => {
+    const result = migrateLegacyNovelPromptSettings({
+        _promptTemplateVersion: 12,
+        promptPresets: [{ id: 'mine', name: '我的预设', topSystem: 'system', sceneRules: 'rules' }],
+        selectedPromptPresetId: 'mine',
+    }, CURRENT, TARGET);
+    assert.equal(result.proSelected, false);
+    const active = result.presets.find(preset => preset.id === result.settings.selectedPromptPresetId);
+    assert.equal(active.name, SCENE_PLANNER_PRESET_NAMES.normal);
 });
 
 test('replaces an untouched released enhanced preset with the current rules', async () => {

@@ -64,8 +64,9 @@ export function createScenePlannerDefaultPresets(defaults) {
 }
 
 /**
- * One optional, non-default preset: standard (third-person) opening paired with the
- * enhanced composition/expression rule set. Selection is never switched to it.
+ * One optional preset: standard (third-person) opening paired with the enhanced
+ * composition/expression rule set. The installer never switches selection to it; a
+ * provider may still adopt it as the fresh-install default.
  */
 export function createScenePlannerProPreset(defaults) {
     return {
