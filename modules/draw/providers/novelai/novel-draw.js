@@ -2474,11 +2474,7 @@ async function handleDelegatedClick(e) {
 
     const actionEl = e.target.closest('[data-action]');
     const action = actionEl?.dataset?.action;
-    if (!action) {
-        // 暫時診斷（手機端點圖無反應定位用，事後移除）：圖卡被命中但點到的元素不帶動作。
-        showToast(`診斷：圖片未被動作元素接收（命中 ${e.target.tagName}${e.target.className ? '.' + String(e.target.className).trim().split(/\s+/).join('.') : ''}）`, 'info', 6000);
-        return;
-    }
+    if (!action) return;
 
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -2494,12 +2490,20 @@ async function handleDelegatedClick(e) {
             break;
         }
         case 'open-gallery': {
-            // 暫時診斷（手機端點圖無反應定位用，事後移除）
-            showToast('診斷：已命中圖片，準備開啟畫廊', 'info', 2000);
+            // 點圖只切換控制列（張數列＋「⋮」），不做放大；放大改由「⋮」內的「放大」執行。
+            const willShow = !container.classList.contains('controls-visible');
+            container.classList.toggle('controls-visible', willShow);
+            if (!willShow) {
+                document.querySelectorAll('.xb-nd-menu-wrap.open').forEach(w => w.classList.remove('open'));
+            }
+            break;
+        }
+        case 'view-image': {
+            container.querySelector('.xb-nd-menu-wrap')?.classList.remove('open');
             try {
                 await handleImageClick(container);
             } catch (err) {
-                showToast(`診斷：開啟畫廊失敗 — ${err?.message || err}`, 'error', 8000);
+                showToast(`開啟畫廊失敗 — ${err?.message || err}`, 'error', 6000);
                 throw err;
             }
             break;
@@ -2556,6 +2560,9 @@ async function handleDelegatedClick(e) {
 function setupEventDelegation() {
     if (window._xbNovelEventsBound) return;
     window._xbNovelEventsBound = true;
+
+    // 啟用「點圖才顯示控制列」樣式（該 CSS 只在此類存在時生效，不影響 SD/ComfyUI）
+    document.body.classList.add('xb-nd-tap-controls');
 
     document.addEventListener('click', handleDelegatedClick, { capture: true });
     document.addEventListener('touchstart', handleTouchStart, { passive: true });
