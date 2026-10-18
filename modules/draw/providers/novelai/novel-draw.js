@@ -1107,6 +1107,7 @@ function normalizeSettings(saved = {}) {
             : String(source.selectedPromptPresetId),
         _promptTemplateVersion: Number(source._promptTemplateVersion) || 0,
         _proPresetVersion: Number(source._proPresetVersion) || 0,
+        _builtinPresetVersion: Number(source._builtinPresetVersion) || 0,
         worldbooks: {
             enabled: rawWorldbooks.enabled === true,
             uploadedBooks: Array.isArray(rawWorldbooks.uploadedBooks) ? rawWorldbooks.uploadedBooks : [],
@@ -1157,6 +1158,7 @@ function normalizeSettings(saved = {}) {
         return {
             id: String(preset.id || `prompt-${Date.now()}-${index}`),
             name: String(preset.name || `提示词预设 ${index + 1}`),
+            builtin: preset.builtin === true,
             topSystem: typeof preset.topSystem === 'string'
                 ? preset.topSystem
                 : (isPov ? DEFAULT_PROMPT_CONFIG.topSystemPov : DEFAULT_PROMPT_CONFIG.topSystem),
@@ -4509,6 +4511,7 @@ async function handleFrameMessage(event) {
                 const newPreset = {
                     id,
                     name: (typeof data.name === 'string' && data.name.trim()) ? data.name.trim() : `提示词-${settings.promptPresets.length + 1}`,
+                    builtin: false,
                     topSystem: current?.topSystem ?? DEFAULT_PROMPT_CONFIG.topSystem,
                     sceneRules: current?.sceneRules ?? DEFAULT_PROMPT_CONFIG.sceneRules,
                     modelGuideOverrides: normalizeNovelPromptGuideOverrides(current?.modelGuideOverrides),
@@ -4551,6 +4554,11 @@ async function handleFrameMessage(event) {
         case 'DEL_PROMPT_PRESET': {
             const s = getSettings();
             const presetId = String(data.id || s.selectedPromptPresetId || '');
+            const target = s.promptPresets.find(p => p.id === presetId);
+            if (target?.builtin) {
+                postStatus('error', '内置模板不可删除，请先新建副本', 'prompt-preset');
+                break;
+            }
             let deleteResult = 'missing';
             const ok = await updateSettingsPersistent((settings) => {
                 if (settings.promptPresets.length <= 1) {
@@ -4579,6 +4587,10 @@ async function handleFrameMessage(event) {
         case 'RENAME_PROMPT_PRESET': {
             const presetId = String(data.id || getSettings().selectedPromptPresetId || '');
             const active = getSettings().promptPresets.find(p => p.id === presetId);
+            if (active?.builtin) {
+                postStatus('error', '内置模板不可重命名，请先新建副本', 'prompt-preset');
+                break;
+            }
             if (active && typeof data.name === 'string' && data.name.trim()) {
                 let presetFound = false;
                 const ok = await updateSettingsPersistent((settings) => {
@@ -4601,6 +4613,38 @@ async function handleFrameMessage(event) {
             const presetId = String(data.selectedPromptPresetId || getSettings().selectedPromptPresetId || '');
             if (data.promptDraft && typeof data.promptDraft === 'object') {
                 const statusTarget = data.statusTarget === 'prompt-preset' ? 'prompt-preset' : 'prompts';
+                const target = getSettings().promptPresets.find(p => p.id === presetId);
+                // 内置模板不可就地修改：保存等同「另存为」一个可编辑副本。
+                if (target?.builtin) {
+                    const newId = generateSlotId();
+                    let created = false;
+                    const ok = await updateSettingsPersistent((settings) => {
+                        const current = settings.promptPresets.find(p => p.id === presetId);
+                        if (!current) return;
+                        created = true;
+                        const cp = data.promptDraft;
+                        settings.promptPresets.push({
+                            id: newId,
+                            name: `${current.name} 副本`,
+                            builtin: false,
+                            topSystem: 'topSystem' in cp ? cp.topSystem : current.topSystem,
+                            sceneRules: 'sceneRules' in cp ? cp.sceneRules : current.sceneRules,
+                            modelGuideOverrides: compactPromptGuideOverrides(
+                                'modelGuideOverrides' in cp
+                                    ? cp.modelGuideOverrides
+                                    : current.modelGuideOverrides,
+                            ),
+                        });
+                        settings.selectedPromptPresetId = newId;
+                    }, '已另存为新预设', { target: statusTarget, notify: false });
+                    postStatus(
+                        ok && created ? 'success' : 'error',
+                        ok && created ? '内置模板已另存为可编辑副本' : ok ? '目标提示词预设已不存在' : '保存失败',
+                        statusTarget,
+                    );
+                    if (ok && created) sendInitData();
+                    break;
+                }
                 let presetFound = false;
                 const ok = await updateSettingsPersistent((settings) => {
                     const current = settings.promptPresets.find(p => p.id === presetId);

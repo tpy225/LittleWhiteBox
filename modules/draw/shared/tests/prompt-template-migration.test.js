@@ -18,7 +18,9 @@ async function loadDefaults(provider) {
         topSystem: '../prompts/opening.md',
         topSystemPov: '../prompts/opening-pov.md',
         sceneRules: '../prompts/scene-rules.md',
-        ...(provider === 'novelai' ? {} : { tagGuideContent: `../../providers/${provider}/${guide}` }),
+        ...(provider === 'novelai'
+            ? { sceneRulesPro: '../prompts/scene-rules-pro.md' }
+            : { tagGuideContent: `../../providers/${provider}/${guide}` }),
     };
     return Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, path]) => (
         [key, await readFile(new URL(path, import.meta.url), 'utf8')]
@@ -172,15 +174,39 @@ for (const [provider, targetVersion] of [
             assert.equal(result.installed, false);
             assert.equal(provider === 'novelai' ? result.migrated : result.changed, true);
             assert.deepEqual(input, before);
-            assert.deepEqual(result.settings, {
-                ...input,
-                _promptTemplateVersion: targetVersion,
-                promptPresets: [
-                    { ...normal, topSystem: defaults.topSystem },
-                    { ...pov, topSystem: defaults.topSystemPov },
-                    custom, customPov, empty,
-                ],
-            });
+
+            if (provider === 'novelai') {
+                // NAI 强制刷新所有内置预设（含以 stock 名命名的用户副本），并补上进阶预设。
+                assert.equal(result.settings._promptTemplateVersion, targetVersion);
+                assert.equal(result.settings._builtinPresetVersion, 1);
+                assert.equal(result.settings._proPresetVersion, 3);
+                const presets = result.settings.promptPresets;
+                assert.equal(presets.length, 6);
+                assert.deepEqual(presets[0], { ...normal, topSystem: defaults.topSystem });
+                assert.deepEqual(presets[1], { ...pov, topSystem: defaults.topSystemPov });
+                assert.deepEqual(presets[2], {
+                    ...custom,
+                    builtin: true,
+                    topSystem: defaults.topSystem,
+                    sceneRules: defaults.sceneRules,
+                });
+                assert.deepEqual(presets[3], customPov);
+                assert.deepEqual(presets[4], empty);
+                const pro = presets[5];
+                assert.equal(pro.name, SCENE_PLANNER_PRESET_NAMES.pro);
+                assert.equal(pro.builtin, true);
+                assert.equal(pro.sceneRules, defaults.sceneRulesPro);
+            } else {
+                assert.deepEqual(result.settings, {
+                    ...input,
+                    _promptTemplateVersion: targetVersion,
+                    promptPresets: [
+                        { ...normal, topSystem: defaults.topSystem },
+                        { ...pov, topSystem: defaults.topSystemPov },
+                        custom, customPov, empty,
+                    ],
+                });
+            }
 
             const persisted = JSON.parse(JSON.stringify(result.settings));
             persisted.promptPresets = persisted.promptPresets.filter(preset => preset.id !== 'normal');
@@ -202,6 +228,19 @@ for (const [provider, targetVersion] of [
         };
         const result = upgrade(saved, defaults, fixture.templateVersions[provider]);
         assert.equal(result.installed, false);
-        assert.deepEqual(result.settings, { ...saved, _promptTemplateVersion: targetVersion });
+        if (provider === 'novelai') {
+            // NAI 不重建已删除的常规内置预设，但会确保进阶预设存在。
+            assert.equal(result.settings._promptTemplateVersion, targetVersion);
+            assert.equal(result.settings._builtinPresetVersion, 1);
+            assert.equal(result.settings._proPresetVersion, 3);
+            const presets = result.settings.promptPresets;
+            assert.equal(presets.length, 2);
+            assert.deepEqual(presets[0], saved.promptPresets[0]);
+            assert.equal(presets[1].name, SCENE_PLANNER_PRESET_NAMES.pro);
+            assert.equal(presets[1].builtin, true);
+            assert.equal(presets[1].sceneRules, defaults.sceneRulesPro);
+        } else {
+            assert.deepEqual(result.settings, { ...saved, _promptTemplateVersion: targetVersion });
+        }
     });
 }

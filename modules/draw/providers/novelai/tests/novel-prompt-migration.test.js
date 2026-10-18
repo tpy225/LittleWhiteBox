@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { migrateLegacyNovelPromptSettings } from '../novel-prompt-migration.js';
 import { PROMPT_TEMPLATE_VERSION } from '../novel-prompts.js';
-import { PRO_PRESET_BUILTIN_NAME, SCENE_PLANNER_PRESET_NAMES } from '../../../shared/scene-planner-presets.js';
+import { SCENE_PLANNER_PRESET_NAMES } from '../../../shared/scene-planner-presets.js';
 
 const CURRENT = Object.freeze({
     topSystem: 'current model-independent system',
@@ -29,17 +29,24 @@ for (const version of [6, 7]) {
         const result = migrateLegacyNovelPromptSettings(fixture, CURRENT, TARGET);
         assert.equal(result.migrated, true);
         assert.equal(result.settings._promptTemplateVersion, TARGET);
+        assert.equal(result.settings._builtinPresetVersion, 1);
         assert.deepEqual(fixture, before);
-        for (let index = 0; index < fixture.promptPresets.length; index++) {
-            const original = fixture.promptPresets[index];
-            const migrated = result.presets[index];
-            for (const key of ['id', 'name', 'topSystem', 'sceneRules']) {
-                assert.equal(migrated[key], original[key]);
-            }
-            if (Object.hasOwn(original, 'tagGuideContent')) {
-                assert.equal(Object.hasOwn(migrated, 'tagGuideContent'), false);
-                assert.equal(migrated.modelGuideOverrides['v4.5'], original.tagGuideContent);
-            }
+        // preset[0] 已改名，不是内置，保留原文。
+        const renamed = result.presets[0];
+        assert.equal(renamed.id, fixture.promptPresets[0].id);
+        assert.equal(renamed.name, '用户改过的名字');
+        assert.equal(renamed.topSystem, fixture.promptPresets[0].topSystem);
+        assert.equal(renamed.sceneRules, fixture.promptPresets[0].sceneRules);
+        // preset[1] 仍是内置名，强制刷新为当前内置内容并锁定。
+        const refreshed = result.presets[1];
+        assert.equal(refreshed.id, fixture.promptPresets[1].id);
+        assert.equal(refreshed.name, fixture.promptPresets[1].name);
+        assert.equal(refreshed.builtin, true);
+        assert.equal(refreshed.topSystem, CURRENT.topSystemPov);
+        assert.equal(refreshed.sceneRules, CURRENT.sceneRules);
+        if (Object.hasOwn(fixture.promptPresets[1], 'tagGuideContent')) {
+            assert.equal(Object.hasOwn(refreshed, 'tagGuideContent'), false);
+            assert.equal(refreshed.modelGuideOverrides['v4.5'], fixture.promptPresets[1].tagGuideContent);
         }
         const added = result.presets.slice(fixture.promptPresets.length);
         assert.equal(added.length, 3);
@@ -48,6 +55,7 @@ for (const version of [6, 7]) {
         assert.equal(added[1].topSystem, CURRENT.topSystemPov);
         for (const preset of added) {
             assert.deepEqual(preset.modelGuideOverrides, {});
+            assert.equal(preset.builtin, true);
         }
         assert.equal(added[0].sceneRules, CURRENT.sceneRules);
         assert.equal(added[1].sceneRules, CURRENT.sceneRules);
@@ -74,7 +82,12 @@ for (const version of [8, 9, 10, 11, 12]) {
         const result = migrateLegacyNovelPromptSettings({
             _promptTemplateVersion: version, promptPresets: presets, selectedPromptPresetId: 'edited',
         }, CURRENT, TARGET);
-        assert.deepEqual(result.presets.slice(0, 2), presets);
+        // default 仍用内置名 → 强制刷新；edited 改名 → 保留用户编辑。
+        assert.deepEqual(result.presets[0], {
+            id: 'default', name: '默认-完整规则', builtin: true,
+            topSystem: CURRENT.topSystem, sceneRules: CURRENT.sceneRules,
+        });
+        assert.deepEqual(result.presets[1], presets[1]);
         assert.equal(result.presets.length, 5);
         assert.equal(result.presets[4].name, SCENE_PLANNER_PRESET_NAMES.pro);
         // A selected custom preset also hands over: its rules predate the tool contract.
@@ -116,29 +129,37 @@ test('replaces an untouched released enhanced preset with the current rules', as
 
     assert.equal(result.proRefreshed, true);
     assert.equal(result.proAppended, false);
-    assert.equal(result.settings.promptPresets[0].sceneRules, CURRENT.sceneRulesPro);
-    assert.equal(result.settings._proPresetVersion, 2);
+    const pro = result.settings.promptPresets[0];
+    assert.equal(pro.sceneRules, CURRENT.sceneRulesPro);
+    assert.equal(pro.builtin, true);
+    assert.equal(pro.topSystem, CURRENT.topSystem);
+    assert.equal(result.settings._proPresetVersion, 3);
+    assert.equal(result.settings._builtinPresetVersion, 1);
     assert.equal(result.migrated, true);
 });
 
-test('keeps an edited enhanced preset and appends the built-in revision beside it', () => {
+test('force-overwrites an edited enhanced preset instead of appending a built-in copy', () => {
     const edited = migrateLegacyNovelPromptSettings({
         _promptTemplateVersion: TARGET,
         _proPresetVersion: 1,
         promptPresets: [{ id: 'pro', name: SCENE_PLANNER_PRESET_NAMES.pro, topSystem: '', sceneRules: 'my own rules' }],
     }, CURRENT, TARGET);
 
-    assert.equal(edited.proRefreshed, false);
-    assert.equal(edited.proAppended, true);
-    assert.equal(edited.settings.promptPresets[0].sceneRules, 'my own rules');
-    const builtin = edited.settings.promptPresets[1];
-    assert.equal(builtin.name, PRO_PRESET_BUILTIN_NAME);
-    assert.equal(builtin.sceneRules, CURRENT.sceneRulesPro);
-    assert.equal(edited.settings._proPresetVersion, 2);
+    // 内置进阶预设一律覆盖，不再保留用户修改或旁挂内置副本。
+    assert.equal(edited.proRefreshed, true);
+    assert.equal(edited.proAppended, false);
+    assert.equal(edited.settings.promptPresets.length, 1);
+    const pro = edited.settings.promptPresets[0];
+    assert.equal(pro.name, SCENE_PLANNER_PRESET_NAMES.pro);
+    assert.equal(pro.builtin, true);
+    assert.equal(pro.sceneRules, CURRENT.sceneRulesPro);
+    assert.equal(pro.topSystem, CURRENT.topSystem);
+    assert.equal(edited.settings._proPresetVersion, 3);
+    assert.equal(edited.settings._builtinPresetVersion, 1);
     assert.equal(edited.migrated, true);
 });
 
-test('does not append the built-in revision when the enhanced preset was removed', () => {
+test('does not recreate the enhanced preset when it was removed', () => {
     const removed = migrateLegacyNovelPromptSettings({
         _promptTemplateVersion: TARGET,
         _proPresetVersion: 1,
@@ -147,9 +168,15 @@ test('does not append the built-in revision when the enhanced preset was removed
 
     assert.equal(removed.proRefreshed, false);
     assert.equal(removed.proAppended, false);
-    assert.deepEqual(removed.settings.promptPresets.map(preset => preset.id), ['normal']);
-    assert.equal(removed.settings._proPresetVersion, 2);
-    assert.equal(removed.migrated, false);
+    assert.equal(removed.settings.promptPresets.length, 1);
+    const normal = removed.settings.promptPresets[0];
+    assert.equal(normal.name, SCENE_PLANNER_PRESET_NAMES.normal);
+    assert.equal(normal.builtin, true);
+    assert.equal(normal.topSystem, CURRENT.topSystem);
+    assert.equal(normal.sceneRules, CURRENT.sceneRules);
+    assert.equal(removed.settings._proPresetVersion, 3);
+    assert.equal(removed.settings._builtinPresetVersion, 1);
+    assert.equal(removed.migrated, true);
 });
 
 test('requires an explicit target version', () => {
@@ -186,17 +213,18 @@ test('converts the released upstream v7 YAML preset shape before current normali
     assert.equal('userJsonFormat' in custom, false);
 });
 
-test('preserves upstream edits even when the preset still has a managed default name', async () => {
+test('force-refreshes upstream presets that keep a managed default name', async () => {
     const fixture = await loadUpstreamV7Fixture();
     fixture.promptPresets[0].topSystem += '\nmy system edit';
     fixture.promptPresets[0].userJsonFormat += '\nmy scene edit';
     const result = migrateLegacyNovelPromptSettings(fixture, CURRENT, TARGET);
     const migrated = result.settings.promptPresets[0];
 
+    // 保留默认名的上游预设在内置刷新阶段被覆盖为当前内置内容。
     assert.equal(migrated.name, '默认-完整规则');
-    assert.match(migrated.topSystem, /my system edit$/);
-    assert.match(migrated.sceneRules, /my scene edit/);
-    assert.match(migrated.sceneRules, /迁移约束：旧内容中的 YAML\/JSON 输出格式/);
+    assert.equal(migrated.builtin, true);
+    assert.equal(migrated.topSystem, CURRENT.topSystem);
+    assert.equal(migrated.sceneRules, CURRENT.sceneRules);
     assert.equal(result.customPresetCount, 2);
 });
 

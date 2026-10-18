@@ -4794,6 +4794,7 @@ function applyParamsPreset() {
 /** 纯本地：从当前选中的提示词预设加载 textarea 内容（对标 applyParamsPreset） */
 function applyPromptPreset() {
     const active = getActivePromptPresetForForm() || {};
+    const isBuiltin = active.builtin === true;
     const drafts = active.id ? promptTextDraftsByPreset.get(active.id) : null;
     $('nd_prompt_system').value = drafts?.has('topSystem')
         ? drafts.get('topSystem')
@@ -4802,6 +4803,31 @@ function applyPromptPreset() {
         ? drafts.get('sceneRules')
         : active.sceneRules ?? '';
     applyModelGuideForCurrentModel();
+    // 内置模板只读：禁止直接修改，需「新建」或「保存」另存为可编辑副本。
+    for (const id of ['nd_prompt_system', 'nd_prompt_format', 'nd_prompt_guide']) {
+        const el = $(id);
+        if (el) el.readOnly = isBuiltin;
+    }
+    const presetSave = $('nd_prompt_preset_save');
+    if (presetSave) {
+        presetSave.title = isBuiltin ? '内置模板：另存为可编辑副本' : '保存';
+    }
+    const bottomSave = $('nd_prompts_save');
+    if (bottomSave) {
+        bottomSave.innerHTML = isBuiltin
+            ? '<i class="fa-solid fa-copy"></i> 另存为可编辑副本'
+            : '<i class="fa-solid fa-floppy-disk"></i> 保存到当前预设';
+    }
+    for (const id of ['nd_prompt_rename', 'nd_prompt_del']) {
+        const btn = $(id);
+        if (btn) btn.disabled = isBuiltin;
+    }
+    const status = $('nd_prompts_status');
+    if (status) {
+        status.textContent = isBuiltin
+            ? '内置模板不可直接修改，点击「另存为」或「＋新建」创建可编辑副本。'
+            : '';
+    }
 }
 
 function getActivePromptPresetForForm() {
