@@ -53,6 +53,12 @@ import { createSerialImageRequestQueue } from "../../shared/serial-image-request
 import { isCharacterEnabled } from "../../shared/character-selection.js";
 import { characterLibraryFromSettings } from "../../shared/character-library.js";
 import {
+    buildAutoLearnCreateOp,
+    buildAutoLearnUpdateOp,
+    mergeAutoLearnOps,
+    snapshotAutoLearnFields,
+} from "../../shared/auto-learn-merge.js";
+import {
     applyGroupPresetForCurrentChat,
     getActiveCharacterAvatars,
     listHostCharacters,
@@ -1584,13 +1590,38 @@ const GENERIC_NAME_REGEX = new RegExp([
     '(?:^(?:teacher|master|boss|doctor|nurse|brother|sister|senpai|sensei)$)',
 ].join('|'), 'i');
 
+// 已有角色补字段的学习规则（auto_update 模式）：从 autoLearnFromTasks 抽出，
+// 供学习阶段和“写回时合并到最新角色库”共用。对传入角色就地修改，返回是否有改动。
+function fillExistingCharacterFromCandidate(found, char) {
+    let updated = false;
+    if (!found.appearance && char.appear) {
+        found.appearance = char.appear;
+        updated = true;
+    }
+    // 仅在外貌仍为空时更新 type（已有外貌说明角色已配置，不应覆盖 type）
+    if (!found.appearance && char.type && found.type !== char.type) {
+        found.type = char.type;
+        updated = true;
+    }
+    if (!found.danbooruTag && char.danbooru) {
+        found.danbooruTag = char.danbooru;
+        updated = true;
+    }
+    // 本地 DB 自动匹配 danbooruTag（auto_update 模式）
+    if (!found.danbooruTag && isDanbooruDBLoaded()) {
+        const matches = searchLocalDanbooru(found.name, 1);
+        if (matches.length) { found.danbooruTag = matches[0].name; updated = true; }
+    }
+    return updated;
+}
+
 function isGenericCharName(name) {
     if (!name || name.trim().length <= 1) return true;
     return GENERIC_NAME_REGEX.test(name.trim());
 }
 
 function autoLearnFromTasks(tasks, settings) {
-    const result = { newChars: [], updatedChars: [] };
+    const result = { newChars: [], updatedChars: [], ops: [] };
     if (!tasks?.length) return result;
 
     // 收集所有有 type 或 appear 的角色（LLM 认定的未知角色）
@@ -1639,27 +1670,14 @@ function autoLearnFromTasks(tasks, settings) {
             }
             knownTags.push(newChar);
             result.newChars.push(char.name);
+            result.ops.push(buildAutoLearnCreateOp(newChar, { candidate: char }));
         } else if (mode === 'auto_update') {
-            let updated = false;
-            if (!found.appearance && char.appear) {
-                found.appearance = char.appear;
-                updated = true;
+            const before = snapshotAutoLearnFields(found);
+            if (fillExistingCharacterFromCandidate(found, char)) {
+                result.updatedChars.push(found.name);
+                const op = buildAutoLearnUpdateOp(found, before);
+                if (op) result.ops.push(op);
             }
-            // 仅在外貌仍为空时更新 type（已有外貌说明角色已配置，不应覆盖 type）
-            if (!found.appearance && char.type && found.type !== char.type) {
-                found.type = char.type;
-                updated = true;
-            }
-            if (!found.danbooruTag && char.danbooru) {
-                found.danbooruTag = char.danbooru;
-                updated = true;
-            }
-            // 本地 DB 自动匹配 danbooruTag（auto_update 模式）
-            if (!found.danbooruTag && isDanbooruDBLoaded()) {
-                const matches = searchLocalDanbooru(found.name, 1);
-                if (matches.length) { found.danbooruTag = matches[0].name; updated = true; }
-            }
-            if (updated) result.updatedChars.push(found.name);
         }
     }
 
@@ -2836,16 +2854,29 @@ async function maybeAutoLearnFromTasks(tasks = [], settings = {}) {
         const tagsCopy = JSON.parse(JSON.stringify(settings.characterTags || []));
         const settingsCopy = { ...settings, characterTags: tagsCopy };
         const learnResult = autoLearnFromTasks(tasks, settingsCopy);
-        if (learnResult.newChars.length || learnResult.updatedChars.length) {
-            const parts = [];
-            if (learnResult.newChars.length) parts.push(`新角色: ${learnResult.newChars.join(', ')}`);
-            if (learnResult.updatedChars.length) parts.push(`更新: ${learnResult.updatedChars.join(', ')}`);
-            const msg = `已学习 ${parts.join(' | ')}`;
-            const ok = await updateSharedSettingsPersistent((draft) => {
-                draft.characterTags = tagsCopy;
-            }, msg);
-            if (ok && overlayCreated && frameReady) sendInitData();
-        }
+        if (!learnResult.ops.length) return;
+        // 学习用的是任务开始时的快照；写回时把操作列表合并到保存时最新的角色库，
+        // 任务期间用户的整理（分组、移动、复制、删除、导入、启停）原样保留。
+        const mergeOptions = {
+            mode: settings.autoLearnMode || 'new_only',
+            resolve: resolveAutoLearnCharacter,
+            fillExisting: fillExistingCharacterFromCandidate,
+        };
+        const probe = mergeAutoLearnOps(
+            characterLibraryFromSettings(getSharedDrawSettings()),
+            learnResult.ops,
+            mergeOptions,
+        );
+        if (!probe.changed) return;
+        const parts = [];
+        if (probe.created.length) parts.push(`新角色: ${probe.created.join(', ')}`);
+        if (probe.updated.length) parts.push(`更新: ${probe.updated.join(', ')}`);
+        const msg = `已学习 ${parts.join(' | ')}`;
+        const ok = await updateSharedSettingsPersistent((draft) => {
+            const merged = mergeAutoLearnOps(characterLibraryFromSettings(draft), learnResult.ops, mergeOptions);
+            if (merged.changed) draft.characterTags = merged.characters;
+        }, msg);
+        if (ok && overlayCreated && frameReady) sendInitData();
     } catch (e) {
         console.warn('[NovelDraw] 自动学习角色失败:', e);
     }
