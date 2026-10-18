@@ -51,6 +51,7 @@ import { getLastDrawAgentDiagnostic } from "../../shared/draw-agent.js";
 import { attachDrawAgentSettingsSurface } from "../../shared/agent-settings-surface.js";
 import { createSerialImageRequestQueue } from "../../shared/serial-image-request-queue.js";
 import { isCharacterEnabled } from "../../shared/character-selection.js";
+import { characterLibraryFromSettings } from "../../shared/character-library.js";
 import { joinTags } from "../../shared/character-prompts.js";
 import {
     buildContinuityBlockForRequest,
@@ -136,6 +137,7 @@ import {
     buildImageHtml,
     buildFailedPlaceholderHtml,
     ensureDrawImageStyles,
+    detectPresentCharacters,
 } from "../../shared/draw-common.js";
 import { replaceSceneSlotElements } from "../../shared/scene-slot-dom.js";
 import { createSceneSource, normalizeMessageSceneSourceText } from "../../shared/scene-source.js";
@@ -1542,35 +1544,6 @@ function normalizeNamedTagList(list = []) {
             tags: String(item?.tags || '').trim(),
         }))
         .filter(item => item.name || item.tags);
-}
-
-function detectPresentCharacters(messageText, characterTags) {
-    if (!messageText || !characterTags?.length) return [];
-    const text = messageText.toLowerCase();
-    const present = [];
-
-    for (const char of characterTags) {
-        if (!isCharacterEnabled(char) || !char.name) continue;
-        const names = [char.name, ...(char.aliases || [])].filter(Boolean);
-        const isPresent = names.some(name => {
-            const lowerName = name.toLowerCase();
-            return text.includes(lowerName) || new RegExp(`\\b${escapeRegexChars(lowerName)}\\b`, 'i').test(text);
-        });
-
-        if (isPresent) {
-            present.push({
-                name: char.name,
-                aliases: char.aliases || [],
-                type: char.type || 'girl',
-                appearance: char.appearance || '',
-                danbooruTag: char.danbooruTag || '',
-                negativeTags: char.negativeTags || '',
-                outfits: normalizeNamedTagList(char.outfits),
-                dynamicStates: normalizeNamedTagList(char.dynamicStates),
-            });
-        }
-    }
-    return present;
 }
 
 // ── 角色自动学习 ─────────────────────────────────────────────
@@ -2990,7 +2963,7 @@ async function generateImagesFromText(options = {}) {
         const sceneSource = createSceneSource(text, { filterRules });
         if (!sceneSource.content) throw new NovelDrawError('正文内容为空（可能被过滤规则清空）', ErrorType.PARSE);
 
-        const presentCharacters = detectPresentCharacters(sceneSource.content, settings.characterTags || []);
+        const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(settings));
         const continuityText = settings.continuityEnabled === false
             ? ''
             : await buildContinuityBlockForRequest({
@@ -3215,7 +3188,7 @@ async function generateAndInsertImages({
         );
         if (!sceneSource.content) throw new NovelDrawError('消息内容为空（可能被过滤规则清空）', ErrorType.PARSE);
 
-        const presentCharacters = detectPresentCharacters(sceneSource.content, settings.characterTags || []);
+        const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(settings));
 
         // 上镜锚点：读取本聊天中这些角色上一次实际入画的外貌/着装 tag，跨楼层延续。
         const continuityText = settings.continuityEnabled === false
