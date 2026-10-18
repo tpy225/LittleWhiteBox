@@ -2431,7 +2431,9 @@ function handleTouchMove(e) {
     const touch = e.touches[0];
     const dx = touch.clientX - touchState.startX;
     const dy = touch.clientY - touchState.startY;
-    if (!touchState.moved && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    // 門檻取 24px：手指點按時的輕微水平抖動常達 10~20px，若在此就 preventDefault，
+    // 瀏覽器會取消隨後的 click，導致圖片點不開放大窗（桌面用滑鼠無 touchmove 故不受影響）。
+    if (!touchState.moved && Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         touchState.moved = true;
         e.preventDefault();
     }
