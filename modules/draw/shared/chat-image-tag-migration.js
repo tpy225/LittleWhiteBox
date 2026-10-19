@@ -6,7 +6,8 @@ import { createImageIdentifiers, placePreparedImageSlots } from './prepared-chat
 import { getImageJobDeliveryTextAt } from './image-job-delivery-target.js';
 import { setActiveMessageText } from './scene-placement.js';
 import { saveChatAndConfirm, withConfirmableChatMutation, CONFIRMABLE_CHAT_PHASE_TIMEOUT_MS } from './confirmable-chat-save.js';
-import { syncRenderedMessageFromState, isAnyMessageBeingEdited } from './draw-common.js';
+import { syncRenderedMessageFromState, isAnyMessageBeingEdited, DEFAULT_MESSAGE_FILTER_RULES } from './draw-common.js';
+import { getSharedDrawSettings } from './draw-settings.js';
 import { PreviewStatus, DRAW_SLOT_COPY, DRAW_SLOT_ERRORS } from './image-record.js';
 
 export const CHAT_IMAGE_TAG_FORMAT_KEY = 'xbDrawTagFormat';
@@ -85,7 +86,8 @@ async function migrate(ctx) {
     const loaded = new Map(ctx.chat.map(message => [message, { source: message.mes, swipe: message.swipe_id }]));
     if (!freshChats.has(ctx.chatMetadata)) await prepareChatBranches(ctx);
     if (!isCurrentChat()) throw new Error(DRAW_SLOT_COPY.sourceChanged);
-    const branches = listChatImageBranches(ctx.chat).map(branch => ({ ...branch, tags: parseChatImageTags(branch.source) }))
+    const filterRules = [...(getSharedDrawSettings().messageFilterRules || []), ...DEFAULT_MESSAGE_FILTER_RULES];
+    const branches = listChatImageBranches(ctx.chat).map(branch => ({ ...branch, tags: parseChatImageTags(branch.source, filterRules) }))
         .filter(branch => branch.tags.length && loaded.has(branch.message)
             && loaded.get(branch.message).source === branch.message.mes
             && loaded.get(branch.message).swipe === branch.message.swipe_id);

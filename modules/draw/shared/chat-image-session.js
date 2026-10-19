@@ -2,6 +2,8 @@ import { parseChatImageTags } from './chat-message-image-markup.js';
 import { generatePreparedChatImages, prepareNativeChatImages } from './prepared-chat-images.js';
 import { DRAW_SLOT_COPY } from './image-record.js';
 import { subscribeChatImagePlacement, commitChatImagePlacement, rebaseImageText, rebaseImageOffset } from './chat-image-placement.js';
+import { DEFAULT_MESSAGE_FILTER_RULES } from './draw-common.js';
+import { getSharedDrawSettings } from './draw-settings.js';
 
 const MAIN_TYPES = new Set(['', 'normal', 'regenerate', 'swipe', 'continue']);
 
@@ -156,7 +158,8 @@ export function createChatImageSession({ context, provider, changed, report, aut
             observation = null; changed();
             if (!source.startsWith(initialBody)) return;
             // DICE's makeFirst listener has already applied its current body.
-            const candidates = parseChatImageTags(source).filter(tag => tag.end > initialBody.length);
+            const filterRules = [...(getSharedDrawSettings().messageFilterRules || []), ...DEFAULT_MESSAGE_FILTER_RULES];
+            const candidates = parseChatImageTags(source, filterRules).filter(tag => tag.end > initialBody.length);
             // 手动模式：不接管标签，等用户点占位卡上的钢笔图标；未认领态不再挂操作按钮
             if (candidates.length && autoGenerate() !== false) await claim(ctx, index, candidates, true);
         },

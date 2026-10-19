@@ -5,6 +5,7 @@ import { parseChatImageTags, findRenderedChatImageTags } from './chat-message-im
 import { ensureChatImageTagFormat, markFreshImageTagChat } from './chat-image-tag-migration.js';
 import { createChatImageSession } from './chat-image-session.js';
 import { buildPendingImageHtml, ensureDrawImageStyles, isMessageBeingEdited, renderPreviewsForMessage } from './draw-common.js';
+import { DEFAULT_MESSAGE_FILTER_RULES } from './draw-common.js';
 import { getSharedDrawSettings } from './draw-settings.js';
 import { DRAW_SLOT_COPY } from './image-record.js';
 
@@ -47,7 +48,8 @@ function enhance(lease) {
     if (!message || isMessageBeingEdited(lease.messageId)) return;
     releaseProvisional(lease);
     const source = message.mes, swipeIndex = message.swipe_id ?? 0;
-    const { matched } = findRenderedChatImageTags(lease.content, parseChatImageTags(source));
+    const filterRules = [...(getSharedDrawSettings().messageFilterRules || []), ...DEFAULT_MESSAGE_FILTER_RULES];
+    const { matched } = findRenderedChatImageTags(lease.content, parseChatImageTags(source, filterRules));
     // Matching the formatted text is only a projection. It never grants or
     // withholds permission to execute a tag from the raw message.
     for (const { node, offset, marker, candidate } of matched.reverse()) {
