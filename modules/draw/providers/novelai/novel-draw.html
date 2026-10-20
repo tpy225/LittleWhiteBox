@@ -1767,16 +1767,13 @@ select.input { cursor: pointer; }
                             <span style="font-size:12px;color:var(--text-secondary);">自动清理</span>
                             <input id="nd_cache_days" type="number" class="input" style="width:50px;padding:4px 6px;min-height:28px;text-align:center;" value="3" min="1" max="30">
                             <span style="font-size:12px;color:var(--text-secondary);">天</span>
-                            <button id="nd_save_cache_days" class="btn btn-sm btn-icon" style="min-height:28px;width:28px;padding:0;"><i class="fa-solid fa-check"></i></button>
+                            <button id="nd_save_cache_days" class="btn btn-sm btn-icon" style="min-height:28px;width:28px;padding:0;"><i class="fa-solid fa-floppy-disk"></i></button>
                         </div>
                         <div style="display:flex;align-items:center;gap:6px;background:var(--bg-input);padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
                             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);">
                                 <input id="nd_save_as_jpeg" type="checkbox">
                                 生成後存 JPEG（省空間）
                             </label>
-                            <span style="font-size:12px;color:var(--text-secondary);">品質</span>
-                            <input id="nd_jpeg_quality" type="number" class="input" style="width:56px;padding:4px 6px;min-height:28px;text-align:center;" value="0.8" min="0.1" max="1.0" step="0.05">
-                            <button id="nd_save_jpeg" class="btn btn-sm btn-icon" style="min-height:28px;width:28px;padding:0;"><i class="fa-solid fa-check"></i></button>
                         </div>
                         <div id="nd_gallery_status" class="status-text" style="width:100%;margin-top:0;"></div>
                         <div style="display:flex;gap:8px;align-items:center;">
@@ -3896,7 +3893,6 @@ function applyStateToUI() {
         $('nd_delay').value = `${dMin}-${dMax}`;
         $('nd_cache_days').value = state.cacheDays >= 1 ? state.cacheDays : DEFAULTS.cacheDays;
         if ($('nd_save_as_jpeg')) $('nd_save_as_jpeg').checked = state.saveAsJpeg === true;
-        if ($('nd_jpeg_quality')) $('nd_jpeg_quality').value = String(Math.max(0.1, Math.min(1, Number(state.jpegQuality) || 0.8)));
         $('nd_image_title_mode').value = ['none', 'overlay', 'collapse'].includes(state.imageTitleMode)
             ? state.imageTitleMode
             : 'overlay';
@@ -5775,12 +5771,12 @@ document.addEventListener('DOMContentLoaded', () => {
         postToParent({ type: 'SAVE_CACHE_DAYS', cacheDays: Number($('nd_cache_days').value) || 3 });
     });
 
-    $('nd_save_jpeg').addEventListener('click', () => {
-        setSavingState($('nd_save_jpeg'));
+    $('nd_save_as_jpeg').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
         postToParent({
             type: 'SAVE_JPEG',
             saveAsJpeg: $('nd_save_as_jpeg').checked,
-            jpegQuality: Number($('nd_jpeg_quality').value) || 0.8,
+            jpegQuality: 0.8,
         });
     });
 

@@ -1678,7 +1678,8 @@ function createBatchOverlay() {
                 const url = p ? getPreviewDisplayUrl(p) : null;
                 if (!url) { failed++; continue; }
                 const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
-                await saveBase64AsFile(url, `image-${p.imgId}-${ts}.png`);
+                const isJpeg = (p.base64 || '').startsWith('data:image/jpeg');
+                await saveBase64AsFile(url, `image-${p.imgId}-${ts}.${isJpeg ? 'jpg' : 'png'}`);
                 saved++;
             }
             showToast(`已下載 ${saved} 張${failed ? `，${failed} 張失敗` : ''}`);

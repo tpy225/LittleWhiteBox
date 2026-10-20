@@ -949,20 +949,18 @@ function bindOverlayEvents() {
         closeBatchManage(); // 先關上舊的（若有），再開新的
         openGalleryBatchManage(null); // null = 顯示全部畫廊圖
     });
-    querySettings('#sd-gallery-save-jpeg')?.addEventListener('click', async (event) => {
-        const nextJpeg = getSettingsElement('#sd-gallery-save-as-jpeg')?.checked === true;
-        const nextQuality = Math.max(0.1, Math.min(1, Number(getSettingsElement('#sd-gallery-jpeg-quality')?.value) || 0.8));
-        const ok = await runSaveButtonTask(event.currentTarget, () => updateSharedDrawSettingsPersistent((settings) => {
+    querySettings('#sd-gallery-save-as-jpeg')?.addEventListener('change', async (event) => {
+        const nextJpeg = event.target?.checked === true;
+        const ok = await updateSharedDrawSettingsPersistent((settings) => {
             settings.saveAsJpeg = nextJpeg;
-            settings.jpegQuality = nextQuality;
-        }, 'JPEG 设置已保存', { notify: false, silent: false }), {
-            statusElementId: 'sd-gallery-status',
-            pendingText: '正在保存...',
-            successText: nextJpeg ? `已启用 JPEG（品質 ${nextQuality}）` : '已关闭 JPEG 转换',
-            errorText: '保存失败，请重试',
-        });
-        if (ok) {
-            // renderGalleryManagement 已自動回填
+            settings.jpegQuality = 0.8;
+        }, 'JPEG 设置已保存', { notify: false, silent: false });
+        const statusEl = document.getElementById('sd-gallery-status');
+        if (statusEl) {
+            statusEl.textContent = ok
+                ? (nextJpeg ? '已启用 JPEG' : '已关闭 JPEG 转换')
+                : '保存失败，请重试';
+            statusEl.className = 'status-text' + (ok ? (nextJpeg ? ' success' : ' info') : ' error');
         }
     });
     querySettingsAll('[data-sd-mode]').forEach((button) => {
@@ -1553,12 +1551,10 @@ async function renderGalleryManagement() {
     const sizeEl = getSettingsElement('sd-gallery-size');
     const cacheDaysEl = getSettingsElement('sd-gallery-cache-days');
     const jpegCheckbox = getSettingsElement('sd-gallery-save-as-jpeg');
-    const jpegQuality = getSettingsElement('sd-gallery-jpeg-quality');
     if (!container || !empty || !countEl || !sizeEl) return;
     const settings = getSharedDrawSettings();
     if (cacheDaysEl) cacheDaysEl.value = String(settings.cacheDays);
     if (jpegCheckbox) jpegCheckbox.checked = settings.saveAsJpeg === true;
-    if (jpegQuality) jpegQuality.value = String(settings.jpegQuality);
 
     container.textContent = '加载中...';
     empty.style.display = 'none';
