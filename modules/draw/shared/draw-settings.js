@@ -18,6 +18,8 @@ const DEFAULT_SHARED_DRAW_SETTINGS = {
     // 回复中的绘图标签是否自动排队生图；关闭后改为楼层内手动点「生成」
     autoGenerateImages: true,
     imageTitleMode: DEFAULT_IMAGE_TITLE_MODE,
+    // 要求出图数（全局，不跟随预设）；0 = 不指定
+    maxImages: 2,
     characterTags: [],
     characterGroups: [],
     characterGroupPresets: [],
@@ -140,6 +142,7 @@ export function normalizeSharedDrawSettings(saved = {}) {
             : DEFAULT_SHARED_DRAW_SETTINGS.timeout,
         autoGenerateImages: source.autoGenerateImages !== false,
         imageTitleMode: normalizeImageTitleMode(source.imageTitleMode),
+        maxImages: Math.max(0, Math.min(20, Math.floor(Number(source.maxImages) || DEFAULT_SHARED_DRAW_SETTINGS.maxImages))),
         characterTags,
         characterGroups,
         characterGroupPresets,

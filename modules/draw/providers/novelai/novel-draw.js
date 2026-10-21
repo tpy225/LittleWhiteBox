@@ -1294,6 +1294,7 @@ function getRuntimeSettings() {
         danbooruLocalDB: sharedSettings.danbooruLocalDB,
         messageFilterRules: sharedSettings.messageFilterRules,
         imageTitleMode: sharedSettings.imageTitleMode,
+        maxImages: sharedSettings.maxImages,
     };
 }
 
@@ -3004,7 +3005,7 @@ async function buildNovelScenePlannerOptions({
         customPrompts,
         promptDefaults: DEFAULT_PROMPT_CONFIG,
         worldbookEntries,
-        maxImages: preset.maxImages || 0,
+        maxImages: settings.maxImages || 0,
         maxCharactersPerImage: preset.maxCharactersPerImage || 0,
         absoluteMaxCharactersPerImage: capability.maxCharactersPerImage,
         modelGuide: getEffectiveNovelModelGuide(model, customPrompts),
@@ -3565,6 +3566,7 @@ async function _doSendInitData() {
             cacheDays: getSharedDrawSettings().cacheDays,
             imageTitleMode: getSharedDrawSettings().imageTitleMode,
             autoGenerateImages: getSharedDrawSettings().autoGenerateImages !== false,
+            maxImages: getSharedDrawSettings().maxImages,
             saveAsJpeg: getSharedDrawSettings().saveAsJpeg === true,
             jpegQuality: getSharedDrawSettings().jpegQuality,
             selectedParamsPresetId: settings.selectedParamsPresetId,
@@ -4043,6 +4045,19 @@ async function handleFrameMessage(event) {
             }, '已保存', { notify: false, silent: false });
             const message = !ok ? '保存失败' : nextAuto ? '已开启自动排队' : '已关闭自动排队，需逐张手动生成';
             postStatus(ok ? 'success' : 'error', message, 'api');
+            break;
+        }
+
+        case 'SAVE_MAX_IMAGES': {
+            const nextMax = Math.max(0, Math.min(20, Math.floor(Number(data.maxImages) || 0)));
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                settings.maxImages = nextMax;
+            }, '已保存', { notify: false, silent: false });
+            if (ok) {
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'STATE_PATCH', patch: { maxImages: nextMax } }, 'LittleWhiteBox-NovelDraw');
+            }
+            postStatus(ok ? 'success' : 'error', ok ? '已保存要求出图数' : '保存失败', 'api');
             break;
         }
 

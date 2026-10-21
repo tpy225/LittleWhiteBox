@@ -2117,6 +2117,7 @@ let state = {
     messageFilterRules: [],
     imageTitleMode: 'overlay',
     autoGenerateImages: true,
+    maxImages: 2,
 };
 
 let gallerySummary = {};
@@ -3897,6 +3898,7 @@ function applyStateToUI() {
             ? state.imageTitleMode
             : 'overlay';
         $('nd_auto_generate_images').checked = state.autoGenerateImages !== false;
+        $('nd_max_images').value = Math.max(0, Math.min(20, Math.floor(Number(state.maxImages) || 0)));
         $('nd_cache_count').textContent = state.cacheStats?.count || 0;
         $('nd_cache_size').textContent = (state.cacheStats?.sizeMB || 0) + ' MB';
 
@@ -4731,7 +4733,6 @@ function applyParamsPreset() {
     $('nd_negative').value = p.negativePrefix || '';
     $('nd_thumbnail').value = p.thumbnail || '';
     updateThumbnailPreview(p.thumbnail || '');
-    $('nd_max_images').value = p.maxImages || 0;
     $('nd_max_chars').value = p.maxCharactersPerImage || 0;
     
     const pm = p.params || {};
@@ -4987,7 +4988,6 @@ function collectParamsPreset() {
     p.positivePrefix = $('nd_positive').value;
     p.negativePrefix = $('nd_negative').value;
     p.thumbnail = ($('nd_thumbnail').value || '').trim();
-    p.maxImages = Math.max(0, Number($('nd_max_images').value) || 0);
     const model = $('nd_model_sel').value === 'custom' ? $('nd_model').value : $('nd_model_sel').value;
     const characterLimit = getModelCapability(model).maxCharactersPerImage || 10;
     p.maxCharactersPerImage = Math.min(characterLimit, Math.max(0, Number($('nd_max_chars').value) || 0));
@@ -5064,6 +5064,20 @@ window.addEventListener('message', event => {
             if ($('nd_cache_size')) $('nd_cache_size').textContent = (state.cacheStats?.sizeMB || 0) + ' MB';
             renderGalleryView();
             break;
+
+        case 'STATE_PATCH': {
+            const patch = data.patch || {};
+            suppressChangeEvents = true;
+            try {
+                if (patch.maxImages != null) {
+                    state.maxImages = Math.max(0, Math.min(20, Math.floor(Number(patch.maxImages) || 0)));
+                    $('nd_max_images').value = state.maxImages;
+                }
+            } finally {
+                suppressChangeEvents = false;
+            }
+            break;
+        }
 
         case 'CHARACTER_PREVIEWS_LOADED':
             loadedCharPreviews[data.charName] = data.slots;
@@ -5440,6 +5454,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const auto = $('nd_auto_generate_images').checked;
         state.autoGenerateImages = auto;
         postToParent({ type: 'SAVE_AUTO_GENERATE_IMAGES', autoGenerateImages: auto });
+    });
+
+    $('nd_max_images').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
+        const val = Math.max(0, Math.min(20, Math.floor(Number($('nd_max_images').value) || 0)));
+        $('nd_max_images').value = val;
+        state.maxImages = val;
+        postToParent({ type: 'SAVE_MAX_IMAGES', maxImages: val });
     });
 
     $('nd_test_api').addEventListener('click', () => postToParent({
