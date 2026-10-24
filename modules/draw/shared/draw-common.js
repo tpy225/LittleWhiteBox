@@ -38,6 +38,12 @@ let drawPreviewMessageObserver = null;
 let drawPreviewRuntimeGeneration = 0;
 let drawPreviewCacheSyncCleanup = null;
 const drawPreviewPendingTimers = new Set();
+// 整楼重建补发 MESSAGE_UPDATED 的防环状态：MVU/酒馆助手等外部渲染器收到该事件后
+// 会重渲染楼层并可能再发同一事件，极端情况下与我们的重建互相触发形成闪烁死循环。
+const rebuildNotifyState = new Map(); // messageId -> { notifiedAt, timestamps: [], retryTimer }
+const REBUILD_NOTIFY_COOLDOWN_MS = 2000;
+const REBUILD_NOTIFY_WINDOW_MS = 10000;
+const REBUILD_NOTIFY_MAX_PER_WINDOW = 3;
 const drawPreviewRenderQueues = new WeakMap();
 
 export const ImageState = {
@@ -649,11 +655,56 @@ ${buildTagEditor(tags, true)}
 // 整条重写楼层 DOM 会销毁其它扩展（如酒馆助手）挂在 <pre> 上已渲染的 iframe，而它们只在楼层事件时才重新处理。
 // 重写完成后补发 MESSAGE_UPDATED 让它们重新渲染该楼层。楼层里没有 <pre> 时没有可被渲染器挂载的对象，
 // 重写不会破坏什么，就不通知，避免无谓地打扰其它监听方。
+// 外部渲染器（MVU/酒馆助手/变量脚本）重渲染楼层后可能再发同一事件，把我们刚挂好的卡片
+// 又清掉，形成「重建→通知→外渲染→重建」的闪烁死循环。这里按 messageId 做两道闸：
+// 冷却期内不再补发通知；窗口内补发次数用尽后改为静默重建（正文与卡片仍恢复，但不再喂养循环）。
+function pruneRebuildNotifyState(messageId, now = Date.now()) {
+    const state = rebuildNotifyState.get(messageId);
+    if (!state) return null;
+    state.timestamps = state.timestamps.filter(t => now - t < REBUILD_NOTIFY_WINDOW_MS);
+    if (state.timestamps.length === 0 && !state.retryTimer && now - state.notifiedAt > REBUILD_NOTIFY_WINDOW_MS) {
+        rebuildNotifyState.delete(messageId);
+        return null;
+    }
+    return state;
+}
+
+function isRebuildNotifyCoolingDown(messageId, now = Date.now()) {
+    const state = pruneRebuildNotifyState(messageId, now);
+    return !!state && now - state.notifiedAt < REBUILD_NOTIFY_COOLDOWN_MS;
+}
+
+function isRebuildNotifyBudgetExhausted(messageId, now = Date.now()) {
+    const state = pruneRebuildNotifyState(messageId, now);
+    return !!state && state.timestamps.length >= REBUILD_NOTIFY_MAX_PER_WINDOW;
+}
+
+function recordRebuildNotify(messageId, now = Date.now()) {
+    const state = pruneRebuildNotifyState(messageId, now) || { notifiedAt: 0, timestamps: [], retryTimer: 0 };
+    state.timestamps.push(now);
+    state.notifiedAt = now;
+    rebuildNotifyState.set(messageId, state);
+}
+
+function scheduleRebuildRetry(messageId) {
+    const state = pruneRebuildNotifyState(messageId) || { notifiedAt: 0, timestamps: [], retryTimer: 0 };
+    if (state.retryTimer) return;
+    const wait = Math.max(REBUILD_NOTIFY_COOLDOWN_MS - (Date.now() - state.notifiedAt), 0) + 100;
+    state.retryTimer = setTimeout(() => {
+        const current = rebuildNotifyState.get(messageId);
+        if (current?.retryTimer) current.retryTimer = 0;
+        void renderPreviewsForMessage(messageId);
+    }, wait);
+    rebuildNotifyState.set(messageId, state);
+}
+
 export async function notifyMessageRewritten(messageId) {
     try {
         if (!getMesTextElement(messageId)?.querySelector('pre')) return;
+        if (isRebuildNotifyBudgetExhausted(messageId)) return;
         const eventSource = getContext()?.eventSource;
         if (eventSource?.emit && event_types?.MESSAGE_UPDATED) {
+            recordRebuildNotify(messageId);
             await eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
         }
     } catch (error) {
@@ -717,6 +768,12 @@ async function renderPreviewsForMessageNow(messageId, {
         // A content lease projects the host's formatted text, including its regex
         // filters. Missing markers are not permission to rewrite that content.
         if (content) return;
+        // 冷却期内的「锚点缺失」多半是外部渲染器重渲染整楼所致，立刻重建只会
+        // 喂养互相触发的闪烁循环；改约到冷却结束后再补一次投影。
+        if (isRebuildNotifyCoolingDown(messageId)) {
+            scheduleRebuildRetry(messageId);
+            return;
+        }
         // message.mes 是持久化排版事实。adoption 当下若恰逢聊天切换或宿主 DOM
         // 尚未挂载，一次局部 patch 可能没有锚点；先按前台生成相同的宿主格式
         // 重建楼层，再在下面统一投影 pending 卡或图片。
@@ -1067,5 +1124,9 @@ export function stopSharedDrawPreviewRuntime() {
     drawPreviewCacheSyncCleanup = null;
     drawPreviewRuntimeGeneration++;
     clearPendingDrawPreviewTimers();
+    for (const state of rebuildNotifyState.values()) {
+        if (state.retryTimer) clearTimeout(state.retryTimer);
+    }
+    rebuildNotifyState.clear();
     cleanupDrawPreviewMessageObserver();
 }
