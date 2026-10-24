@@ -28,3 +28,9 @@ LittleWhiteBox3.1.6最新/
 .DS_Store
 **/.DS_Store
 * 2.md
+
+# 本地参考笔记（仅供AI/自用，不入库）
+NAI 提示词.md
+上游对齐记录.md
+modules/draw/providers/novelai/Vibe使用指南.md
+modules/draw/providers/novelai/Vibe检查与修改记录*.md
