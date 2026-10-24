@@ -1106,9 +1106,8 @@ select.input { cursor: pointer; }
 .nd-vibe-num:focus { border-color: var(--border-focus, #7c6ff0); outline: none; }
 .nd-vibe-num::-webkit-outer-spin-button,
 .nd-vibe-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-/* 第二行：信息提取下拉 + 编码状态 + 导出 / 删除（窄屏与「构图/色彩」同一行） */
+/* 操作行：编码按钮 + 导出 / 删除 */
 .nd-vibe-info-row { display: flex; align-items: center; gap: 6px; }
-.nd-vibe-info-row .nd-vibe-info-sel { flex: 0 1 110px; min-width: 0; max-width: none; font-size: 11px; padding: 2px 6px; }
 .nd-vibe-info-row .nd-vibe-badge { margin-right: auto; }
 .nd-vibe-info-row .nd-vibe-icon-btn { margin-top: 0; width: 28px; height: 28px; flex-shrink: 0; }
 .nd-vibe-badge {
@@ -1121,6 +1120,11 @@ select.input { cursor: pointer; }
 .nd-vibe-badge.ok { background: rgba(63, 185, 80, 0.18); color: #58d16e; }
 .nd-vibe-badge.pending { background: rgba(210, 153, 34, 0.18); color: #e0a93e; }
 .nd-vibe-badge.off { background: rgba(160,160,160,0.15); color: var(--text-muted); }
+/* 未编码时的手动编码 CTA（按钮形态） */
+button.nd-vibe-badge { font: inherit; border: 1px solid transparent; cursor: pointer; }
+button.nd-vibe-badge:disabled { cursor: default; }
+.nd-vibe-badge.encode { background: rgba(124,111,240,0.22); color: #a89cff; font-weight: 600; }
+.nd-vibe-badge.encode:hover { background: rgba(124,111,240,0.4); }
 .nd-vibe-icon-btn {
     width: 26px;
     height: 26px;
@@ -4073,12 +4077,46 @@ let vibeSelectedGroupId = '';
 let vibeEncodeSeq = 0;
 const vibePendingEncodes = new Map();
 
+// 勾选/选组/存组后即时写回当前画师串预设（静默持久化，不刷提示、不重推 UI），
+// 这样用户不必再点参数预设「保存」，生成时也能跟上当前 Vibe 选择。
+let persistVibeTimer = null;
+function flushVibeBinding() {
+    if (persistVibeTimer) {
+        clearTimeout(persistVibeTimer);
+        persistVibeTimer = null;
+    }
+    const preset = state.paramsPresets.find(p => p.id === state.selectedParamsPresetId);
+    if (!preset) return;
+    // 组只是「快速套用模板」：套用时把组成员拷贝为当前勾选，之后勾选/强度改动即时生效。
+    // groupId 仅保留用于标记来源与 💾 覆盖组快照；生成时以 selections 的实际勾选为准。
+    preset.vibe = {
+        groupId: vibeSelectedGroupId || '',
+        selections: JSON.parse(JSON.stringify(vibeDraftSelections || [])),
+    };
+    postToParent({
+        type: 'SAVE_PARAMS_PRESET',
+        selectedParamsPresetId: state.selectedParamsPresetId,
+        paramsPresets: state.paramsPresets,
+        silent: true,
+    });
+}
+function persistVibeBinding() {
+    if (persistVibeTimer) clearTimeout(persistVibeTimer);
+    persistVibeTimer = setTimeout(flushVibeBinding, 300);
+}
+
 const VIBE_ENCODING_KEYS_LOCAL = ['v4curated', 'v4full', 'v4-5curated', 'v4-5full'];
 
 function clampVibeStrength(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0.6;
     return Math.min(1, Math.max(0, n));
+}
+
+// 信息提取为 0~1 连续值（对齐官方滑杆），默认 1
+function clampVibeInfoLocal(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
 }
 
 function sanitizeVibeEncodings(raw) {
@@ -4192,7 +4230,7 @@ async function encodeLibItemById(id) {
         const encoding = await requestVibeEncode({
             image: item.image,
             model,
-            informationExtracted: item.infoExtracted === 0 ? 0 : 1,
+            informationExtracted: clampVibeInfoLocal(item.infoExtracted),
         });
         const fresh = getLibItem(id);
         if (fresh) {
@@ -4226,7 +4264,7 @@ function renderVibeList(modelKey) {
     const tile = document.createElement('button');
     tile.type = 'button';
     tile.className = 'nd-vibe-upload-tile';
-    tile.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i><span>上传参考图（编码花点数，仅 NAI V4 / V4.5 支持）</span>';
+    tile.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i><span>上传参考图（入库后需手动点「点击编码」，编码花点数，仅 NAI V4 / V4.5 支持）</span>';
     tile.addEventListener('click', () => $('nd_vibe_file')?.click());
     list.appendChild(tile);
 
@@ -4254,6 +4292,7 @@ function renderVibeList(modelKey) {
                 draft.enabled = enable.checked;
             }
             hintGroupEdited();
+            persistVibeBinding();
             renderVibeList(modelKey);
         });
         row.appendChild(enable);
@@ -4272,101 +4311,130 @@ function renderVibeList(modelKey) {
         name.title = name.textContent;
         main.appendChild(name);
 
-        const strengthRow = document.createElement('div');
-        strengthRow.className = 'nd-vibe-row';
-        const strengthLabel = document.createElement('label');
-        strengthLabel.textContent = '强度';
-        const range = document.createElement('input');
-        range.type = 'range';
-        range.min = '0';
-        range.max = '1';
-        range.step = '0.05';
-        range.value = String(sel ? clampVibeStrength(sel.strength) : 0.6);
-        const val = document.createElement('input');
-        val.type = 'number';
-        val.className = 'nd-vibe-num';
-        val.min = '0';
-        val.max = '1';
-        val.step = '0.05';
-        val.value = Number(range.value).toFixed(2);
-        val.title = '强度可手动输入（0 ~ 1）';
+        // 一行「滑杆 + 数字框」：拖动/输入实时联动但不重渲染，松手或失焦才提交
+        const buildSliderRow = (labelText, currentValue, { onInput, onCommit }) => {
+            const row = document.createElement('div');
+            row.className = 'nd-vibe-row';
+            const label = document.createElement('label');
+            label.textContent = labelText;
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '0';
+            slider.max = '1';
+            slider.step = '0.05';
+            slider.value = String(currentValue);
+            const num = document.createElement('input');
+            num.type = 'number';
+            num.className = 'nd-vibe-num';
+            num.min = '0';
+            num.max = '1';
+            num.step = '0.05';
+            num.value = Number(currentValue).toFixed(2);
+            slider.addEventListener('input', () => {
+                num.value = Number(slider.value).toFixed(2);
+                onInput?.(Number(slider.value));
+            });
+            slider.addEventListener('change', () => onCommit?.(Number(slider.value)));
+            // 输入过程允许 "0." 等中间态：只把合法值同步给滑杆，绝不回写覆盖正在输入的内容
+            num.addEventListener('input', () => {
+                const n = Number(num.value);
+                if (Number.isFinite(n)) {
+                    const clamped = Math.min(1, Math.max(0, n));
+                    slider.value = String(clamped);
+                    onInput?.(clamped);
+                }
+            });
+            const commitNum = () => {
+                const n = clampVibeStrength(num.value);
+                num.value = n.toFixed(2);
+                slider.value = String(n);
+                onCommit?.(n);
+            };
+            num.addEventListener('change', commitNum);
+            num.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); num.blur(); }
+            });
+            row.appendChild(label);
+            row.appendChild(slider);
+            row.appendChild(num);
+            return row;
+        };
+
         // 拖强度本身就代表要使用此图：未入工作副本时自动勾选
         const ensureDraft = () => {
             let draft = vibeDraftSelections.find(s => s.id === item.id);
             if (!draft) {
-                draft = { id: item.id, enabled: true, strength: Number(range.value) };
+                draft = { id: item.id, enabled: true, strength: clampVibeStrength(sel ? sel.strength : 0.6) };
                 vibeDraftSelections.push(draft);
             }
             return draft;
         };
-        range.addEventListener('input', () => {
-            ensureDraft().strength = Number(range.value);
-            val.value = Number(range.value).toFixed(2);
+        const strengthRow = buildSliderRow('强度', sel ? clampVibeStrength(sel.strength) : 0.6, {
+            onInput: (v) => { ensureDraft().strength = v; },
+            onCommit: () => {
+                hintGroupEdited();
+                persistVibeBinding();
+                renderVibeList(modelKey);
+            },
         });
-        range.addEventListener('change', () => {
-            hintGroupEdited();
-            renderVibeList(modelKey);
-        });
-        // 数值框手填：clamp 后同步滑块并写入工作副本
-        val.addEventListener('change', () => {
-            const num = clampVibeStrength(Number(val.value));
-            val.value = num.toFixed(2);
-            range.value = String(num);
-            ensureDraft().strength = num;
-            hintGroupEdited();
-            renderVibeList(modelKey);
-        });
-        strengthRow.appendChild(strengthLabel);
-        strengthRow.appendChild(range);
-        strengthRow.appendChild(val);
-
-        const badge = document.createElement('span');
-        if (!modelKey) {
-            badge.className = 'nd-vibe-badge off';
-            badge.textContent = '模型不支持';
-        } else if (isBusy) {
-            badge.className = 'nd-vibe-badge pending';
-            badge.textContent = '编码中…';
-        } else if (item.encodings && item.encodings[modelKey]) {
-            badge.className = 'nd-vibe-badge ok';
-            badge.textContent = '✓ 已编码';
-        } else {
-            badge.className = 'nd-vibe-badge pending';
-            badge.textContent = '生成时编码';
-        }
+        strengthRow.title = '强度在生成时生效，随时调整都不需要重新编码';
         main.appendChild(strengthRow);
 
-        // 信息提取烘焙进编码；修改后清空全部模型编码并重编当前模型
-        const infoRow = document.createElement('div');
-        infoRow.className = 'nd-vibe-info-row';
-        const infoSel = document.createElement('select');
-        infoSel.className = 'input nd-vibe-info-sel';
-        infoSel.innerHTML = '<option value="1">高·构图</option><option value="0">低·色彩</option>';
-        infoSel.value = String(item.infoExtracted === 0 ? 0 : 1);
-        infoSel.title = '信息提取（改了要重新花点数编码）';
-        infoSel.disabled = !!item.busy;
-        infoSel.addEventListener('change', async () => {
-            item.infoExtracted = Number(infoSel.value);
-            item.encodings = {};
-            saveVibeLibrary();
-            renderVibeAll();
-            if (modelKey) {
-                setVibeStatus('信息提取已变更，正在重新编码…');
-                try {
-                    await encodeLibItemById(item.id);
-                    setVibeStatus('重新编码完成', 'success');
-                } catch (e) {
-                    setVibeStatus(`重新编码失败：${e?.message || ''}；下次生成时自动重试`, 'error');
+        // 信息提取（对齐官方：0~1 连续值）烘焙进编码，改值只作废旧编码，绝不自动花钱重编
+        const infoValue = clampVibeInfoLocal(item.infoExtracted);
+        const infoRow = buildSliderRow('信息提取', infoValue, {
+            onInput: () => {},
+            onCommit: (v) => {
+                const next = clampVibeInfoLocal(v);
+                if (next === clampVibeInfoLocal(item.infoExtracted)) return;
+                item.infoExtracted = next;
+                item.encodings = {};
+                saveVibeLibrary();
+                renderVibeAll();
+                if (modelKey) {
+                    setVibeStatus('信息提取已变更：旧编码已失效，点「点击编码」重新编码（消耗点数）', 'error');
+                } else {
+                    setVibeStatus('信息提取已变更；当前模型不支持编码，切到 V4 / V4.5 后点「点击编码」生效', 'error');
                 }
-            } else {
-                setVibeStatus('信息提取已变更；当前模型不支持编码，切到 V4 / V4.5 后生效', 'error');
-            }
+            },
         });
-        infoRow.appendChild(infoSel);
-        infoRow.appendChild(badge);
-        infoRow.appendChild(makeIconBtn('fa-solid fa-file-export', '导出此 Vibe（含原图与各模型编码）', () => exportVibeSingle(item.id)));
-        infoRow.appendChild(makeIconBtn('fa-solid fa-xmark', '从库删除（所有预设 / 组里的引用都会失效）', () => removeLibItem(item.id), true));
+        infoRow.title = '信息提取度烘焙在编码中，修改后需要手动重新编码（消耗点数）';
+        infoRow.querySelector('.nd-vibe-num').disabled = !!item.busy;
+        infoRow.querySelector('input[type="range"]').disabled = !!item.busy;
         main.appendChild(infoRow);
+
+        // 编码状态即手动编码按钮：未编码不会在生成时偷偷扣点（生成时直接跳过并提示）
+        const encBtn = document.createElement('button');
+        encBtn.type = 'button';
+        if (!modelKey) {
+            encBtn.className = 'nd-vibe-badge off';
+            encBtn.textContent = '模型不支持';
+            encBtn.disabled = true;
+        } else if (isBusy) {
+            encBtn.className = 'nd-vibe-badge pending';
+            encBtn.textContent = '编码中…';
+            encBtn.disabled = true;
+        } else if (item.encodings && item.encodings[modelKey]) {
+            encBtn.className = 'nd-vibe-badge ok';
+            encBtn.textContent = '✓ 已编码';
+            encBtn.title = '当前模型已编码，生成不会重复扣费；点击可重新编码（会再次消耗点数）';
+            encBtn.addEventListener('click', () => {
+                if (!confirm('重新编码会再次消耗 Anlas 点数，确认继续？')) return;
+                encodeLibItemById(item.id);
+            });
+        } else {
+            encBtn.className = 'nd-vibe-badge encode';
+            encBtn.textContent = '点击编码';
+            encBtn.title = '编码会消耗 Anlas 点数；未编码的 Vibe 生成时会被跳过，不扣编码费';
+            encBtn.addEventListener('click', () => encodeLibItemById(item.id));
+        }
+
+        const actionRow = document.createElement('div');
+        actionRow.className = 'nd-vibe-info-row';
+        actionRow.appendChild(encBtn);
+        actionRow.appendChild(makeIconBtn('fa-solid fa-file-export', '导出此 Vibe（含原图与各模型编码）', () => exportVibeSingle(item.id)));
+        actionRow.appendChild(makeIconBtn('fa-solid fa-xmark', '从库删除（所有预设 / 组里的引用都会失效）', () => removeLibItem(item.id), true));
+        main.appendChild(actionRow);
         row.appendChild(main);
 
         list.appendChild(row);
@@ -4411,6 +4479,7 @@ function applyGroupToDraft(groupId) {
     vibeSelectedGroupId = groupId || '';
     const group = getSelectedGroup();
     if (!group) {
+        persistVibeBinding();
         renderVibeList(getVibeModelKeyLocal(currentFormModel()));
         return;
     }
@@ -4421,17 +4490,18 @@ function applyGroupToDraft(groupId) {
             enabled: m.enabled !== false,
             strength: clampVibeStrength(m.strength),
         }));
+    persistVibeBinding();
     renderVibeList(getVibeModelKeyLocal(currentFormModel()));
-    setVibeStatus(`已套用组「${group.name}」；点最上面卡片的「保存」即把该组绑定到当前画师串预设`, 'success');
+    setVibeStatus(`已套用组「${group.name}」，并已同步到当前参数预设，生成即生效`, 'success');
 }
 
-// 组选中状态下手改勾选/强度只是临时草稿：画师串预设只存组 id。
-// 要让修改长期生效，必须 💾 覆盖当前组或 ＋ 另存新组——这里显式提示，防止“存了但没生效”。
+// 组选中状态下改勾选/强度会即时写回当前参数预设并即时生效；
+// 组快照本身只在按 💾 覆盖或 ＋ 另存时更新——组是模板，勾选才是生成依据。
 function hintGroupEdited() {
     if (!vibeSelectedGroupId) return;
     const group = getSelectedGroup();
     if (!group) return;
-    setVibeStatus(`当前改动不会写进组「${group.name}」：按 💾 覆盖该组、或 ＋ 另存新组后才会生效；直接保存画师串预设只会继续引用原组`, 'error');
+    setVibeStatus(`勾选已即时生效于本预设；组「${group.name}」的快照未变，按 💾 才会把当前勾选覆盖进组`, 'info');
 }
 
 // 当前勾选+强度的快照（只保留库里仍存在的项）
@@ -4461,8 +4531,9 @@ function saveDraftAsNewGroup() {
     getVibeLibrary().groups.push(group);
     vibeSelectedGroupId = group.id;
     saveVibeLibrary();
+    persistVibeBinding();
     renderVibeAll();
-    setVibeStatus(`已另存为新组「${group.name}」`, 'success');
+    setVibeStatus(`已另存为新组「${group.name}」，并已绑定到当前参数预设`, 'success');
 }
 
 // 💾：有选中组→用当前勾选覆盖；未选组→走另存新组
@@ -4479,6 +4550,7 @@ function overwriteOrSaveGroup() {
     }
     group.members = members;
     saveVibeLibrary();
+    persistVibeBinding();
     renderGroupBar();
     setVibeStatus(`组「${group.name}」已更新为当前勾选与强度`, 'success');
 }
@@ -4501,6 +4573,7 @@ function deleteSelectedGroup() {
     lib.groups = lib.groups.filter(g => g.id !== group.id);
     vibeSelectedGroupId = '';
     saveVibeLibrary();
+    persistVibeBinding();
     renderVibeAll();
     setVibeStatus('组已删除', 'success');
 }
@@ -4520,6 +4593,7 @@ function removeLibItem(id) {
     }
     vibeDraftSelections = vibeDraftSelections.filter(sel => sel.id !== id);
     saveVibeLibrary();
+    persistVibeBinding();
     renderVibeAll();
 }
 
@@ -4555,23 +4629,17 @@ async function handleVibeFiles(fileList) {
         }
         saveVibeLibrary();
         renderVibeAll();
-        if (modelKey) {
-            setVibeStatus(`正在编码 Vibe ${i + 1}/${files.length}（约需数秒，消耗点数）…`);
-            try {
-                await encodeLibItemById(item.id);
-            } catch (e) {
-                setVibeStatus(`编码失败：${e.message}；图已入库，下次生成时自动重试`, 'error');
-            }
-        }
+        setVibeStatus(`图片 ${i + 1}/${files.length} 已入库，未编码（不会自动扣点）`);
     }
     const fileInput = $('nd_vibe_file');
     if (fileInput) fileInput.value = '';
+    if (!vibeSelectedGroupId) persistVibeBinding();
     if (vibeSelectedGroupId) {
         hintGroupEdited();
     } else if (modelKey) {
-        setVibeStatus('处理完成：已入库并勾选，点最上面卡片的「保存」写入画师串预设', 'success');
+        setVibeStatus('处理完成：已入库并勾选；点「点击编码」完成编码后才会在生成时生效（编码消耗点数）', 'success');
     } else {
-        setVibeStatus('图片已入库；当前模型不支持 Vibe，切到 V4 / V4.5 后生成时自动编码', 'error');
+        setVibeStatus('图片已入库；当前模型不支持 Vibe，切到 V4 / V4.5 后点「点击编码」生效', 'error');
     }
 }
 
@@ -4612,7 +4680,7 @@ function buildVibeSinglePayload(item) {
         name: String(item.name || '').slice(0, 60),
         image: String(item.image || ''),
         thumbnail: String(item.thumbnail || ''),
-        infoExtracted: Number(item.infoExtracted) === 0 ? 0 : 1,
+        infoExtracted: clampVibeInfoLocal(item.infoExtracted),
         encodings: sanitizeVibeEncodings(item.encodings),
     };
 }
@@ -4670,7 +4738,7 @@ async function handleVibeImportFiles(fileList) {
                     name: String(data.item.name || '').slice(0, 60),
                     image: String(data.item.image || ''),
                     thumbnail: String(data.item.thumbnail || data.item.image || ''),
-                    infoExtracted: Number(data.item.infoExtracted) === 0 ? 0 : 1,
+                    infoExtracted: clampVibeInfoLocal(data.item.infoExtracted),
                     encodings: sanitizeVibeEncodings(data.item.encodings),
                 });
                 importedSingles++;
@@ -4685,7 +4753,7 @@ async function handleVibeImportFiles(fileList) {
                         name: String(raw.item.name || '').slice(0, 60),
                         image: String(raw.item.image || ''),
                         thumbnail: String(raw.item.thumbnail || raw.item.image || ''),
-                        infoExtracted: Number(raw.item.infoExtracted) === 0 ? 0 : 1,
+                        infoExtracted: clampVibeInfoLocal(raw.item.infoExtracted),
                         encodings: sanitizeVibeEncodings(raw.item.encodings),
                     });
                     members.push({
@@ -4768,23 +4836,25 @@ function applyParamsPreset() {
 
     updateModelOptions();
 
-    // Vibe：组模式（预设引用组 id，组更新自动跟随）优先；组已删除则回退散装勾选
+    // Vibe：勾选状态以预设保存的 selections 为准（勾选即带、不勾即不带）；
+    // groupId 只作组标识显示，selections 为空（旧数据）才从组成员快照灌入初值。
     // 在 updateModelOptions 之后，徽标才能按当前模型渲染
     const savedGroupId = String(p.vibe?.groupId || '');
-    const savedGroup = savedGroupId ? getVibeLibrary().groups.find(g => g.id === savedGroupId) : null;
-    if (savedGroup) {
-        vibeSelectedGroupId = savedGroup.id;
-        vibeDraftSelections = savedGroup.members
-            .filter(m => getLibItem(m.id))
-            .map(m => ({
-                id: m.id,
-                enabled: m.enabled !== false,
-                strength: clampVibeStrength(m.strength),
-            }));
+    const savedSelections = Array.isArray(p.vibe?.selections) ? p.vibe.selections : [];
+    if (savedSelections.length) {
+        vibeSelectedGroupId = savedGroupId;
+        vibeDraftSelections = JSON.parse(JSON.stringify(savedSelections));
     } else {
-        vibeSelectedGroupId = '';
-        vibeDraftSelections = Array.isArray(p.vibe?.selections)
-            ? JSON.parse(JSON.stringify(p.vibe.selections))
+        const savedGroup = savedGroupId ? getVibeLibrary().groups.find(g => g.id === savedGroupId) : null;
+        vibeSelectedGroupId = savedGroup ? savedGroup.id : '';
+        vibeDraftSelections = savedGroup
+            ? savedGroup.members
+                .filter(m => getLibItem(m.id))
+                .map(m => ({
+                    id: m.id,
+                    enabled: m.enabled !== false,
+                    strength: clampVibeStrength(m.strength),
+                }))
             : [];
     }
     renderVibeAll();
@@ -5014,11 +5084,12 @@ function collectParamsPreset() {
     p.params.sm_dyn = $('nd_sm_dyn').checked;
     p.params.decrisper = $('nd_decrisper').checked;
 
-    // Vibe：选中组时画师串预设只存组 id（组以后更新会自动跟随）；
-    // 未选组时散装保存当前勾选+强度快照。原图与编码始终在全局库。
-    p.vibe = vibeSelectedGroupId
-        ? { groupId: vibeSelectedGroupId, selections: [] }
-        : { groupId: '', selections: JSON.parse(JSON.stringify(vibeDraftSelections || [])) };
+    // Vibe：保存当时的勾选+强度快照（勾选即带、不勾即不带，切换/保存都以此为准）；
+    // groupId 仅作组标识（💾 覆盖组快照用）。原图与编码始终在全局库。
+    p.vibe = {
+        groupId: vibeSelectedGroupId || '',
+        selections: JSON.parse(JSON.stringify(vibeDraftSelections || [])),
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5509,6 +5580,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════════
     $('nd_params_preset').addEventListener('change', () => {
         if (suppressChangeEvents) return;
+        // 切换前先把悬而未发的 Vibe 绑定写回旧预设，避免写到新预设上
+        flushVibeBinding();
         state.selectedParamsPresetId = $('nd_params_preset').value;
         applyParamsPreset();
         // 切換預設必須同步回寫到擴展側，否則生圖仍讀到上一次保存/懸浮窗選的預設

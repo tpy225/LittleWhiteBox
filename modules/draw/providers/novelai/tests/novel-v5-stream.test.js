@@ -49,7 +49,24 @@ test('reads split length-prefixed MessagePack events and returns the sample-zero
     ];
 
     const image = await readNovelV5FinalImage(responseFromChunks(chunks), { decode });
-    assert.deepEqual(image, PNG);
+    assert.deepEqual(image.bytes, PNG);
+    assert.equal(image.mime, 'image/png');
+});
+
+test('accepts final images encoded as base64 strings or non-PNG formats', async () => {
+    const base64Png = Buffer.from(PNG).toString('base64');
+    const fromBase64 = await readNovelV5FinalImage(responseFromChunks([
+        frame({ event_type: 'final', image: base64Png, samp_ix: 0 }),
+    ]), { decode });
+    assert.deepEqual(fromBase64.bytes, PNG);
+    assert.equal(fromBase64.mime, 'image/png');
+
+    const jpeg = Uint8Array.from([0xFF, 0xD8, 0xFF, 0xE0, 0, 0]);
+    const fromJpeg = await readNovelV5FinalImage(responseFromChunks([
+        frame({ event_type: 'final', image: jpeg, samp_ix: 0 }),
+    ]), { decode });
+    assert.deepEqual(fromJpeg.bytes, jpeg);
+    assert.equal(fromJpeg.mime, 'image/jpeg');
 });
 
 test('surfaces provider errors and rejects invalid sample or image data', async () => {
@@ -80,9 +97,16 @@ test('surfaces provider errors and rejects invalid sample or image data', async 
 
     await assert.rejects(
         readNovelV5FinalImage(responseFromChunks([
-            frame({ event_type: 'final', image: Uint8Array.of(1, 2, 3), samp_ix: 0 }),
+            frame({ event_type: 'final', image: null, samp_ix: 0 }),
         ]), { decode }),
-        /没有有效的 PNG 图片/,
+        /没有有效的图片数据/,
+    );
+
+    await assert.rejects(
+        readNovelV5FinalImage(responseFromChunks([
+            frame({ event_type: 'final', image: 12345, samp_ix: 0 }),
+        ]), { decode }),
+        /没有有效的图片数据/,
     );
 });
 

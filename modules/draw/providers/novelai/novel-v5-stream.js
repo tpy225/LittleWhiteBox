@@ -20,6 +20,47 @@ function isPng(bytes) {
         && PNG_SIGNATURE.every((value, index) => bytes[index] === value);
 }
 
+const JPEG_SIGNATURE = Object.freeze([0xFF, 0xD8, 0xFF]);
+const WEBP_SIGNATURE = Object.freeze([0x52, 0x49, 0x46, 0x46]); // "RIFF"
+const GIF_SIGNATURE = Object.freeze([0x47, 0x49, 0x46]); // "GIF"
+
+function detectImageMime(bytes) {
+    if (isPng(bytes)) return 'image/png';
+    if (bytes.length >= JPEG_SIGNATURE.length
+        && JPEG_SIGNATURE.every((v, i) => bytes[i] === v)) return 'image/jpeg';
+    if (bytes.length >= WEBP_SIGNATURE.length + 4
+        && WEBP_SIGNATURE.every((v, i) => bytes[i] === v)
+        && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+        return 'image/webp';
+    }
+    if (bytes.length >= GIF_SIGNATURE.length
+        && GIF_SIGNATURE.every((v, i) => bytes[i] === v)) return 'image/gif';
+    return 'image/png';
+}
+
+function coerceToBytes(value) {
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (ArrayBuffer.isView(value)) {
+        const view = value;
+        return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    }
+    if (typeof value === 'string' && value.length > 0) {
+        // 兼容第三方代理返回的 data URI 与 URL-safe base64
+        const payload = value.replace(/^data:[^,]*,/, '').replace(/\s+/g, '')
+            .replace(/-/g, '+').replace(/_/g, '/');
+        try {
+            const binary = atob(payload);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return bytes;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
 function formatByteLimit(bytes) {
     const units = [
         ['GiB', 1024 ** 3],
@@ -175,12 +216,12 @@ export async function readNovelV5FinalImage(response, {
                     throw new NovelV5StreamError(`NovelAI V5 返回了未知事件：${eventType || '(empty)'}`);
                 }
                 const image = eventField(event, 'image');
-                const bytes = image instanceof Uint8Array ? image : null;
-                if (!bytes?.length || !isPng(bytes)) {
-                    throw new NovelV5StreamError('NovelAI V5 final 事件没有有效的 PNG 图片');
+                const bytes = coerceToBytes(image);
+                if (!bytes?.length) {
+                    throw new NovelV5StreamError('NovelAI V5 final 事件没有有效的图片数据');
                 }
                 await reader.cancel().catch(() => {});
-                return bytes;
+                return { bytes, mime: detectImageMime(bytes) };
             }
         }
         if (headerOffset || frame !== null) {

@@ -803,6 +803,12 @@ export function getVibeModelKey(model) {
     return null;
 }
 
+// information_extracted 为 0~1 连续值（官方 UI 即滑杆），默认 1
+function clampVibeInfoExtracted(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+}
+
 // ── Vibe 库条目：编码是花点数的昂贵资源，统一存全局库，供多个画师串预设引用 ──
 function normalizeVibeLibItem(raw, index) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -820,8 +826,8 @@ function normalizeVibeLibItem(raw, index) {
         name: String(source.name || '').slice(0, 60),
         image: String(source.image || ''),
         thumbnail: String(source.thumbnail || source.image || ''),
-        // information_extracted 烘焙进编码，只有 0 / 1 两种，改了必须重新编码
-        infoExtracted: Number(source.infoExtracted) === 0 ? 0 : 1,
+        // information_extracted（0~1）烘焙进编码，改了必须重新编码
+        infoExtracted: clampVibeInfoExtracted(source.infoExtracted),
         encodings,
     };
 }
@@ -920,7 +926,7 @@ async function encodeVibeReference({ apiKey, apiBaseUrl, imageBase64, model, inf
         },
         body: JSON.stringify({
             image: stripDataUrlPrefix(imageBase64),
-            information_extracted: Number(informationExtracted) === 0 ? 0 : 1,
+            information_extracted: clampVibeInfoExtracted(informationExtracted),
             model,
         }),
         signal,
@@ -940,10 +946,11 @@ async function encodeVibeReference({ apiKey, apiBaseUrl, imageBase64, model, inf
     return uint8ToBase64(bytes);
 }
 
-// 生成前：预设的 Vibe 有两种来源——groupId 非空时跟随该组的成员快照，
-// 否则用散装 selections。仅 enabled 项参与生成；编码本体在全局 vibeLibrary，
-// 缺当前模型编码时用库里的原图即时补编并回写库。
-// 返回本次实际注入用的 [{ encoding, strength }]（库中已删除 / 未启用的项自动跳过）。
+// 生成前：以 preset.vibe.selections 的实际勾选为准（勾选即带、不勾即不带，即时生效）。
+// groupId 仅作旧数据兼容：selections 为空且组仍存在时回退组成员快照。
+// 编码只允许用户在设置页手动发起（花点数），这里绝不自动补编：
+// 缺当前模型编码的项直接跳过并提示，保证不会在生成时偷偷扣编码费。
+// 返回本次实际注入用的 [{ encoding, strength }]（库中已删除 / 未启用 / 未编码的项自动跳过）。
 async function ensurePresetVibeReady(settings, preset, { signal } = {}) {
     const model = String(preset?.params?.model || '');
     const modelKey = getVibeModelKey(model);
@@ -951,45 +958,42 @@ async function ensurePresetVibeReady(settings, preset, { signal } = {}) {
     if (!Array.isArray(library.singles)) library.singles = [];
     if (!Array.isArray(library.groups)) library.groups = [];
 
-    // 组引用优先；组已删除时静默回退到散装 selections（通常也是空的）
     const groupId = String(preset?.vibe?.groupId || '');
-    const group = groupId ? library.groups.find(g => g.id === groupId) : null;
-    const selections = group
-        ? (Array.isArray(group.members) ? group.members : [])
-        : (Array.isArray(preset?.vibe?.selections) ? preset.vibe.selections : []);
-    const activeSelections = selections.filter(sel => sel && sel.id && sel.enabled !== false);
+    const selections = Array.isArray(preset?.vibe?.selections) ? preset.vibe.selections : [];
+    let activeSelections = selections.filter(sel => sel && sel.id && sel.enabled !== false);
+    // 旧数据兼容：组引用模式下历史版本 selections 恒为空数组，此时才回退组成员。
+    // 新数据取消全部勾选后 selections 仍保留 enabled:false 条目（非空），不再回退，确保不勾即不带。
+    if (selections.length === 0 && groupId) {
+        const group = library.groups.find(g => g.id === groupId);
+        const members = Array.isArray(group?.members) ? group.members : [];
+        activeSelections = members.filter(sel => sel && sel.id && sel.enabled !== false);
+    }
     if (!modelKey || activeSelections.length === 0) return [];
 
     const byId = new Map(library.singles.map(item => [item.id, item]));
 
-    let changed = false;
     const result = [];
+    const unencoded = [];
     for (const sel of activeSelections) {
         if (signal?.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
         const item = byId.get(sel.id);
-        if (!item || (!item.image && !item.encodings[modelKey])) continue;
-        if (!item.encodings[modelKey] && item.image) {
-            const encoding = await encodeVibeReference({
-                apiKey: String(settings.apiKey || '').trim(),
-                apiBaseUrl: String(settings.apiBaseUrl || '').trim(),
-                imageBase64: item.image,
-                model,
-                informationExtracted: item.infoExtracted,
-                signal,
-            });
-            item.encodings[modelKey] = encoding;
-            changed = true;
+        if (!item) continue;
+        if (!item.encodings[modelKey]) {
+            // 未编码（含改了信息提取导致旧编码失效）：跳过，不扣编码费
+            unencoded.push(item.name || '未命名');
+            continue;
         }
         const strength = Number(sel.strength);
-        if (item.encodings[modelKey]) {
-            result.push({
-                encoding: item.encodings[modelKey],
-                strength: Number.isFinite(strength) && strength >= 0 && strength <= 1 ? strength : 0.6,
-            });
-        }
+        result.push({
+            encoding: item.encodings[modelKey],
+            strength: Number.isFinite(strength) && strength >= 0 && strength <= 1 ? strength : 0.6,
+        });
     }
-    if (changed) {
-        await persistSettings(settings, '', { notify: false, silent: true });
+    if (unencoded.length) {
+        globalThis.toastr?.warning?.(
+            `以下 Vibe 尚未编码，本次未应用（不扣编码费）：${unencoded.join('、')}。请在画图设置中点「点击编码」后再生成`,
+            '小白X画图',
+        );
     }
     return result;
 }
@@ -1801,13 +1805,13 @@ async function generateV5ViaBackend({ url, apiKey, insecure, payload, signal, ti
     return response;
 }
 
-function imageBytesToBase64(bytes) {
+function imageBytesToBase64(bytes, mime = 'image/png') {
     let binary = '';
     const chunkSize = 0x8000;
     for (let offset = 0; offset < bytes.length; offset += chunkSize) {
         binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
     }
-    return formatImageBase64(btoa(binary), 'image/png');
+    return formatImageBase64(btoa(binary), mime);
 }
 
 async function testApiConnection(apiKey, baseUrl, opts = {}) {
@@ -1995,12 +1999,12 @@ async function executePreparedNovelRequest(prepared, requestConfig, signal) {
                     timeout: requestConfig.timeout,
                 });
                 const decodeMessagePack = await loadMessagePackDecoderForResponse(response, controller);
-                const image = await readNovelV5FinalImage(response, {
+                const { bytes: v5Bytes, mime: v5Mime } = await readNovelV5FinalImage(response, {
                     decode: decodeMessagePack,
                     signal: controller.signal,
                 });
                 console.log(`[NovelDraw] V5 完成(后端) ${Date.now() - startedAt}ms`);
-                return imageBytesToBase64(image);
+                return imageBytesToBase64(v5Bytes, v5Mime);
             }
             const base64 = await generateViaBackend({
                 attempt,
@@ -2038,12 +2042,12 @@ async function executePreparedNovelRequest(prepared, requestConfig, signal) {
         }
         if (prepared.isV5) {
             const decodeMessagePack = await loadMessagePackDecoderForResponse(response, controller);
-            const image = await readNovelV5FinalImage(response, {
+            const { bytes: v5Bytes, mime: v5Mime } = await readNovelV5FinalImage(response, {
                 decode: decodeMessagePack,
                 signal: controller.signal,
             });
             console.log(`[NovelDraw] V5 完成 ${Date.now() - startedAt}ms`);
-            return imageBytesToBase64(image);
+            return imageBytesToBase64(v5Bytes, v5Mime);
         }
         const responseData = await readImageResponse(response, controller.signal);
         const base64 = await extractImageFromResponse(responseData, ensureJSZip, controller.signal);
@@ -4114,13 +4118,14 @@ async function handleFrameMessage(event) {
         }
 
         case 'SAVE_PARAMS_PRESET': {
+            const silent = data.silent === true;
             const ok = await updateSettingsPersistent((settings) => {
                 if (data.selectedParamsPresetId) settings.selectedParamsPresetId = data.selectedParamsPresetId;
                 if (Array.isArray(data.paramsPresets) && data.paramsPresets.length > 0) {
                     settings.paramsPresets = data.paramsPresets;
                 }
-            }, '已保存', { target: 'params' });
-            if (ok) {
+            }, silent ? '' : '已保存', { target: 'params', notify: !silent, silent });
+            if (ok && !silent) {
                 sendInitData();
                 try {
                     const { refreshPresetSelect } = await import('./floating-panel.js');
@@ -4313,7 +4318,7 @@ async function handleFrameMessage(event) {
                             const item = {
                                 id: newId, name: String(raw.name || '').slice(0, 60), image,
                                 thumbnail: String(raw.thumbnail || image || ''),
-                                infoExtracted: Number(raw.infoExtracted) === 0 ? 0 : 1, encodings: {},
+                                infoExtracted: clampVibeInfoExtracted(raw.infoExtracted), encodings: {},
                             };
                             Object.entries(encodings).forEach(([key, value]) => {
                                 if (typeof value === 'string' && value) item.encodings[key] = value;

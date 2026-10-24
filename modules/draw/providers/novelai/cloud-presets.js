@@ -151,6 +151,12 @@ function clampSharedStrength(value) {
     return Math.min(1, Math.max(0, strength));
 }
 
+// information_extracted 为 0~1 连续值（官方滑杆），默认 1
+function clampSharedInfoExtracted(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+}
+
 // 单个内联项 → 本地 single（重新生成 id）；无原图且无任何编码时返回 null
 function importInlineSingle(srcItem, generateVibeId) {
     if (!srcItem || typeof srcItem !== 'object' || Array.isArray(srcItem)) return null;
@@ -163,7 +169,7 @@ function importInlineSingle(srcItem, generateVibeId) {
             name: String(srcItem.name || '').slice(0, 60),
             image,
             thumbnail: String(srcItem.thumbnail || ''),
-            infoExtracted: Number(srcItem.infoExtracted) === 0 ? 0 : 1,
+            infoExtracted: clampSharedInfoExtracted(srcItem.infoExtracted),
             encodings,
         },
     };
@@ -315,7 +321,7 @@ function buildSharedSingle(item) {
         name: String(item.name || '').slice(0, 60),
         image: item.image,
         thumbnail: String(item.thumbnail || ''),
-        infoExtracted: Number(item.infoExtracted) === 0 ? 0 : 1,
+        infoExtracted: clampSharedInfoExtracted(item.infoExtracted),
         encodings: sanitizeSharedEncodings(item.encodings),
     };
 }
