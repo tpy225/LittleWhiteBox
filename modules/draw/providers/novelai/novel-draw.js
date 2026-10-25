@@ -4002,7 +4002,7 @@ async function handleFrameMessage(event) {
         }
 
         case 'BATCH_DOWNLOAD': {
-            const { getPreview, getPreviewDisplayUrl } = await import('../../shared/gallery-cache.js');
+            const { getPreview, getPreviewDisplayUrl, isJpegBase64 } = await import('../../shared/gallery-cache.js');
             const ids = Array.isArray(data.ids) ? data.ids : [];
             try {
                 let saved = 0, failed = 0;
@@ -4011,7 +4011,7 @@ async function handleFrameMessage(event) {
                     const url = p ? getPreviewDisplayUrl(p) : null;
                     if (!url) { failed++; continue; }
                     const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
-                    const isJpeg = (p.base64 || '').startsWith('data:image/jpeg');
+                    const isJpeg = isJpegBase64(p.base64);
                     const name = `${p.characterName || 'image'}-${p.imgId}-${ts}.${isJpeg ? 'jpg' : 'png'}`;
                     // 浏覽器原生下載（非保存到服務器）
                     const a = document.createElement('a');

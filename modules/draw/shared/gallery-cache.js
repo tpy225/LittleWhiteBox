@@ -138,12 +138,24 @@ export function createThumbnailDataUrl(base64) {
     });
 }
 
+// JPEG 的 base64 魔數以 /9j/ 開頭。輸入可能帶 data: 前綴，也可能是純 base64
+// （後台任務路徑回傳的 PNG 不帶前綴），因此不能靠前綴判斷格式，直接嗅探內容。
+export function isJpegBase64(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    const body = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+    return body.startsWith('/9j/');
+}
+
 /** 將 data URL 重編碼成 JPEG，節省快取與伺服器空間；透明 PNG 先鋪白底。
  *  已是 JPEG、或轉換失敗時回傳原值。 */
 export function convertImageToJpeg(base64, quality = 0.8) {
     if (typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(base64);
-    const dataUrl = normalizeImageDataUrl(base64);
-    if (!dataUrl || /^data:image\/jpeg;/i.test(dataUrl)) return Promise.resolve(base64);
+    const raw = String(base64 || '').trim();
+    // 不能沿用 normalizeImageDataUrl 包裝：它把無前綴數據一律標成 image/jpeg，
+    // 會讓純 base64 的 PNG 被誤判為「已轉換」而靜默跳過；mime 標註不影響解碼（瀏覽器按內容嗅探）。
+    if (!raw || isJpegBase64(raw)) return Promise.resolve(base64);
+    const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
     return new Promise((resolve) => {
         const img = new Image();
         let settled = false;
@@ -1678,7 +1690,7 @@ function createBatchOverlay() {
                 const url = p ? getPreviewDisplayUrl(p) : null;
                 if (!url) { failed++; continue; }
                 const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
-                const isJpeg = (p.base64 || '').startsWith('data:image/jpeg');
+                const isJpeg = isJpegBase64(p.base64);
                 await saveBase64AsFile(url, `image-${p.imgId}-${ts}.${isJpeg ? 'jpg' : 'png'}`);
                 saved++;
             }
