@@ -2469,6 +2469,9 @@ function handleTouchEnd(e) {
 async function handleDelegatedClick(e) {
     const container = e.target.closest('.xb-nd-img');
     if (!container) {
+        if (!e.target.closest('.xb-nd-error-tip')) {
+            document.querySelectorAll('.xb-nd-error-tip.xb-nd-tip-open').forEach(el => el.classList.remove('xb-nd-tip-open'));
+        }
         if (document.querySelector('.xb-nd-menu-wrap.open')) {
             const clickedMenuWrap = e.target.closest('.xb-nd-menu-wrap');
             if (!clickedMenuWrap) {
@@ -2508,6 +2511,12 @@ async function handleDelegatedClick(e) {
             // 滑鼠端維持原樣：點圖開畫廊放大
             await handleImageClick(container);
             break;
+        case 'toggle-error-tip': {
+            const tip = actionEl.classList.contains('xb-nd-error-tip') ? actionEl : container.querySelector('.xb-nd-error-tip');
+            document.querySelectorAll('.xb-nd-error-tip.xb-nd-tip-open').forEach(el => { if (el !== tip) el.classList.remove('xb-nd-tip-open'); });
+            tip?.classList.toggle('xb-nd-tip-open');
+            break;
+        }
         case 'refresh-image':
             container.querySelector('.xb-nd-menu-wrap')?.classList.remove('open');
             await refreshSingleImage(container);
