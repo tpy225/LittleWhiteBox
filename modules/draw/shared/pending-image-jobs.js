@@ -172,6 +172,7 @@ function normalizeItem(source) {
             positive: normalizeText(metadata.positive),
             characterPrompts: metadata.characterPrompts ?? null,
             negativePrompt: metadata.negativePrompt ?? null,
+            vibeNames: normalizeText(metadata.vibeNames),
             providerMetadata,
         },
     };

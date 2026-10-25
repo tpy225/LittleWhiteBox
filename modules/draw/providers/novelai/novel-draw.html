@@ -1087,6 +1087,8 @@ select.input { cursor: pointer; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.nd-vibe-name-editable { cursor: pointer; }
+.nd-vibe-name-editable:hover { color: var(--border-focus, #7c6ff0); }
 .nd-vibe-row {
     display: flex;
     align-items: center;
@@ -1111,8 +1113,9 @@ select.input { cursor: pointer; }
 .nd-vibe-info-row .nd-vibe-badge { margin-right: auto; }
 .nd-vibe-info-row .nd-vibe-icon-btn { margin-top: 0; width: 28px; height: 28px; flex-shrink: 0; }
 .nd-vibe-badge {
-    font-size: 10px;
-    padding: 1px 7px;
+    font-size: 9px;
+    padding: 0 5px;
+    line-height: 1.4;
     border-radius: 999px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -2010,6 +2013,10 @@ button.nd-vibe-badge:disabled { cursor: default; }
                 <div class="prompt-modal-item" data-field="tags">
                     <div class="gallery-modal-prompt-label">Tags</div>
                     <pre class="gallery-modal-prompt-text" id="nd_modal_tags"></pre>
+                </div>
+                <div class="prompt-modal-item" data-field="vibe">
+                    <div class="gallery-modal-prompt-label">Vibe</div>
+                    <pre class="gallery-modal-prompt-text" id="nd_modal_vibe"></pre>
                 </div>
                 <div class="prompt-modal-item" data-field="positive">
                     <div class="gallery-modal-prompt-label">正向</div>
@@ -3676,10 +3683,12 @@ function renderModalContent() {
 function fillPromptModal(current) {
     if (!current) return;
     const tagsEl = $('nd_modal_tags');
+    const vibeEl = $('nd_modal_vibe');
     const posEl = $('nd_modal_positive');
     const charEl = $('nd_modal_character');
     const negEl = $('nd_modal_negative');
     if (tagsEl) tagsEl.textContent = current.tags || '';
+    if (vibeEl) vibeEl.textContent = current.vibeNames || '';
     if (posEl) posEl.textContent = current.positive || '';
     if (charEl) {
         const cp = current.characterPrompts;
@@ -4306,9 +4315,18 @@ function renderVibeList(modelKey) {
         const main = document.createElement('div');
         main.className = 'nd-vibe-main';
         const name = document.createElement('div');
-        name.className = 'nd-vibe-name';
+        name.className = 'nd-vibe-name nd-vibe-name-editable';
         name.textContent = item.name || '未命名 Vibe';
-        name.title = name.textContent;
+        name.title = `${name.textContent}（点击重命名）`;
+        name.addEventListener('click', () => {
+            const next = prompt('Vibe 名称（留空恢复「未命名 Vibe」）', item.name || '');
+            if (next === null) return;
+            const trimmed = next.trim().slice(0, 60);
+            if (trimmed === (item.name || '').trim()) return;
+            item.name = trimmed;
+            saveVibeLibrary();
+            renderVibeAll();
+        });
         main.appendChild(name);
 
         // 一行「滑杆 + 数字框」：拖动/输入实时联动但不重渲染，松手或失焦才提交

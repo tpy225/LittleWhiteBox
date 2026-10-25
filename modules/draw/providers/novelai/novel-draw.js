@@ -987,6 +987,7 @@ async function ensurePresetVibeReady(settings, preset, { signal } = {}) {
         result.push({
             encoding: item.encodings[modelKey],
             strength: Number.isFinite(strength) && strength >= 0 && strength <= 1 ? strength : 0.6,
+            name: String(item.name || '').trim(),
         });
     }
     if (unencoded.length) {
@@ -3099,6 +3100,7 @@ async function generateImagesFromText(options = {}) {
         options.onStateChange?.('gen', { current: 0, total: tasks.length });
 
         const vibeReferences = await ensurePresetVibeReady(settings, preset, { signal });
+        const vibeNamesForStore = vibeReferences.map(v => v.name).filter(Boolean).join('、');
         const compiledBatch = compileNovelScenePlan(
             tasks,
             createNovelGenerationRecipe({
@@ -3150,6 +3152,7 @@ async function generateImagesFromText(options = {}) {
                     negativePrompt: item.negativePrompt,
                     presetId: preset.id,
                     presetName: preset.name,
+                    vibeNames: vibeNamesForStore,
                 });
                 await setSlotSelection(item.slotId, imgId);
                 successCount++;
@@ -3183,6 +3186,7 @@ async function generateImagesFromText(options = {}) {
                     negativePrompt: item.negativePrompt,
                     presetId: preset.id,
                     presetName: preset.name,
+                    vibeNames: vibeNamesForStore,
                 });
                 images[index] = {
                     slotId: item.slotId,
@@ -3226,6 +3230,7 @@ async function runPreparedNovelSlots(input) {
         const vibeReferences = input.manual ? [] : await ensurePresetVibeReady(settings, preset, {
             signal: job.controller.signal,
         });
+        const vibeNames = vibeReferences.map(v => v.name).filter(Boolean).join('、');
         const recipe = createNovelGenerationRecipe({
             settings,
             preset,
@@ -3238,7 +3243,7 @@ async function runPreparedNovelSlots(input) {
         const monitorGeneration = backendJobMonitors.captureGeneration();
         return await submitPreparedChatImages({
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
-            presetId: preset.id, presetName: preset.name, manual: input.manual === true,
+            presetId: preset.id, presetName: preset.name, vibeNames, manual: input.manual === true,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: resolveNovelImageTransport(settings) === 'backend-job',
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,

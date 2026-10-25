@@ -104,7 +104,8 @@ export async function executePreparedSlots({ items, backend, store, remove, sele
                     items: items.map((item, index) => ({ index, slotId: item.slotId, imgId: item.imgId, discarded: item.discarded,
                         previewMetadata: { tags: item.tags, positive: item.positive,
                             characterPrompts: item.characterPrompts, negativePrompt: item.negativePrompt,
-                            presetId: item.presetId || '', presetName: item.presetName || '' } })),
+                            presetId: item.presetId || '', presetName: item.presetName || '',
+                            vibeNames: item.vibeNames || '' } })),
                 },
                 commitPlacements: async () => {
                     // Deletion may precede journal creation while this batch waits

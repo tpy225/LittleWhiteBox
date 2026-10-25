@@ -749,6 +749,7 @@ export async function storePreview(opts) {
         chapterTitle = '',
         presetId = '',
         presetName = '',
+        vibeNames = '',
     } = opts;
     const database = await openDB();
     const ctx = getContext();
@@ -810,6 +811,7 @@ export async function storePreview(opts) {
                     negativePrompt,
                     presetId: String(presetId || ''),
                     presetName: String(presetName || ''),
+                    vibeNames: String(vibeNames || ''),
                     timestamp: Date.now()
                 });
             };
@@ -849,6 +851,7 @@ export async function storeFailedPlaceholder(opts) {
         negativePrompt: opts.negativePrompt ?? null,
         presetId: opts.presetId || '',
         presetName: opts.presetName || '',
+        vibeNames: opts.vibeNames || '',
     });
 }
 

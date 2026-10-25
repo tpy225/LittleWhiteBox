@@ -131,6 +131,7 @@ function previewOptions(record, item, target) {
         negativePrompt: item.previewMetadata?.negativePrompt ?? null,
         presetId: item.previewMetadata?.presetId || '',
         presetName: item.previewMetadata?.presetName || '',
+        vibeNames: item.previewMetadata?.vibeNames || '',
     };
 }
 
