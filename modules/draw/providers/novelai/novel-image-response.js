@@ -146,10 +146,115 @@ function readZipImageEntry(file, signal) {
     });
 }
 
+// Third-party NAI-compatible relays frequently reply with JSON wrappers or bare
+// base64 text instead of the official raw-image/ZIP body. These helpers stay
+// deliberately forgiving about key names but strict about image magic bytes.
+const BASE64_PATTERN = /^(data:image\/[a-z+.-]+;base64,)?[A-Za-z0-9+/]+={0,2}$/;
+
+function decodeBase64ToBytes(base64) {
+    const normalized = String(base64).trim().replace(/^data:image\/[a-z+.-]+;base64,/, '').replace(/\s+/g, '');
+    if (normalized.length < 256 || normalized.length % 4 === 1 || !BASE64_PATTERN.test(normalized)) return null;
+    try {
+        const binary = atob(normalized);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        return bytes;
+    } catch {
+        return null;
+    }
+}
+
+function findBase64Value(value, depth = 0) {
+    if (!value || depth > 6) return null;
+    if (typeof value === 'string') return BASE64_PATTERN.test(value.trim().replace(/\s+/g, '')) ? value : null;
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const found = findBase64Value(item, depth + 1);
+            if (found) return found;
+        }
+        return null;
+    }
+    if (typeof value === 'object') {
+        for (const key of ['b64_json', 'base64', 'image_base64', 'image', 'images', 'payload', 'data']) {
+            if (key in value) {
+                const found = findBase64Value(value[key], depth + 1);
+                if (found) return found;
+            }
+        }
+    }
+    return null;
+}
+
+function findImageUrl(value, depth = 0) {
+    if (!value || depth > 6) return null;
+    if (typeof value === 'string') {
+        return /^https:\/\/[^\s"']+/i.test(value.trim()) ? value.trim() : null;
+    }
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const found = findImageUrl(item, depth + 1);
+            if (found) return found;
+        }
+        return null;
+    }
+    if (typeof value === 'object') {
+        for (const key of ['url', 'image_url', 'imageUrl', 'image', 'images', 'link', 'data']) {
+            if (key in value) {
+                const found = findImageUrl(value[key], depth + 1);
+                if (found) return found;
+            }
+        }
+    }
+    return null;
+}
+
+async function extractImageFromJsonBody(responseData, loadJSZip, signal) {
+    const text = new TextDecoder().decode(responseData).trim();
+    if (!/^[[{]/.test(text)) return null;
+    let body;
+    try {
+        body = JSON.parse(text);
+    } catch {
+        return null;
+    }
+    if (signal?.aborted) throw createAbortError();
+    const base64 = findBase64Value(body);
+    if (base64) {
+        const bytes = decodeBase64ToBytes(base64);
+        const mime = bytes && detectImageMime(bytes);
+        if (mime) return formatImageBase64(bytesToBase64(bytes), mime);
+    }
+    const url = findImageUrl(body);
+    if (url) {
+        let response;
+        try {
+            response = await fetch(url, { signal });
+        } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            throw new NovelImageResponseError(`图片链接下载失败：${error?.message || '网络错误'}`);
+        }
+        if (!response.ok) throw new NovelImageResponseError(`图片链接下载失败：HTTP ${response.status}`);
+        return extractImageFromResponse(await readImageResponse(response, signal), loadJSZip, signal);
+    }
+    // Structured upstream error (e.g. {code:1,msg:'余额不足'}) with HTTP 200.
+    const message = body?.message || body?.msg || body?.error;
+    if (typeof message === 'string' && message) throw new NovelImageResponseError(`供应商返回错误：${message}`);
+    return null;
+}
+
 export async function extractImageFromResponse(responseData, loadJSZip, signal) {
     if (signal?.aborted) throw createAbortError();
     const rawMime = detectImageMime(responseData);
     if (rawMime) return formatImageBase64(bytesToBase64(responseData), rawMime);
+
+    if (signal?.aborted) throw createAbortError();
+    const fromJson = await extractImageFromJsonBody(responseData, loadJSZip, signal);
+    if (fromJson) return fromJson;
+
+    if (signal?.aborted) throw createAbortError();
+    const bareBase64Bytes = decodeBase64ToBytes(new TextDecoder().decode(responseData));
+    const bareBase64Mime = bareBase64Bytes && detectImageMime(bareBase64Bytes);
+    if (bareBase64Mime) return formatImageBase64(bytesToBase64(bareBase64Bytes), bareBase64Mime);
 
     const JSZip = await loadJSZip();
     let zip;

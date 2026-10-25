@@ -88,3 +88,45 @@ test('stops ZIP extraction when decompressed output exceeds 128 MiB', async () =
         NovelImageResponseError,
     );
 });
+
+const png = new Uint8Array([
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ...new Array(320).fill(0),
+]);
+const pngBase64 = btoa(String.fromCharCode(...png));
+
+test('extracts base64 images from third-party JSON wrappers', async () => {
+    const body = new TextEncoder().encode(JSON.stringify({ code: 0, data: [{ b64_json: pngBase64 }] }));
+    const result = await extractImageFromResponse(body, () => { throw new Error('ZIP loader should not run'); });
+
+    // PNG 按二改惯例保持纯 base64（无 data: 前缀），见 formatImageBase64。
+    assert.equal(result, pngBase64);
+});
+
+test('extracts base64 images from bare base64 text bodies', async () => {
+    const body = new TextEncoder().encode(pngBase64);
+    const result = await extractImageFromResponse(body, () => { throw new Error('ZIP loader should not run'); });
+
+    assert.equal(result, pngBase64);
+});
+
+test('follows image URLs returned by relays', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(png, { status: 200 });
+    try {
+        const body = new TextEncoder().encode(JSON.stringify({ code: 0, data: { images: ['https://relay.example/img.png'] } }));
+        const result = await extractImageFromResponse(body, () => { throw new Error('ZIP loader should not run'); });
+
+        assert.equal(result, pngBase64);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('surfaces structured provider errors sent with HTTP 200', async () => {
+    const body = new TextEncoder().encode(JSON.stringify({ code: 1, msg: '余额不足' }));
+
+    await assert.rejects(
+        extractImageFromResponse(body, () => { throw new Error('ZIP loader should not run'); }),
+        error => error instanceof NovelImageResponseError && error.message.includes('余额不足'),
+    );
+});
