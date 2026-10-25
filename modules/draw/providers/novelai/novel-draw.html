@@ -1766,23 +1766,26 @@ button.nd-vibe-badge:disabled { cursor: default; }
                                 <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">占用空间</div>
                             </div>
                         </div>
-                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
                         <div style="display:flex;align-items:center;gap:6px;background:var(--bg-input);padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
                             <span style="font-size:12px;color:var(--text-secondary);">自动清理</span>
                             <input id="nd_cache_days" type="number" class="input" style="width:50px;padding:4px 6px;min-height:28px;text-align:center;" value="3" min="1" max="30">
                             <span style="font-size:12px;color:var(--text-secondary);">天</span>
                             <button id="nd_save_cache_days" class="btn btn-sm btn-icon" style="min-height:28px;width:28px;padding:0;"><i class="fa-solid fa-floppy-disk"></i></button>
                         </div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
                         <div style="display:flex;align-items:center;gap:6px;background:var(--bg-input);padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
                             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);">
                                 <input id="nd_save_as_jpeg" type="checkbox">
                                 生成後存 JPEG（省空間）
                             </label>
                         </div>
-                        <div id="nd_gallery_status" class="status-text" style="width:100%;margin-top:0;"></div>
-                        <div style="display:flex;gap:8px;align-items:center;">
-                        <button id="nd_batch" class="btn btn-sm"><i class="fa-solid fa-list-check"></i> 批量</button>
                         <button id="nd_convert_legacy_jpeg" class="btn btn-sm" title="把缓存里仍是 PNG 的旧图批量转成 JPEG 以节省空间"><i class="fa-solid fa-images"></i> 舊圖轉JPEG</button>
+                        </div>
+                        <div id="nd_gallery_status" class="status-text" style="width:100%;margin-top:0;"></div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
+                        <button id="nd_batch" class="btn btn-sm"><i class="fa-solid fa-list-check"></i> 批量</button>
                         <button id="nd_clear_expired" class="btn btn-sm"><i class="fa-solid fa-broom"></i> 清理过期</button>
                         <button id="nd_clear_all" class="btn btn-sm btn-danger"><i class="fa-solid fa-trash"></i> 清空全部</button>
                         <button id="nd_refresh_stats" class="btn btn-sm btn-icon"><i class="fa-solid fa-arrows-rotate"></i></button>
