@@ -4002,27 +4002,43 @@ async function handleFrameMessage(event) {
         }
 
         case 'BATCH_DOWNLOAD': {
-            const { getPreview, getPreviewDisplayUrl, isJpegBase64 } = await import('../../shared/gallery-cache.js');
+            // iOS WebView 會吞掉連續的多張 <a download>，改打包成單一 ZIP 導出，一次彈窗全部保存。
+            const { getPreview, getBase64ImagePayload } = await import('../../shared/gallery-cache.js');
+            const { zipSync } = await import('../../../../libs/fflate.mjs');
             const ids = Array.isArray(data.ids) ? data.ids : [];
             try {
+                const files = {};
                 let saved = 0, failed = 0;
+                const usedNames = new Set();
                 for (const id of ids) {
                     const p = await getPreview(id);
-                    const url = p ? getPreviewDisplayUrl(p) : null;
-                    if (!url) { failed++; continue; }
+                    if (!p?.base64) { failed++; continue; }
+                    const payload = getBase64ImagePayload(p.base64);
+                    if (!payload.base64) { failed++; continue; }
                     const ts = new Date(p.timestamp || Date.now()).toISOString().replace(/[:.]/g, '-');
-                    const isJpeg = isJpegBase64(p.base64);
-                    const name = `${p.characterName || 'image'}-${p.imgId}-${ts}.${isJpeg ? 'jpg' : 'png'}`;
-                    // 浏覽器原生下載（非保存到服務器）
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = name;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
+                    let name = `${p.characterName || 'image'}-${p.imgId}-${ts}.${payload.format}`;
+                    // 同名衝突防覆蓋（imgId 相同但多選的罕見情況）
+                    let seq = 2;
+                    while (usedNames.has(name)) name = `${p.characterName || 'image'}-${p.imgId}-${ts}-${seq++}.${payload.format}`;
+                    usedNames.add(name);
+                    const binary = atob(payload.base64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    // PNG/JPEG 本身已壓縮，ZIP 用 store 模式（level 0）省 CPU 和內存
+                    files[name] = [bytes, { level: 0 }];
                     saved++;
-                    await new Promise((r) => setTimeout(r, 120)); // 避免連續下載被瀏覽器吞掉
                 }
+                if (!saved) throw new Error('沒有可導出的圖片');
+                const zipped = zipSync(files, { level: 0 });
+                const blob = new Blob([zipped], { type: 'application/zip' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `gallery-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
                 const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
                 if (iframe) postToIframe(iframe, { type: 'BATCH_DOWNLOADED', ok: true, saved, failed }, 'LittleWhiteBox-NovelDraw');
             } catch (e) {
@@ -4032,6 +4048,34 @@ async function handleFrameMessage(event) {
             }
             break;
         }
+
+        case 'CONVERT_LEGACY_JPEG': {
+            const { convertLegacyPreviewsToJpeg } = await import('../../shared/gallery-cache.js');
+            const settings = getSharedDrawSettings();
+            try {
+                const stats = await convertLegacyPreviewsToJpeg({
+                    quality: settings.jpegQuality,
+                    onProgress: (done, total) => {
+                        if (total > 10 && (done % 10 === 0 || done === total)) {
+                            postStatus('info', `舊圖轉換中… ${done}/${total}`, 'gallery');
+                        }
+                    },
+                });
+                const savedMB = (stats.savedBytes / 1024 / 1024).toFixed(1);
+                postStatus('success',
+                    `已轉換 ${stats.converted} 張，節省 ${savedMB} MB${stats.failed ? `，失敗 ${stats.failed} 張` : ''}`,
+                    'gallery');
+                sendInitData();
+            } catch (e) {
+                console.error('[NovelDraw] legacy JPEG conversion failed:', e);
+                postStatus('error', `轉換失敗：${e?.message || e}`, 'gallery');
+            } finally {
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'CONVERT_LEGACY_DONE' }, 'LittleWhiteBox-NovelDraw');
+            }
+            break;
+        }
+
 
         case 'SAVE_IMAGE_TITLE_MODE': {
             const nextMode = normalizeImageTitleMode(data.imageTitleMode, getSharedDrawSettings().imageTitleMode);

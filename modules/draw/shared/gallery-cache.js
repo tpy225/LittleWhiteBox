@@ -901,6 +901,56 @@ export async function getAllPreviewsLight() {
         .sort((a, b) => b.timestamp - a.timestamp);
 }
 
+/** 把缓存里仍是 PNG 的旧图批量转成 JPEG。「生成後存 JPEG」开关只管新图，旧图需手动触发。
+ *  每张独立事务逐个写回，失败的保留原图继续下一张；onProgress(done, total) 用于进度提示。 */
+export async function convertLegacyPreviewsToJpeg({ quality = 0.8, onProgress } = {}) {
+    const database = await openDB();
+    const stats = { total: 0, converted: 0, failed: 0, savedBytes: 0 };
+    const allRaw = await new Promise((resolve, reject) => {
+        try {
+            const tx = database.transaction(DB_STORE, 'readonly');
+            const request = tx.objectStore(DB_STORE).getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+        } catch (e) { reject(e); }
+    });
+    const targets = allRaw.filter((r) => r?.imgId && r.base64 && !isJpegBase64(r.base64));
+    stats.total = targets.length;
+    let done = 0;
+    for (const record of targets) {
+        try {
+            const originalBody = record.base64.startsWith('data:') ? record.base64.split(',')[1] : record.base64;
+            const originalBytes = atob(originalBody).length;
+            const converted = await convertImageToJpeg(record.base64, quality);
+            if (converted && converted !== record.base64) {
+                const convertedBytes = atob(converted.split(',')[1]).length;
+                record.base64 = converted;
+                const thumb = await createThumbnailDataUrl(converted);
+                if (thumb) record.thumbBase64 = thumb;
+                await new Promise((resolve, reject) => {
+                    try {
+                        const tx = database.transaction(DB_STORE, 'readwrite');
+                        tx.objectStore(DB_STORE).put(record);
+                        tx.oncomplete = () => {
+                            invalidateCache(record.slotId);
+                            resolve();
+                        };
+                        tx.onerror = tx.onabort = () => reject(storageWriteError(tx));
+                    } catch (e) { reject(e); }
+                });
+                stats.converted++;
+                stats.savedBytes += Math.max(0, originalBytes - convertedBytes);
+            }
+        } catch {
+            stats.failed++;
+        }
+        done++;
+        try { onProgress?.(done, stats.total); } catch { /* 进度回调失败不影响转换 */ }
+    }
+    if (stats.converted) publishCacheChange([]);
+    return stats;
+}
+
 export async function getPreviewsBySlot(slotId) {
     const cached = getCachedPreviews(slotId);
     if (cached) return cached;

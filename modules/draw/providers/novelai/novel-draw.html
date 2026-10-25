@@ -1782,6 +1782,7 @@ button.nd-vibe-badge:disabled { cursor: default; }
                         <div id="nd_gallery_status" class="status-text" style="width:100%;margin-top:0;"></div>
                         <div style="display:flex;gap:8px;align-items:center;">
                         <button id="nd_batch" class="btn btn-sm"><i class="fa-solid fa-list-check"></i> 批量</button>
+                        <button id="nd_convert_legacy_jpeg" class="btn btn-sm" title="把缓存里仍是 PNG 的旧图批量转成 JPEG 以节省空间"><i class="fa-solid fa-images"></i> 舊圖轉JPEG</button>
                         <button id="nd_clear_expired" class="btn btn-sm"><i class="fa-solid fa-broom"></i> 清理过期</button>
                         <button id="nd_clear_all" class="btn btn-sm btn-danger"><i class="fa-solid fa-trash"></i> 清空全部</button>
                         <button id="nd_refresh_stats" class="btn btn-sm btn-icon"><i class="fa-solid fa-arrows-rotate"></i></button>
@@ -5176,10 +5177,14 @@ window.addEventListener('message', event => {
 
         case 'BATCH_DOWNLOADED':
             if (data.ok) {
-                $('nd_batch_count').textContent = `已下載 ${data.saved} 張${data.failed ? `，${data.failed} 張失敗` : ''}`;
+                $('nd_batch_count').textContent = `已導出 ${data.saved} 張${data.failed ? `，${data.failed} 張失敗` : ''}`;
             } else {
-                alert('下載失敗：' + (data.message || '未知錯誤'));
+                alert('導出失敗：' + (data.message || '未知錯誤'));
             }
+            break;
+
+        case 'CONVERT_LEGACY_DONE':
+            if ($('nd_convert_legacy_jpeg')) $('nd_convert_legacy_jpeg').disabled = false;
             break;
 
         case 'ENCODE_VIBE_RESULT': {
@@ -5873,6 +5878,14 @@ document.addEventListener('DOMContentLoaded', () => {
             saveAsJpeg: $('nd_save_as_jpeg').checked,
             jpegQuality: 0.8,
         });
+    });
+
+    $('nd_convert_legacy_jpeg').addEventListener('click', () => {
+        const btn = $('nd_convert_legacy_jpeg');
+        if (btn.disabled) return;
+        if (!confirm('把緩存裡仍是 PNG 的舊圖批量轉成 JPEG？此操作不可撤銷（畫質略有損失，透明背景會鋪白底）。')) return;
+        btn.disabled = true;
+        postToParent({ type: 'CONVERT_LEGACY_JPEG' });
     });
 
     $('nd_batch').addEventListener('click', toggleBatchMode);
