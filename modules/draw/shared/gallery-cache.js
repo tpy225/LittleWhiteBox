@@ -186,10 +186,15 @@ function convertWithDomImage(dataUrl, original, quality) {
 // TT 的 iOS WKWebView 對 OffscreenCanvas.convertToBlob 支持不全，會靜默失敗，
 // ImageBitmap 管線不解碼進 DOM，兼容性更好。
 async function convertViaImageBitmap(rawBase64, quality) {
-    if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null;
+    if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') {
+        console.warn('[gallery-cache] ImageBitmap 管線不可用（API 缺失）');
+        return null;
+    }
     try {
         const blob = base64ToBlob(rawBase64, 'image/png');
+        console.warn('[gallery-cache] ImageBitmap 管線：blob', blob.size, 'bytes，開始解碼');
         const bitmap = await createImageBitmap(blob);
+        console.warn('[gallery-cache] ImageBitmap 解碼成功', bitmap.width, 'x', bitmap.height);
         let out = null;
         try {
             const canvas = document.createElement('canvas');
@@ -202,6 +207,7 @@ async function convertViaImageBitmap(rawBase64, quality) {
             ctx.drawImage(bitmap, 0, 0);
             out = await new Promise((resolve) => {
                 canvas.toBlob((jpegBlob) => {
+                    console.warn('[gallery-cache] toBlob 回調：', jpegBlob ? `${jpegBlob.size} bytes ${jpegBlob.type}` : 'null');
                     if (!jpegBlob) return resolve(null);
                     const reader = new FileReader();
                     reader.onload = () => {
@@ -830,10 +836,14 @@ export async function storePreview(opts) {
             if (!storePreview.__diagToasted && typeof window !== 'undefined') {
                 storePreview.__diagToasted = true;
                 window.dispatchEvent(new CustomEvent('xb-draw-toast', {
-                    detail: { message: `[v3.1.14] 診斷：storePreview 進入，JPEG 開關=${!!settings?.saveAsJpeg}`, type: 'info' },
+                    detail: { message: `[v3.1.15] 診斷：storePreview 進入，JPEG 開關=${!!settings?.saveAsJpeg}`, type: 'info' },
                 }));
             }
             if (settings?.saveAsJpeg) {
+                const canBitmap = typeof createImageBitmap === 'function';
+                window.dispatchEvent(new CustomEvent('xb-draw-toast', {
+                    detail: { message: `[v3.1.15] ImageBitmap API=${canBitmap ? '可用' : '缺失'}`, type: 'info' },
+                }));
                 const converted = await convertImageToJpeg(workingBase64, settings.jpegQuality);
                 if (converted && converted !== workingBase64) {
                     const ratio = Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100);
@@ -848,7 +858,7 @@ export async function storePreview(opts) {
                     // 否則用戶勾了開關卻靜默拿到 PNG，無從排查。
                     console.warn('[gallery-cache] storePreview JPEG 轉換未生效，保留 PNG 原圖');
                     window.dispatchEvent(new CustomEvent('xb-draw-toast', {
-                        detail: { message: 'JPEG 转换失败，本图保留 PNG 原图', type: 'warning' },
+                        detail: { message: 'JPEG 转换失败（两条管线都没出图），本图保留 PNG 原图', type: 'warning' },
                     }));
                 }
             }
