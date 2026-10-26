@@ -865,7 +865,10 @@ export async function storePreview(opts) {
                 }));
                 const converted = await convertImageToJpeg(workingBase64, settings.jpegQuality);
                 if (converted && converted !== workingBase64) {
-                    const ratio = Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100);
+                    const convertedBody = converted.startsWith('data:') ? converted.split(',')[1] : converted;
+                    const originalBody = workingBase64.startsWith('data:') ? workingBase64.split(',')[1] : workingBase64;
+                    const ratio = Math.round((atob(convertedBody.replace(/[^A-Za-z0-9+/=]/g, '')).length
+                        / atob(originalBody.replace(/[^A-Za-z0-9+/=]/g, '')).length) * 100);
                     console.debug('[gallery-cache] storePreview JPEG 轉換成功，', ratio, '%');
                     workingBase64 = converted;
                     // TT 沒有全局 toastr，改發自定義事件由 provider 層的 showToast 顯示
@@ -1037,11 +1040,14 @@ export async function convertLegacyPreviewsToJpeg({ quality = 0.8, onProgress } 
     let done = 0;
     for (const record of targets) {
         try {
-            const originalBody = record.base64.startsWith('data:') ? record.base64.split(',')[1] : record.base64;
+            const originalBody = (record.base64.startsWith('data:') ? record.base64.split(',')[1] : record.base64)
+                .replace(/[^A-Za-z0-9+/=]/g, '');
             const originalBytes = atob(originalBody).length;
             const converted = await convertImageToJpeg(record.base64, quality);
             if (converted && converted !== record.base64) {
-                const convertedBytes = atob(converted.split(',')[1]).length;
+                const convertedBody = (converted.startsWith('data:') ? converted.split(',')[1] : converted)
+                    .replace(/[^A-Za-z0-9+/=]/g, '');
+                const convertedBytes = atob(convertedBody).length;
                 record.base64 = converted;
                 const thumb = await createThumbnailDataUrl(converted);
                 if (thumb) record.thumbBase64 = thumb;
