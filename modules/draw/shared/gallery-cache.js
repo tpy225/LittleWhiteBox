@@ -147,38 +147,80 @@ export function isJpegBase64(value) {
     return body.startsWith('/9j/');
 }
 
-/** 將 data URL 重編碼成 JPEG，節省快取與伺服器空間；透明 PNG 先鋪白底。
- *  已是 JPEG、或轉換失敗時回傳原值。 */
-export function convertImageToJpeg(base64, quality = 0.8) {
-    if (typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(base64);
-    const raw = String(base64 || '').trim();
-    // 不能沿用 normalizeImageDataUrl 包裝：它把無前綴數據一律標成 image/jpeg，
-    // 會讓純 base64 的 PNG 被誤判為「已轉換」而靜默跳過；mime 標註不影響解碼（瀏覽器按內容嗅探）。
-    if (!raw || isJpegBase64(raw)) return Promise.resolve(base64);
-    const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+function convertWithDomImage(dataUrl, original, quality) {
+    if (typeof Image === 'undefined') return Promise.resolve(original);
     return new Promise((resolve) => {
         const img = new Image();
         let settled = false;
         const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
         img.onload = () => {
             try {
-                if (!img.naturalWidth && !img.width) return finish(base64);
+                if (!img.naturalWidth && !img.width) return finish(original);
                 const canvas = document.createElement('canvas');
                 canvas.width = img.naturalWidth || img.width;
                 canvas.height = img.naturalHeight || img.height;
                 const ctx = canvas.getContext('2d');
+                if (!ctx) return finish(original);
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, 0);
-                finish(canvas.toDataURL('image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8))));
-            } catch { finish(base64); }
+                const out = canvas.toDataURL('image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8)));
+                // iOS WKWebView 在 canvas 配額/記憶體異常時 toDataURL 可能回傳「data:,」空串，
+                // 必須校驗真實的 JPEG 前綴，否則空串會被當成「轉換成功」寫進快取。
+                finish(out.startsWith('data:image/jpeg') ? out : original);
+            } catch { finish(original); }
         };
         img.onerror = () => {
-            console.warn('[gallery-cache] JPEG 轉換失敗：圖片解碼失敗，保留 PNG 原圖');
-            finish(base64);
+            console.warn('[gallery-cache] JPEG 轉換：DOM Image 解碼失敗，嘗試 ImageBitmap 備援');
+            finish(original);
         };
         img.src = dataUrl;
     });
+}
+
+// iOS WKWebView 備援：DOM Image/2D canvas 解碼大 base64 可能靜默失敗，
+// createImageBitmap + OffscreenCanvas 走 WebView 原生圖形管線，成功率更高。
+async function convertViaImageBitmap(rawBase64, quality) {
+    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') return null;
+    try {
+        const blob = base64ToBlob(rawBase64, 'image/png');
+        const bitmap = await createImageBitmap(blob);
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0);
+        const jpegBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: Math.max(0.1, Math.min(1, Number(quality) || 0.8)) });
+        bitmap.close?.();
+        const out = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+            reader.readAsDataURL(jpegBlob);
+        });
+        return out.startsWith('data:image/jpeg') ? out : null;
+    } catch (e) {
+        console.warn('[gallery-cache] JPEG 轉換 ImageBitmap 備援失敗：', e?.message);
+        return null;
+    }
+}
+
+/** 將 data URL 重編碼成 JPEG，節省快取與伺服器空間；透明 PNG 先鋪白底。
+ *  已是 JPEG、或轉換失敗時回傳原值。 */
+export async function convertImageToJpeg(base64, quality = 0.8) {
+    if (typeof document === 'undefined') return base64;
+    const raw = String(base64 || '').trim();
+    // 不能沿用 normalizeImageDataUrl 包裝：它把無前綴數據一律標成 image/jpeg，
+    // 會讓純 base64 的 PNG 被誤判為「已轉換」而靜默跳過；mime 標註不影響解碼（瀏覽器按內容嗅探）。
+    if (!raw || isJpegBase64(raw)) return base64;
+    const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+    // 主路徑：DOM Image + 2D canvas（桌面與多數 WebView 可用）
+    const viaDom = await convertWithDomImage(dataUrl, base64, quality);
+    if (viaDom !== base64) return viaDom;
+    // 備援路徑：原生 ImageBitmap 管線（iOS WKWebView）
+    const pureBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+    return (await convertViaImageBitmap(pureBase64, quality)) || base64;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
