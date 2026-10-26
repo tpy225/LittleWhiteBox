@@ -173,7 +173,10 @@ export function convertImageToJpeg(base64, quality = 0.8) {
                 finish(canvas.toDataURL('image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8))));
             } catch { finish(base64); }
         };
-        img.onerror = () => finish(base64);
+        img.onerror = () => {
+            console.warn('[gallery-cache] JPEG 轉換失敗：圖片解碼失敗，保留 PNG 原圖');
+            finish(base64);
+        };
         img.src = dataUrl;
     });
 }
@@ -769,6 +772,11 @@ export async function storePreview(opts) {
                         Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100),
                         '%');
                     workingBase64 = converted;
+                } else {
+                    // 解碼失敗／畫布異常時 convertImageToJpeg 會原樣退回，這裡必須顯式提示，
+                    // 否則用戶勾了開關卻靜默拿到 PNG，無從排查。
+                    console.warn('[gallery-cache] storePreview JPEG 轉換未生效，保留 PNG 原圖');
+                    globalThis.toastr?.warning('JPEG 转换失败，本图保留 PNG 原图');
                 }
             }
         } catch (e) {
