@@ -554,7 +554,7 @@ function getNovelImageRequestDelay() {
 }
 
 function showToast(message, type = 'success', duration = 2500) {
-    const colors = { success: 'rgba(62,207,142,0.95)', error: 'rgba(248,113,113,0.95)', info: 'rgba(212,165,116,0.95)' };
+    const colors = { success: 'rgba(62,207,142,0.95)', error: 'rgba(248,113,113,0.95)', info: 'rgba(212,165,116,0.95)', warning: 'rgba(248,113,113,0.95)' };
     const toast = document.createElement('div');
     toast.textContent = message;
     toast.style.cssText = `position:fixed;top:20px;left:50%;transform:translateX(-50%);background:${colors[type] || colors.info};color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:99999;animation:fadeInOut ${duration / 1000}s ease-in-out;max-width:80vw;text-align:center;word-break:break-all`;
@@ -5195,6 +5195,14 @@ export async function initNovelDraw() {
 
     moduleInitialized = true;
     backendJobMonitors.activate();
+    // gallery-cache（shared 層）的轉換診斷提示：TT 沒有全局 toastr，靠這裡轉發到自家 toast
+    if (!window.__xbDrawToastListener) {
+        window.__xbDrawToastListener = (e) => {
+            const { message, type } = e.detail || {};
+            if (message) showToast(message, type === 'warning' ? 'error' : 'info', 5000);
+        };
+        window.addEventListener('xb-draw-toast', window.__xbDrawToastListener);
+    }
     initAfterAiGate();
     afterAiGateDispose?.();
     afterAiGateDispose = registerAfterAiHandler(MODULE_KEY, ({ chatId, messageId }) => {

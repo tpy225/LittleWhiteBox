@@ -164,44 +164,60 @@ function convertWithDomImage(dataUrl, original, quality) {
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, 0);
-                const out = canvas.toDataURL('image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8)));
-                // iOS WKWebView 在 canvas 配額/記憶體異常時 toDataURL 可能回傳「data:,」空串，
-                // 必須校驗真實的 JPEG 前綴，否則空串會被當成「轉換成功」寫進快取。
-                finish(out.startsWith('data:image/jpeg') ? out : original);
+                canvas.toBlob((blob) => {
+                    if (!blob) return finish(original);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const out = String(reader.result || '');
+                        // 必須校驗真實 JPEG 前綴：iOS WebView 異常時可能回傳「data:,」空串
+                        finish(out.startsWith('data:image/jpeg') ? out : original);
+                    };
+                    reader.onerror = () => finish(original);
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8)));
             } catch { finish(original); }
         };
-        img.onerror = () => {
-            console.warn('[gallery-cache] JPEG 轉換：DOM Image 解碼失敗，嘗試 ImageBitmap 備援');
-            finish(original);
-        };
+        img.onerror = () => finish(original);
         img.src = dataUrl;
     });
 }
 
-// iOS WKWebView 備援：DOM Image/2D canvas 解碼大 base64 可能靜默失敗，
-// createImageBitmap + OffscreenCanvas 走 WebView 原生圖形管線，成功率更高。
+// 主路徑用 createImageBitmap → 常規 canvas 2D → canvas.toBlob → FileReader：
+// TT 的 iOS WKWebView 對 OffscreenCanvas.convertToBlob 支持不全，會靜默失敗，
+// ImageBitmap 管線不解碼進 DOM，兼容性更好。
 async function convertViaImageBitmap(rawBase64, quality) {
-    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') return null;
+    if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null;
     try {
         const blob = base64ToBlob(rawBase64, 'image/png');
         const bitmap = await createImageBitmap(blob);
-        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(bitmap, 0, 0);
-        const jpegBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: Math.max(0.1, Math.min(1, Number(quality) || 0.8)) });
-        bitmap.close?.();
-        const out = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
-            reader.readAsDataURL(jpegBlob);
-        });
-        return out.startsWith('data:image/jpeg') ? out : null;
+        let out = null;
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bitmap, 0, 0);
+            out = await new Promise((resolve) => {
+                canvas.toBlob((jpegBlob) => {
+                    if (!jpegBlob) return resolve(null);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const dataUrl = String(reader.result || '');
+                        resolve(dataUrl.startsWith('data:image/jpeg') ? dataUrl : null);
+                    };
+                    reader.onerror = () => resolve(null);
+                    reader.readAsDataURL(jpegBlob);
+                }, 'image/jpeg', Math.max(0.1, Math.min(1, Number(quality) || 0.8)));
+            });
+        } finally {
+            bitmap.close?.();
+        }
+        return out;
     } catch (e) {
-        console.warn('[gallery-cache] JPEG 轉換 ImageBitmap 備援失敗：', e?.message);
+        console.warn('[gallery-cache] JPEG 轉換 ImageBitmap 管線失敗：', e?.message);
         return null;
     }
 }
@@ -214,13 +230,16 @@ export async function convertImageToJpeg(base64, quality = 0.8) {
     // 不能沿用 normalizeImageDataUrl 包裝：它把無前綴數據一律標成 image/jpeg，
     // 會讓純 base64 的 PNG 被誤判為「已轉換」而靜默跳過；mime 標註不影響解碼（瀏覽器按內容嗅探）。
     if (!raw || isJpegBase64(raw)) return base64;
+    // 主路徑：createImageBitmap（TT/桌面都可用，且不進 DOM）
+    const pureBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+    const viaBitmap = await convertViaImageBitmap(pureBase64, quality);
+    if (viaBitmap) return viaBitmap;
+    // 備援：DOM Image + 2D canvas + toBlob
     const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
-    // 主路徑：DOM Image + 2D canvas（桌面與多數 WebView 可用）
     const viaDom = await convertWithDomImage(dataUrl, base64, quality);
     if (viaDom !== base64) return viaDom;
-    // 備援路徑：原生 ImageBitmap 管線（iOS WKWebView）
-    const pureBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
-    return (await convertViaImageBitmap(pureBase64, quality)) || base64;
+    console.warn('[gallery-cache] JPEG 轉換兩條管線均失敗，保留 PNG 原圖');
+    return base64;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -813,13 +832,17 @@ export async function storePreview(opts) {
                     const ratio = Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100);
                     console.debug('[gallery-cache] storePreview JPEG 轉換成功，', ratio, '%');
                     workingBase64 = converted;
-                    // 診斷用：成功也彈一次，用於在 TT 上確認轉換鏈路是否真的執行
-                    globalThis.toastr?.info(`JPEG 轉換成功（${ratio}%）`);
+                    // TT 沒有全局 toastr，改發自定義事件由 provider 層的 showToast 顯示
+                    window.dispatchEvent(new CustomEvent('xb-draw-toast', {
+                        detail: { message: `JPEG 轉換成功（${ratio}%）`, type: 'info' },
+                    }));
                 } else {
                     // 解碼失敗／畫布異常時 convertImageToJpeg 會原樣退回，這裡必須顯式提示，
                     // 否則用戶勾了開關卻靜默拿到 PNG，無從排查。
                     console.warn('[gallery-cache] storePreview JPEG 轉換未生效，保留 PNG 原圖');
-                    globalThis.toastr?.warning('JPEG 转换失败，本图保留 PNG 原图');
+                    window.dispatchEvent(new CustomEvent('xb-draw-toast', {
+                        detail: { message: 'JPEG 转换失败，本图保留 PNG 原图', type: 'warning' },
+                    }));
                 }
             }
         } catch (e) {
