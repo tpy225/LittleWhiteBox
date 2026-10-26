@@ -810,10 +810,11 @@ export async function storePreview(opts) {
             if (settings?.saveAsJpeg) {
                 const converted = await convertImageToJpeg(workingBase64, settings.jpegQuality);
                 if (converted && converted !== workingBase64) {
-                    console.debug('[gallery-cache] storePreview JPEG 轉換成功，',
-                        Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100),
-                        '%');
+                    const ratio = Math.round((atob(converted.split(',')[1]).length / atob(workingBase64.split(',')[1]).length) * 100);
+                    console.debug('[gallery-cache] storePreview JPEG 轉換成功，', ratio, '%');
                     workingBase64 = converted;
+                    // 診斷用：成功也彈一次，用於在 TT 上確認轉換鏈路是否真的執行
+                    globalThis.toastr?.info(`JPEG 轉換成功（${ratio}%）`);
                 } else {
                     // 解碼失敗／畫布異常時 convertImageToJpeg 會原樣退回，這裡必須顯式提示，
                     // 否則用戶勾了開關卻靜默拿到 PNG，無從排查。
