@@ -826,6 +826,13 @@ export async function storePreview(opts) {
     if (workingBase64) {
         try {
             const settings = getSharedDrawSettings();
+            // 一次性入口診斷：每次會話首張圖必彈，用於確認 storePreview 鏈路與開關實際讀值
+            if (!storePreview.__diagToasted && typeof window !== 'undefined') {
+                storePreview.__diagToasted = true;
+                window.dispatchEvent(new CustomEvent('xb-draw-toast', {
+                    detail: { message: `[v3.1.14] 診斷：storePreview 進入，JPEG 開關=${!!settings?.saveAsJpeg}`, type: 'info' },
+                }));
+            }
             if (settings?.saveAsJpeg) {
                 const converted = await convertImageToJpeg(workingBase64, settings.jpegQuality);
                 if (converted && converted !== workingBase64) {
