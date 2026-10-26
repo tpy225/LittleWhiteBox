@@ -240,14 +240,18 @@ export async function convertImageToJpeg(base64, quality = 0.8) {
     const CONVERT_TIMEOUT_MS = 10000;
     try {
         // 主路徑：createImageBitmap（TT/桌面都可用，且不進 DOM）
-        const pureBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+        // 後台回傳的 base64 可能混入引號、URL 前綴、換行等雜質，atob 會拋
+        // InvalidCharacterError，統一剝離 base64 字符集以外的所有字符。
+        const pureBase64 = (raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw)
+            .replace(/[^A-Za-z0-9+/=]/g, '');
+        if (!pureBase64) return base64;
         const viaBitmap = await Promise.race([
             convertViaImageBitmap(pureBase64, quality),
             new Promise(resolve => setTimeout(() => resolve(null), CONVERT_TIMEOUT_MS)),
         ]);
         if (viaBitmap) return viaBitmap;
-        // 備援：DOM Image + 2D canvas + toBlob
-        const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+        // 備援：DOM Image + 2D canvas + toBlob（用清洗後的 base64 重組 data URL）
+        const dataUrl = `data:image/png;base64,${pureBase64}`;
         const viaDom = await Promise.race([
             convertWithDomImage(dataUrl, base64, quality),
             new Promise(resolve => setTimeout(() => resolve(base64), CONVERT_TIMEOUT_MS)),
@@ -287,8 +291,8 @@ export function getBase64ImagePayload(value) {
 }
 
 function base64ToBlob(base64, mime) {
-    // 後台任務回傳的 base64 可能含換行/空白，atob 會直接拋 InvalidCharacterError
-    const clean = String(base64 || '').replace(/\s+/g, '');
+    // 剝離 base64 字符集以外的所有雜質（換行、引號、URL 前綴等），atob 遇到即拋錯
+    const clean = String(base64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
     const binary = atob(clean);
     const chunkSize = 8192;
     const chunks = [];
