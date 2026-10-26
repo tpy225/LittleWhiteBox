@@ -229,23 +229,36 @@ async function convertViaImageBitmap(rawBase64, quality) {
 }
 
 /** 將 data URL 重編碼成 JPEG，節省快取與伺服器空間；透明 PNG 先鋪白底。
- *  已是 JPEG、或轉換失敗時回傳原值。 */
+ *  已是 JPEG、或轉換失敗時回傳原值。永不 reject、永不掛起（iOS WebView 的
+ *  createImageBitmap/toBlob 回調可能永不觸發，必須加超時兜底）。 */
 export async function convertImageToJpeg(base64, quality = 0.8) {
     if (typeof document === 'undefined') return base64;
     const raw = String(base64 || '').trim();
     // 不能沿用 normalizeImageDataUrl 包裝：它把無前綴數據一律標成 image/jpeg，
     // 會讓純 base64 的 PNG 被誤判為「已轉換」而靜默跳過；mime 標註不影響解碼（瀏覽器按內容嗅探）。
     if (!raw || isJpegBase64(raw)) return base64;
-    // 主路徑：createImageBitmap（TT/桌面都可用，且不進 DOM）
-    const pureBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
-    const viaBitmap = await convertViaImageBitmap(pureBase64, quality);
-    if (viaBitmap) return viaBitmap;
-    // 備援：DOM Image + 2D canvas + toBlob
-    const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
-    const viaDom = await convertWithDomImage(dataUrl, base64, quality);
-    if (viaDom !== base64) return viaDom;
-    console.warn('[gallery-cache] JPEG 轉換兩條管線均失敗，保留 PNG 原圖');
-    return base64;
+    const CONVERT_TIMEOUT_MS = 10000;
+    try {
+        // 主路徑：createImageBitmap（TT/桌面都可用，且不進 DOM）
+        const pureBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+        const viaBitmap = await Promise.race([
+            convertViaImageBitmap(pureBase64, quality),
+            new Promise(resolve => setTimeout(() => resolve(null), CONVERT_TIMEOUT_MS)),
+        ]);
+        if (viaBitmap) return viaBitmap;
+        // 備援：DOM Image + 2D canvas + toBlob
+        const dataUrl = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+        const viaDom = await Promise.race([
+            convertWithDomImage(dataUrl, base64, quality),
+            new Promise(resolve => setTimeout(() => resolve(base64), CONVERT_TIMEOUT_MS)),
+        ]);
+        if (viaDom !== base64) return viaDom;
+        console.warn('[gallery-cache] JPEG 轉換兩條管線均失敗，保留 PNG 原圖');
+        return base64;
+    } catch (e) {
+        console.warn('[gallery-cache] JPEG 轉換異常，保留 PNG 原圖：', e?.message);
+        return base64;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -274,7 +287,9 @@ export function getBase64ImagePayload(value) {
 }
 
 function base64ToBlob(base64, mime) {
-    const binary = atob(base64);
+    // 後台任務回傳的 base64 可能含換行/空白，atob 會直接拋 InvalidCharacterError
+    const clean = String(base64 || '').replace(/\s+/g, '');
+    const binary = atob(clean);
     const chunkSize = 8192;
     const chunks = [];
     for (let offset = 0; offset < binary.length; offset += chunkSize) {
@@ -864,6 +879,9 @@ export async function storePreview(opts) {
             }
         } catch (e) {
             console.warn('[gallery-cache] JPEG 轉換失敗，保留原圖：', e?.message);
+            window.dispatchEvent(new CustomEvent('xb-draw-toast', {
+                detail: { message: `JPEG 转换异常：${e?.message || e}`, type: 'warning' },
+            }));
         }
     }
 
