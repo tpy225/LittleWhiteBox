@@ -851,18 +851,7 @@ export async function storePreview(opts) {
     if (workingBase64) {
         try {
             const settings = getSharedDrawSettings();
-            // 一次性入口診斷：每次會話首張圖必彈，用於確認 storePreview 鏈路與開關實際讀值
-            if (!storePreview.__diagToasted && typeof window !== 'undefined') {
-                storePreview.__diagToasted = true;
-                window.dispatchEvent(new CustomEvent('xb-draw-toast', {
-                    detail: { message: `[v3.1.15] 診斷：storePreview 進入，JPEG 開關=${!!settings?.saveAsJpeg}`, type: 'info' },
-                }));
-            }
             if (settings?.saveAsJpeg) {
-                const canBitmap = typeof createImageBitmap === 'function';
-                window.dispatchEvent(new CustomEvent('xb-draw-toast', {
-                    detail: { message: `[v3.1.15] ImageBitmap API=${canBitmap ? '可用' : '缺失'}`, type: 'info' },
-                }));
                 const converted = await convertImageToJpeg(workingBase64, settings.jpegQuality);
                 if (converted && converted !== workingBase64) {
                     const convertedBody = converted.startsWith('data:') ? converted.split(',')[1] : converted;
@@ -871,10 +860,6 @@ export async function storePreview(opts) {
                         / atob(originalBody.replace(/[^A-Za-z0-9+/=]/g, '')).length) * 100);
                     console.debug('[gallery-cache] storePreview JPEG 轉換成功，', ratio, '%');
                     workingBase64 = converted;
-                    // TT 沒有全局 toastr，改發自定義事件由 provider 層的 showToast 顯示
-                    window.dispatchEvent(new CustomEvent('xb-draw-toast', {
-                        detail: { message: `JPEG 轉換成功（${ratio}%）`, type: 'info' },
-                    }));
                 } else {
                     // 解碼失敗／畫布異常時 convertImageToJpeg 會原樣退回，這裡必須顯式提示，
                     // 否則用戶勾了開關卻靜默拿到 PNG，無從排查。
