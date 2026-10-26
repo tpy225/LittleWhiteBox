@@ -3578,7 +3578,8 @@ export async function generateImagesFromText(options = {}) {
         onItemReady: async ({ index, base64 }) => {
             const { task, slotId, imgId, promptData } = requests[index];
             const titleForStore = task.title || '';
-            await storePreview({
+            // storePreview 回傳最終存儲格式（開啟 JPEG 時已轉換），聊天卡展示需與快取一致。
+            const storedBase64 = await storePreview({
                 ...galleryMeta,
                 imgId,
                 slotId,
@@ -3600,7 +3601,7 @@ export async function generateImagesFromText(options = {}) {
                 title: titleForStore,
                 positive: promptData.positive,
                 negativePrompt: promptData.negative,
-                displayUrl: getPreviewDisplayUrl({ imgId, base64 }),
+                displayUrl: getPreviewDisplayUrl({ imgId, base64: storedBase64 || base64 }),
                 success: true,
             });
         },

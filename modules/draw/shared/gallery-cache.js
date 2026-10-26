@@ -819,7 +819,9 @@ export async function storePreview(opts) {
             tx.oncomplete = () => {
                 invalidateCache(resolvedSlotId);
                 publishCacheChange([resolvedSlotId]);
-                resolve();
+                // 回傳最終存儲的 base64（含 JPEG 轉換結果），讓聊天卡的 displayUrl 與快取一致，
+                // 避免消息內嵌原圖 PNG 而快取是 JPEG 的「格式分裂」。
+                resolve(workingBase64);
             };
             tx.onerror = tx.onabort = () => reject(storageWriteError(tx));
         } catch (e) {
