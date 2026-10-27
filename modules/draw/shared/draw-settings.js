@@ -142,7 +142,10 @@ export function normalizeSharedDrawSettings(saved = {}) {
             : DEFAULT_SHARED_DRAW_SETTINGS.timeout,
         autoGenerateImages: source.autoGenerateImages !== false,
         imageTitleMode: normalizeImageTitleMode(source.imageTitleMode),
-        maxImages: Math.max(0, Math.min(20, Math.floor(Number(source.maxImages) || DEFAULT_SHARED_DRAW_SETTINGS.maxImages))),
+        // maxImages 允许 0（= 不指定数量，LLM 写多少是多少），不能走 `|| 默认值` 否则 0 会被吞回默认
+        maxImages: Number.isFinite(Number(source.maxImages))
+            ? Math.max(0, Math.min(20, Math.floor(Number(source.maxImages))))
+            : DEFAULT_SHARED_DRAW_SETTINGS.maxImages,
         characterTags,
         characterGroups,
         characterGroupPresets,
