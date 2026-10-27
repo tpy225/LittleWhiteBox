@@ -94,6 +94,22 @@ function refillSelect(select, options, placeholderLabel = '') {
     });
 }
 
+// iOS（TT WKWebView）键盘弹起时改写表单并重渲染，会把页面滚出顶部且手势滚不回来；
+// 点「拉取模型」时先主动收起键盘（等价于用户手动收键盘的自救），渲染后再 clamp 滚动兜底。
+function collapseKeyboardBeforeRerender() {
+    const active = document.activeElement;
+    if (active && active !== document.body && typeof active.blur === 'function') {
+        active.blur();
+    }
+}
+
+function clampWindowScrollAfterRender() {
+    const doc = document.documentElement;
+    const max = Math.max(0, (doc?.scrollHeight || 0) - window.innerHeight);
+    const current = window.scrollY || window.pageYOffset || 0;
+    if (current > max) window.scrollTo(0, max);
+}
+
 function buildReasoningDraftFields(provider = '', providerConfig = {}) {
     const reasoning = normalizeReasoningConfig(providerConfig.reasoning);
     const capability = resolveReasoningCapability({
@@ -1558,6 +1574,7 @@ export function createAgentSettingsPanel(deps = {}) {
         });
 
         root.querySelector('#xb-assistant-pull-models')?.addEventListener('click', async () => {
+            collapseKeyboardBeforeRerender();
             syncConfigDraft(root);
             requestConfigFormSync();
             const providerConfig = getActiveProviderConfig();
@@ -1579,9 +1596,11 @@ export function createAgentSettingsPanel(deps = {}) {
             }
             requestConfigFormSync();
             render?.();
+            clampWindowScrollAfterRender();
         });
 
         root.querySelector('#xb-assistant-delegate-pull-models')?.addEventListener('click', async () => {
+            collapseKeyboardBeforeRerender();
             syncConfigDraft(root);
             requestConfigFormSync();
             const providerConfig = getActiveProviderConfig({ role: 'delegate' });
@@ -1603,6 +1622,7 @@ export function createAgentSettingsPanel(deps = {}) {
             }
             requestConfigFormSync();
             render?.();
+            clampWindowScrollAfterRender();
         });
 
         root.querySelector('#xb-assistant-new-preset')?.addEventListener('click', () => {
