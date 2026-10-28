@@ -808,6 +808,216 @@ body:has(#view-gallery.active #nd_batch.btn-primary) .gallery-notice { top: calc
     background: var(--bg-tertiary); font-size: 11px; color: var(--text-secondary);
 }
 .chain-field code { font-size: 10px; color: var(--accent); word-break: break-all; }
+
+/* ── Vibe 氛围转移 ── */
+.nd-vibe-group-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+.nd-vibe-group-bar select {
+    /* 下拉独占一行；按钮组自然落到第二行 */
+    flex: 0 0 100%;
+    min-width: 0;
+    font-size: 12px;
+    padding: 6px 8px;
+}
+.nd-vibe-group-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    padding: 0;
+}
+.nd-vibe-group-btn:hover:not(:disabled) { border-color: var(--border-focus, #7c6ff0); }
+.nd-vibe-group-btn.primary { background: var(--border-focus, #7c6ff0); border-color: transparent; color: #fff; }
+.nd-vibe-group-btn.danger:hover:not(:disabled) { background: var(--danger); border-color: transparent; color: #fff; }
+.nd-vibe-group-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.nd-vibe-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.nd-vibe-upload-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 14px 12px;
+    cursor: pointer;
+}
+.nd-vibe-upload-tile:hover { border-color: var(--border-focus, #7c6ff0); color: var(--text); }
+.nd-vibe-upload-tile i { font-size: 16px; }
+
+/* 标题旁的 ⓘ 用法说明：hover 或点击聚焦时展开；弹层以整个标题为定位锚点，左缘与标题对齐 */
+.nd-vibe-title { position: relative; }
+.nd-info-tip {
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: normal;
+    cursor: help;
+    outline: none;
+    vertical-align: middle;
+}
+.nd-info-tip:hover,
+.nd-info-tip:focus { color: var(--text); }
+.nd-info-tip-body {
+    display: none;
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 60;
+    width: 280px;
+    max-width: calc(100vw - 48px);
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 1.7;
+    text-align: left;
+    white-space: normal;
+    flex-direction: column;
+    gap: 6px;
+}
+.nd-info-tip-body b { color: var(--text-primary); font-weight: 600; }
+.nd-info-tip:hover .nd-info-tip-body,
+.nd-info-tip:focus .nd-info-tip-body,
+.nd-info-tip:focus-within .nd-info-tip-body { display: flex; }
+.nd-vibe-item {
+    display: flex;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-input);
+    align-items: flex-start;
+}
+.nd-vibe-item.is-disabled { opacity: 0.5; }
+.nd-vibe-item.is-busy { opacity: 0.7; }
+.nd-vibe-enable {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 22px;
+    cursor: pointer;
+    accent-color: var(--border-focus, #7c6ff0);
+}
+.nd-vibe-item img {
+    width: 48px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.25);
+}
+.nd-vibe-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.nd-vibe-name {
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nd-vibe-name-editable { cursor: pointer; }
+.nd-vibe-name-editable:hover { color: var(--border-focus, #7c6ff0); }
+.nd-vibe-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.nd-vibe-row label { color: var(--text-muted); flex-shrink: 0; }
+.nd-vibe-row input[type="range"] { flex: 1; min-width: 0; }
+/* 强度数值：可手填的数字框（滑块在窄屏被挤压时直接输入） */
+.nd-vibe-num {
+    width: 48px; flex-shrink: 0;
+    font-size: 12px; text-align: center;
+    padding: 2px 4px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-input); color: var(--text);
+}
+.nd-vibe-num:focus { border-color: var(--border-focus, #7c6ff0); outline: none; }
+.nd-vibe-num::-webkit-outer-spin-button,
+.nd-vibe-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* 操作行：编码按钮 + 导出 / 删除 */
+.nd-vibe-info-row { display: flex; align-items: center; gap: 6px; }
+.nd-vibe-info-row .nd-vibe-badge { margin-right: auto; }
+.nd-vibe-info-row .nd-vibe-icon-btn { margin-top: 0; width: 28px; height: 28px; flex-shrink: 0; }
+.nd-vibe-badge {
+    font-size: 9px;
+    padding: 0 5px;
+    line-height: 1.4;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.nd-vibe-badge.ok { background: rgba(63, 185, 80, 0.18); color: #58d16e; }
+.nd-vibe-badge.pending { background: rgba(210, 153, 34, 0.18); color: #e0a93e; }
+.nd-vibe-badge.off { background: rgba(160,160,160,0.15); color: var(--text-muted); }
+/* 未编码时的手动编码 CTA（按钮形态） */
+button.nd-vibe-badge { font: inherit; border: 1px solid transparent; cursor: pointer; }
+button.nd-vibe-badge:disabled { cursor: default; }
+.nd-vibe-badge.encode { background: rgba(124,111,240,0.22); color: #a89cff; font-weight: 600; }
+.nd-vibe-badge.encode:hover { background: rgba(124,111,240,0.4); }
+.nd-vibe-icon-btn {
+    width: 26px;
+    height: 26px;
+    margin-top: 18px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.nd-vibe-icon-btn:hover { background: rgba(124,111,240,0.18); color: var(--text); }
+.nd-vibe-icon-btn.danger:hover { background: var(--danger); color: #fff; }
+@media (max-width: 768px) {
+    .nd-vibe-item { gap: 8px; padding: 6px; }
+    .nd-vibe-main { gap: 4px; }
+    .nd-vibe-row { gap: 6px; }
+    .nd-vibe-info-row { gap: 4px; }
+    .nd-vibe-item img { width: 42px; height: 56px; }
+    .nd-vibe-enable { margin-top: 18px; }
+}
 </style>
 </head>
 
@@ -1061,6 +1271,29 @@ body:has(#view-gallery.active #nd_batch.btn-primary) .gallery-notice { top: calc
                             <input id="nd_scheduler" type="text" class="input hidden" style="margin-top:6px;">
                         </div>
                     </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title nd-vibe-title">✨ Vibe 氛围转移<span class="nd-info-tip" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="nd-info-tip-body"><span class="nd-info-tip-lead">上传参考图把画风 / 构图 / 色彩迁移到生成结果。两种用法：</span><span class="nd-info-tip-item"><b>① 散装：</b>直接勾选 → 点最上面卡片的「保存」，勾选随该画师串预设切换。</span><span class="nd-info-tip-item"><b>② Vibe 组：</b>勾选后用 💾 存成 Vibe 组，下拉选组再保存画师串预设；之后改组（💾覆盖），所有引用它的预设一起更新。</span></span></span><span id="nd_vibe_model_hint" class="form-hint" style="display:inline;margin-left:8px;"></span></div>
+
+                    <!-- Vibe 组保存栏：下拉选组即套用勾选/强度；＋另存新组，✏重命名，💾覆盖保存当前组，🗑删组 -->
+                    <div class="nd-vibe-group-bar">
+                        <select id="nd_vibe_group_sel" class="input"></select>
+                        <button type="button" class="nd-vibe-group-btn" id="nd_vibe_group_saveas" title="把当前勾选与强度另存为新 Vibe 组"><i class="fa-solid fa-plus"></i></button>
+                        <button type="button" class="nd-vibe-group-btn" id="nd_vibe_group_rename" title="重命名当前组" disabled><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="nd-vibe-group-btn primary" id="nd_vibe_group_save" title="无选中组时＝另存新组；有选中组时＝覆盖保存当前组"><i class="fa-solid fa-floppy-disk"></i></button>
+                        <button type="button" class="nd-vibe-group-btn danger" id="nd_vibe_group_del" title="删除当前组（组内参考图仍保留）" disabled><i class="fa-solid fa-trash-can"></i></button>
+                        <button type="button" class="nd-vibe-group-btn" id="nd_vibe_group_export" title="导出当前组（含组内原图与编码，换机免重花点数）" disabled><i class="fa-solid fa-file-export"></i></button>
+                        <label class="nd-vibe-group-btn" title="导入 Vibe / 组文件（.json，含编码）" style="cursor:pointer;">
+                            <i class="fa-solid fa-file-import"></i>
+                            <input type="file" id="nd_vibe_import_file" accept="application/json,.json" multiple hidden>
+                        </label>
+                    </div>
+
+                    <!-- 列表展示库里全部单个 Vibe：勾选=本预设启用，✕=从库删除 -->
+                    <div id="nd_vibe_list" class="nd-vibe-list"></div>
+                    <input type="file" id="nd_vibe_file" accept="image/*" multiple hidden>
+                    <div id="nd_vibe_status" class="status-text"></div>
                 </div>
 
                 <div class="card">
