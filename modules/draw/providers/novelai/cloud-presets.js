@@ -137,6 +137,8 @@ export function parsePresetData(data, generateId) {
             name: String(data.name || data.preset.name || '云端预设'),
             positivePrefix: String(data.preset.positivePrefix || ''),
             negativePrefix: String(data.preset.negativePrefix || ''),
+            // 还原分享时附带的缩略图（旧版本/无图时为空字符串）
+            thumbnail: typeof data.preset.thumbnail === 'string' ? data.preset.thumbnail : '',
             maxImages: version === 1 ? 0 : Math.max(0, Number(data.preset.maxImages) || 0),
             maxCharactersPerImage: version === 1
                 ? 0
@@ -164,6 +166,8 @@ export function exportPreset(preset) {
             negativePrefix: preset.negativePrefix,
             maxImages: preset.maxImages || 0,
             maxCharactersPerImage: preset.maxCharactersPerImage || 0,
+            // 缩略图（dataURL）随云端预设一起分享；无图则省略
+            ...(preset.thumbnail ? { thumbnail: preset.thumbnail } : {}),
             overrideSize: preset.overrideSize === 'auto' ? 'auto' : 'default',
             params: { ...preset.params }
         }

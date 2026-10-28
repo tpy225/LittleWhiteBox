@@ -541,6 +541,155 @@ body:has(#view-gallery.active #nd_batch.btn-primary) .gallery-notice { top: calc
 .nd-advanced-only { display: flex !important; }
 .nd-simple-only { display: none !important; }
 
+/* ── 预设缩略图（头像式上传方框，3:4 竖图） ── */
+.nd-thumb-box {
+    position: relative;
+    width: 96px;
+    height: 128px;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    background: var(--bg-input);
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s;
+}
+.nd-thumb-box:hover,
+.nd-thumb-box:focus-visible { border-color: var(--border-focus); outline: none; }
+.nd-thumb-box.has-image { border-style: solid; }
+.nd-thumb-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+}
+.nd-thumb-box.has-image img { display: block; }
+.nd-thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.3;
+}
+.nd-thumb-placeholder i { font-size: 22px; opacity: 0.6; }
+.nd-thumb-box.has-image .nd-thumb-placeholder { display: none; }
+.nd-thumb-mask {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 4px 0;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 10px;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+.nd-thumb-box.has-image:hover .nd-thumb-mask,
+.nd-thumb-box.has-image:focus-visible .nd-thumb-mask { opacity: 1; }
+.nd-thumb-clear {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+.nd-thumb-box.has-image .nd-thumb-clear { display: flex; }
+.nd-thumb-clear:hover { background: var(--danger); }
+#nd_thumbnail_pick { margin-top: 6px; padding: 5px 12px; font-size: 12px; }
+
+/* ── 从画廊选缩略图弹层 ── */
+.nd-thumbpick-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0, 0, 0, 0.55);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+}
+.nd-thumbpick-overlay.visible { display: flex; }
+.nd-thumbpick-dialog {
+    width: min(720px, 100%);
+    max-height: 80vh;
+    display: flex; flex-direction: column;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.nd-thumbpick-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+}
+.nd-thumbpick-title { font-size: 13px; font-weight: 600; flex: 1; color: var(--text-primary); }
+.nd-thumbpick-toggle, .nd-thumbpick-close {
+    border: 1px solid var(--border); background: var(--bg-input);
+    color: var(--text-primary); border-radius: 8px; font-size: 12px;
+    padding: 5px 10px; cursor: pointer;
+}
+.nd-thumbpick-close { width: 30px; padding: 0; }
+.nd-thumbpick-toggle:hover, .nd-thumbpick-close:hover { border-color: var(--border-focus); }
+.nd-thumbpick-grid {
+    flex: 1; overflow-y: auto; padding: 14px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    align-content: start;
+    /* 该 WebView 默认 stretch 行高会把未解码的 img 高度算成 0，卡片压成细线；
+       与画师串预设网格（.nd-preset-grid）已验证的修法对齐 */
+    grid-auto-rows: max-content;
+    align-items: start;
+}
+.nd-thumbpick-hint {
+    grid-column: 1 / -1;
+    color: var(--text-muted); font-size: 12px; text-align: center; padding: 30px 10px;
+}
+.nd-thumbpick-item {
+    position: relative;
+    display: flex; flex-direction: column;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--bg-input);
+    transition: border-color 0.15s;
+}
+.nd-thumbpick-item:hover { border-color: var(--border-focus); }
+.nd-thumbpick-item img { width: 100%; height: 140px; min-height: 140px; flex: none; object-fit: cover; display: block; }
+.nd-thumbpick-item.is-other { opacity: 0.82; }
+.nd-thumbpick-badge {
+    position: absolute; top: 4px; left: 4px;
+    background: rgba(0,0,0,0.65); color: #fff;
+    font-size: 10px; padding: 2px 6px; border-radius: 6px;
+}
+.nd-thumbpick-tags {
+    display: block;
+    font-size: 10px; line-height: 1.3;
+    color: var(--text-muted);
+    padding: 4px 6px;
+    max-height: 34px; overflow: hidden;
+    word-break: break-all;
+}
+
 .wb-book-list { display: flex; flex-direction: column; gap: 6px; }
 .wb-book-item {
     display: flex; align-items: center; gap: 10px;
@@ -853,6 +1002,22 @@ body:has(#view-gallery.active #nd_batch.btn-primary) .gallery-notice { top: calc
                         <label class="form-label">负向固定</label>
                         <textarea id="nd_negative" class="input" rows="3" placeholder="lowres, bad anatomy..."></textarea>
                         <p class="form-hint">鬼图、畸形、风格污染相关的排除词也建议固定在这里。</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">预设缩略图</label>
+                        <div id="nd_thumbnail_box" class="nd-thumb-box" role="button" tabindex="0" title="点击上传或更换缩略图">
+                            <img id="nd_thumbnail_preview" alt="">
+                            <span class="nd-thumb-placeholder" id="nd_thumbnail_placeholder">
+                                <i class="fa-regular fa-image"></i>
+                                <span>上传缩略图</span>
+                            </span>
+                            <span class="nd-thumb-mask"><i class="fa-solid fa-arrows-rotate"></i> 点击更换</span>
+                            <button type="button" id="nd_thumbnail_clear" class="nd-thumb-clear" title="移除缩略图"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <input type="file" id="nd_thumbnail_file" accept="image/*" hidden>
+                        <input type="hidden" id="nd_thumbnail">
+                        <button type="button" id="nd_thumbnail_pick" class="btn btn-sm">从画廊选图</button>
+                        <p class="form-hint">点击方框选择本地图片，或「从画廊选图」挑一张用本预设生成过的图；悬浮窗 / 楼层按钮的画师串卡片会显示这张缩略图。</p>
                     </div>
                 </div>
 

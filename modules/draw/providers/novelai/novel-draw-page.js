@@ -3697,6 +3697,133 @@ function handleParamsPresetAction(action, id, preset) {
     }
 }
 
+function updateThumbnailPreview(src) {
+    const box = $('nd_thumbnail_box');
+    const img = $('nd_thumbnail_preview');
+    if (!box || !img) return;
+    const url = String(src || '').trim();
+    if (url) {
+        img.src = url;
+        box.classList.add('has-image');
+    } else {
+        img.removeAttribute('src');
+        box.classList.remove('has-image');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 从画廊选缩略图：默认只列用当前预设生成过的成功图，可切换显示全部
+// ═══════════════════════════════════════════════════════════════════════════
+let thumbPickSeq = 0;
+const thumbPickState = { presetId: '', all: false, requestId: 0 };
+
+function makeThumbPickHint(text) {
+    const hint = document.createElement('div');
+    hint.className = 'nd-thumbpick-hint';
+    hint.textContent = text;
+    return hint;
+}
+
+function ensureThumbPickOverlay() {
+    let overlay = $('nd_thumb_pick_overlay');
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'nd_thumb_pick_overlay';
+    overlay.className = 'nd-thumbpick-overlay';
+    overlay.innerHTML = `
+        <div class="nd-thumbpick-dialog">
+            <div class="nd-thumbpick-head">
+                <span class="nd-thumbpick-title">从画廊选择缩略图</span>
+                <button type="button" id="nd_thumb_pick_toggle" class="nd-thumbpick-toggle">显示全部图片</button>
+                <button type="button" id="nd_thumb_pick_close" class="nd-thumbpick-close" title="关闭"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="nd_thumb_pick_grid" class="nd-thumbpick-grid"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('visible'); });
+    $('nd_thumb_pick_close').addEventListener('click', () => overlay.classList.remove('visible'));
+    $('nd_thumb_pick_toggle').addEventListener('click', () => {
+        thumbPickState.all = !thumbPickState.all;
+        requestThumbCandidates(thumbPickState.all);
+    });
+    $('nd_thumb_pick_grid').addEventListener('click', (e) => {
+        const card = e.target.closest('.nd-thumbpick-item');
+        const thumb = card?.dataset?.thumb;
+        if (!thumb) return;
+        $('nd_thumbnail').value = thumb;
+        updateThumbnailPreview(thumb);
+        overlay.classList.remove('visible');
+    });
+    return overlay;
+}
+
+function requestThumbCandidates(all) {
+    const grid = $('nd_thumb_pick_grid');
+    grid.replaceChildren(makeThumbPickHint('加载中…'));
+    const toggle = $('nd_thumb_pick_toggle');
+    if (toggle) toggle.textContent = all ? '只看本预设' : '显示全部图片';
+    thumbPickState.requestId = ++thumbPickSeq;
+    postToParent({
+        type: 'PRESET_THUMB_CANDIDATES',
+        requestId: thumbPickState.requestId,
+        presetId: thumbPickState.presetId,
+        all,
+    });
+}
+
+function openThumbnailPicker() {
+    thumbPickState.presetId = String(state.selectedParamsPresetId || '');
+    thumbPickState.all = false;
+    ensureThumbPickOverlay().classList.add('visible');
+    requestThumbCandidates(false);
+}
+
+function renderThumbCandidates(data) {
+    if (Number(data.requestId) !== thumbPickState.requestId) return;
+    if (String(data.presetId || '') !== thumbPickState.presetId) return;
+    const grid = $('nd_thumb_pick_grid');
+    const images = Array.isArray(data.images) ? data.images : [];
+    if (data.error) {
+        grid.replaceChildren(makeThumbPickHint(data.error));
+        return;
+    }
+    if (!images.length) {
+        grid.replaceChildren(makeThumbPickHint(
+            thumbPickState.all ? '画廊中暂无成功图片' : '本预设还没有生成记录，可切换「显示全部图片」手动挑选',
+        ));
+        return;
+    }
+    const cards = images.map((image) => {
+        const card = document.createElement('div');
+        card.className = 'nd-thumbpick-item' + (image.matched ? '' : ' is-other');
+        card.dataset.thumb = image.thumb;
+        card.title = image.tags || image.title || '';
+        const imgEl = document.createElement('img');
+        imgEl.alt = '';
+        imgEl.src = image.thumb;
+        imgEl.loading = 'lazy';
+        // 内联固定高度：部分移动 WebView 会无视样式表把 grid 内图片压成细线
+        imgEl.style.width = '100%';
+        imgEl.style.height = '140px';
+        imgEl.style.minHeight = '140px';
+        imgEl.style.objectFit = 'cover';
+        imgEl.style.display = 'block';
+        card.appendChild(imgEl);
+        if (!image.matched) {
+            const badge = document.createElement('span');
+            badge.className = 'nd-thumbpick-badge';
+            badge.textContent = '其他预设';
+            card.appendChild(badge);
+        }
+        const label = document.createElement('span');
+        label.className = 'nd-thumbpick-tags';
+        label.textContent = image.title || image.tags || '';
+        card.appendChild(label);
+        return card;
+    });
+    grid.replaceChildren(...cards);
+}
+
 function applyParamsPreset() {
     const p = state.paramsPresets.find(x => x.id === state.selectedParamsPresetId) || state.paramsPresets[0];
     if (!p) return;
@@ -3705,7 +3832,9 @@ function applyParamsPreset() {
     $('nd_negative').value = p.negativePrefix || '';
     $('nd_max_images').value = p.maxImages || 0;
     $('nd_max_chars').value = p.maxCharactersPerImage || 0;
-    
+    $('nd_thumbnail').value = p.thumbnail || '';
+    updateThumbnailPreview(p.thumbnail || '');
+
     const pm = p.params || {};
     const dp = DEFAULTS.params;
     
@@ -4231,6 +4360,7 @@ function collectParamsPreset() {
     p.positivePrefix = $('nd_positive').value;
     p.negativePrefix = $('nd_negative').value;
     p.maxImages = Math.max(0, Number($('nd_max_images').value) || 0);
+    p.thumbnail = String($('nd_thumbnail')?.value || '').trim();
     const model = $('nd_model_sel').value === 'custom' ? $('nd_model').value : $('nd_model_sel').value;
     const characterLimit = getModelCapability(model).maxCharactersPerImage || 10;
     p.maxCharactersPerImage = Math.min(characterLimit, Math.max(0, Number($('nd_max_chars').value) || 0));
@@ -4317,6 +4447,10 @@ window.addEventListener('message', event => {
             }
             break;
         }
+
+        case 'PRESET_THUMB_CANDIDATES_DATA':
+            renderThumbCandidates(data);
+            break;
 
         case 'BATCH_DELETED': {
             if (data.requestId !== batchDeleteRequestId) break;
@@ -4843,6 +4977,37 @@ function initializePage() {
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 轉換中…';
         postToParent({ type: 'CONVERT_LEGACY_JPEG' });
+    });
+
+    // 预设缩略图：头像式方框，点击上传/更换，× 移除；本地图片转 dataURL
+    const thumbBox = $('nd_thumbnail_box');
+    const thumbFile = $('nd_thumbnail_file');
+    thumbBox?.addEventListener('click', () => thumbFile?.click());
+    thumbBox?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            thumbFile?.click();
+        }
+    });
+    $('nd_thumbnail_clear')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        $('nd_thumbnail').value = '';
+        updateThumbnailPreview('');
+    });
+    $('nd_thumbnail_pick')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openThumbnailPicker();
+    });
+    thumbFile?.addEventListener('change', e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            $('nd_thumbnail').value = String(reader.result || '');
+            updateThumbnailPreview(reader.result);
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
     });
 
     $('nd_clear_all').addEventListener('click', () => {
