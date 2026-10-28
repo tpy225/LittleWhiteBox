@@ -4063,6 +4063,31 @@ async function handleFrameMessage(event) {
             postStatus('success', '已清空', 'gallery');
             break;
 
+        case 'CONVERT_LEGACY_JPEG': {
+            const { convertLegacyPreviewsToJpeg } = await import('../../shared/gallery-cache.js');
+            try {
+                const stats = await convertLegacyPreviewsToJpeg({
+                    onProgress: (done, total) => {
+                        if (total > 10 && (done % 10 === 0 || done === total)) {
+                            postStatus('info', `舊圖轉換中… ${done}/${total}`, 'gallery');
+                        }
+                    },
+                });
+                const savedMB = (stats.savedBytes / 1024 / 1024).toFixed(1);
+                postStatus('success',
+                    `已轉換 ${stats.converted} 張，節省 ${savedMB} MB${stats.failed ? `，失敗 ${stats.failed} 張` : ''}`,
+                    'gallery');
+                observeBackgroundTask(sendInitData(), { source: import.meta.url, operation: 'handleFrameMessage' });
+            } catch (e) {
+                console.error('[NovelDraw] legacy JPEG conversion failed:', e);
+                postStatus('error', `轉換失敗：${e?.message || e}`, 'gallery');
+            } finally {
+                const iframe = document.getElementById('xiaobaix-novel-draw-iframe');
+                if (iframe) postToIframe(iframe, { type: 'CONVERT_LEGACY_DONE' }, 'LittleWhiteBox-NovelDraw');
+            }
+            break;
+        }
+
         case 'GET_PROMPT_CHAIN': {
             const currentPrompts = getActivePromptPreset() || {};
             const model = String(data.model || getActiveParamsPreset()?.params?.model || '');

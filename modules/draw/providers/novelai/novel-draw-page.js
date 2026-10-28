@@ -4309,6 +4309,15 @@ window.addEventListener('message', event => {
             renderGalleryView();
             break;
 
+        case 'CONVERT_LEGACY_DONE': {
+            const btn = $('nd_convert_legacy_jpeg');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-images"></i> 舊圖轉JPEG';
+            }
+            break;
+        }
+
         case 'BATCH_DELETED': {
             if (data.requestId !== batchDeleteRequestId) break;
             batchDeleteRequestId = null;
@@ -4827,9 +4836,17 @@ function initializePage() {
     $('nd_batch_done').addEventListener('click', toggleBatchMode);
 
     $('nd_clear_expired').addEventListener('click', () => postToParent({ type: 'CLEAR_EXPIRED_CACHE' }));
-    
-    $('nd_clear_all').addEventListener('click', () => { 
-        if (confirm('确定清空全部图片记录？已保存到服务器的文件不会被删除。')) postToParent({ type: 'CLEAR_ALL_CACHE' }); 
+
+    $('nd_convert_legacy_jpeg').addEventListener('click', () => {
+        const btn = $('nd_convert_legacy_jpeg');
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 轉換中…';
+        postToParent({ type: 'CONVERT_LEGACY_JPEG' });
+    });
+
+    $('nd_clear_all').addEventListener('click', () => {
+        if (confirm('确定清空全部图片记录？已保存到服务器的文件不会被删除。')) postToParent({ type: 'CLEAR_ALL_CACHE' });
     });
     
     
