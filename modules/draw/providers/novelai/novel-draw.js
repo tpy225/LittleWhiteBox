@@ -36,6 +36,7 @@ import {
     preloadPreviewDisplayUrl,
     warmSlotPreviewNeighbors,
     getThumbnailCandidates,
+    getContinuityImageRecords,
 } from "../../shared/gallery-cache.js";
 import { ScenePlannerError, generateAndParseScenePlan, prepareScenePlannerInput } from "../../shared/scene-planner.js";
 import { classifyScenePlannerErrorForUi } from "../../shared/scene-planner-error-ui.js";
@@ -50,7 +51,6 @@ import {
 import { getLastDrawAgentDiagnostic } from "../../shared/draw-agent.js";
 import { attachDrawAgentSettingsSurface } from "../../shared/agent-settings-surface.js";
 import { createSerialImageRequestQueue } from "../../shared/serial-image-request-queue.js";
-import { isCharacterEnabled } from "../../shared/character-selection.js";
 import { characterLibraryFromSettings } from "../../shared/character-library.js";
 import {
     buildAutoLearnCreateOp,
@@ -68,10 +68,7 @@ import {
     startGroupPresetWatcher,
 } from "../../shared/character-group-presets-runtime.js";
 import { joinTags } from "../../shared/character-prompts.js";
-import {
-    buildContinuityBlockForRequest,
-    recordPlanContinuity,
-} from "../../shared/character-continuity.js";
+import { buildContinuityBlockForRequest } from "../../shared/character-continuity.js";
 import { resolveAutoLearnCharacter } from "./novel-character-learning.js";
 import {
     NovelImageResponseError,
@@ -789,10 +786,9 @@ function normalizeV5UcPresetId(value, legacyPreset) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Vibe 氛围转移
-// encodings 按模型 key 缓存 /ai/encode-vibe 的结果；图片与缩略图为 dataURL。
+// encodings 按「模型@信息提取值」组合键缓存 /ai/encode-vibe 的结果；图片与缩略图为 dataURL。
 // 仅 v4 / v4.5 系列支持（v3 是另一套原图直传机制）。
 // ═══════════════════════════════════════════════════════════════════════════
-const VIBE_MODEL_KEYS = ['v4curated', 'v4full', 'v4-5curated', 'v4-5full'];
 
 export function getVibeModelKey(model) {
     const name = String(model || '');
@@ -809,25 +805,45 @@ function clampVibeInfoExtracted(value) {
     return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
 }
 
+// 编码缓存键 = 模型@信息提取值（量化两位小数）：同一张图可在多个信息提取值下各存一份编码，
+// 改值只是指向另一个键，改回原值直接命中旧编码，无需重花点数。裸键（无 @）为旧数据。
+const VIBE_ENCODING_KEY_RE = /^(v4curated|v4full|v4-5curated|v4-5full)(@[01](?:\.\d{1,2})?)?$/;
+
+function vibeEncodingKey(modelKey, infoExtracted) {
+    return `${modelKey}@${clampVibeInfoExtracted(infoExtracted).toFixed(2)}`;
+}
+
+function parseVibeEncodingKey(key) {
+    if (!VIBE_ENCODING_KEY_RE.test(String(key || ''))) return null;
+    const at = String(key).indexOf('@');
+    return {
+        modelKey: at < 0 ? String(key) : String(key).slice(0, at),
+        info: at < 0 ? null : clampVibeInfoExtracted(Number(String(key).slice(at + 1))),
+    };
+}
+
 // ── Vibe 库条目：编码是花点数的昂贵资源，统一存全局库，供多个画师串预设引用 ──
 function normalizeVibeLibItem(raw, index) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const infoExtracted = clampVibeInfoExtracted(source.infoExtracted);
     const rawEncodings = source.encodings && typeof source.encodings === 'object' && !Array.isArray(source.encodings)
         ? source.encodings
         : {};
     const encodings = {};
     Object.entries(rawEncodings).forEach(([key, value]) => {
-        if (VIBE_MODEL_KEYS.includes(key) && typeof value === 'string' && value) {
-            encodings[key] = value;
-        }
+        if (typeof value !== 'string' || !value) return;
+        const parsed = parseVibeEncodingKey(key);
+        if (!parsed) return;
+        // 旧数据裸键必然对应当前信息提取值（旧逻辑改值即清空编码），迁移为组合键
+        encodings[vibeEncodingKey(parsed.modelKey, parsed.info == null ? infoExtracted : parsed.info)] = value;
     });
     return {
         id: String(source.id || `vibe-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`),
         name: String(source.name || '').slice(0, 60),
         image: String(source.image || ''),
         thumbnail: String(source.thumbnail || source.image || ''),
-        // information_extracted（0~1）烘焙进编码，改了必须重新编码
-        infoExtracted: clampVibeInfoExtracted(source.infoExtracted),
+        // information_extracted（0~1）烘焙进编码，未编码过的数值需手动重新编码（已有该数值的编码则直接复用）
+        infoExtracted,
         encodings,
     };
 }
@@ -978,14 +994,16 @@ async function ensurePresetVibeReady(settings, preset, { signal } = {}) {
         if (signal?.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
         const item = byId.get(sel.id);
         if (!item) continue;
-        if (!item.encodings[modelKey]) {
-            // 未编码（含改了信息提取导致旧编码失效）：跳过，不扣编码费
+        // 按当前模型+当前信息提取值的组合键取编码；裸键兜底未经迁移的旧数据
+        const encoding = item.encodings[vibeEncodingKey(modelKey, item.infoExtracted)] || item.encodings[modelKey];
+        if (!encoding) {
+            // 该数值下未编码：跳过，不扣编码费
             unencoded.push(item.name || '未命名');
             continue;
         }
         const strength = Number(sel.strength);
         result.push({
-            encoding: item.encodings[modelKey],
+            encoding,
             strength: Number.isFinite(strength) && strength >= 0 && strength <= 1 ? strength : 0.6,
             name: String(item.name || '').trim(),
         });
@@ -2956,31 +2974,17 @@ export async function applyNovelDrawRunAutoLearn(record = {}) {
     const autoLearnTasks = items
         .map(item => ({ chars: charsFrom(item, 'autoLearnCharacters') }))
         .filter(task => task.chars.length > 0);
-    const continuityTasks = items
-        .map(item => ({ chars: charsFrom(item, 'continuityCharacters') }))
-        .filter(task => task.chars.length > 0);
-    if (!autoLearnMeta && continuityTasks.length === 0) return;
+    if (!autoLearnMeta || autoLearnTasks.length === 0) return;
     try {
         await loadSettings();
         await loadSharedDrawSettings();
-        const runtimeSettings = getRuntimeSettings();
-        if (autoLearnMeta && autoLearnTasks.length > 0) {
-            await maybeAutoLearnFromTasks(autoLearnTasks, {
-                ...runtimeSettings,
-                autoLearnCharacters: true,
-                autoLearnMode: autoLearnMeta.autoLearnMode,
-            });
-        }
-        // 上镜锚点回写：后台 node 侧读不到 chatMetadata，只能在接管回到浏览器后补写。
-        if (runtimeSettings.continuityEnabled !== false && continuityTasks.length > 0) {
-            const knownNames = (runtimeSettings.characterTags || [])
-                .filter(character => isCharacterEnabled(character))
-                .map(character => character.name)
-                .filter(Boolean);
-            await recordPlanContinuity(continuityTasks, { knownNames });
-        }
+        await maybeAutoLearnFromTasks(autoLearnTasks, {
+            ...getRuntimeSettings(),
+            autoLearnCharacters: true,
+            autoLearnMode: autoLearnMeta.autoLearnMode,
+        });
     } catch (error) {
-        // 自动学习/锚点回写都是已有的 best-effort 辅助行为，不能阻断已付费图片的接管。
+        // 自动学习是已有的 best-effort 辅助行为，不能阻断已付费图片的接管。
         console.warn('[NovelDraw] 后台规划角色自动学习失败:', error);
     }
 }
@@ -3067,12 +3071,8 @@ async function generateImagesFromText(options = {}) {
         if (!sceneSource.content) throw new NovelDrawError('正文内容为空（可能被过滤规则清空）', ErrorType.PARSE);
 
         const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(settings));
-        const continuityText = settings.continuityEnabled === false
-            ? ''
-            : await buildContinuityBlockForRequest({
-                presentCharacters,
-                bodyText: sceneSource.content,
-            });
+        // 文本配图（书库/小白X 等入口）没有聊天归属，不读写酒馆聊天的上镜锚点，避免多来源记忆互相污染
+        const continuityText = '';
         job.phase = 'llm';
         options.onStateChange?.('llm', toScenePlannerProgress());
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
@@ -3097,11 +3097,6 @@ async function generateImagesFromText(options = {}) {
 
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
         await maybeAutoLearnFromTasks(tasks, settings);
-        if (settings.continuityEnabled !== false) {
-            await recordPlanContinuity(tasks, {
-                knownNames: presentCharacters.map(character => character.name),
-            });
-        }
 
         const images = new Array(tasks.length);
         let successCount = 0;
@@ -3248,10 +3243,18 @@ async function runPreparedNovelSlots(input) {
             vibeReferences,
             resolveForBackend: resolveNovelImageTransport(settings) !== 'frontend',
         });
-        const { compiledBatch, requests, metadata } = prepareImageInput('novelai', tasks, recipe);
+        const prepared = prepareImageInput('novelai', tasks, recipe);
+        const compiledBatch = prepared.compiledBatch;
+        const requests = prepared.requests;
+        // 原始角色快照随每张图入库：锚点只在图片成功后回写（含手动槽位逐张生成），
+        // 失败/被丢弃的计划不进锚点
+        const metadata = prepared.metadata.map((data, index) => ({
+            ...data,
+            continuityChars: Array.isArray(tasks[index]?.chars) ? tasks[index].chars : [],
+        }));
         job.phase = 'gen';
         const monitorGeneration = backendJobMonitors.captureGeneration();
-        return await submitPreparedChatImages({
+        const output = await submitPreparedChatImages({
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
             presetId: preset.id, presetName: preset.name, vibeNames, manual: input.manual === true,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
@@ -3262,6 +3265,7 @@ async function runPreparedNovelSlots(input) {
                 backendCancelSignal: job.backendCancel.signal, monitorGeneration, queueBatch: job,
             }),
         });
+        return output;
     } finally {
         if (!input.job) releaseGenerationJob(job);
     }
@@ -3298,10 +3302,16 @@ async function generateAndInsertImages({
 
         const presentCharacters = detectPresentCharacters(sceneSource.content, characterLibraryFromSettings(settings));
 
-        // 上镜锚点：读取本聊天中这些角色上一次实际入画的外貌/着装 tag，跨楼层延续。
+        // 上镜锚点：从图片记录重建——只取本聊天、目标楼层之前、当前分支上成功生成的图，
+        // 删楼/切分支/删图后锚点自然失效，不再单独维护历史账本。
         const continuityText = settings.continuityEnabled === false
             ? ''
-            : await buildContinuityBlockForRequest({
+            : buildContinuityBlockForRequest({
+                records: await getContinuityImageRecords({
+                    chatId: getContext().chatId,
+                    beforeMessageId: messageId,
+                    swipeIndex: message.swipe_id ?? 0,
+                }),
                 presentCharacters,
                 bodyText: sceneSource.content,
             });
@@ -3376,11 +3386,8 @@ async function generateAndInsertImages({
         if (signal.aborted) throw new NovelDrawError('已取消', ErrorType.ABORTED);
 
         await maybeAutoLearnFromTasks(tasks, settings);
-        if (settings.continuityEnabled !== false) {
-            await recordPlanContinuity(tasks, {
-                knownNames: presentCharacters.map(character => character.name),
-            });
-        }
+        // 上镜锚点不在规划后立即写入：失败/被丢弃的计划不能成为后续参考，
+        // 改由 runPreparedNovelSlots 在图片实际生成成功后按成功子集回写
         assertSceneSourceUnchanged(normalizeMessageSceneSourceText(message.mes), sceneSource.sourceHash);
         if (manualSlots) {
             // 只把规划好的槽位和 TAG 落入正文与图库，不提交 NAI；每张由用户点击生成
@@ -5389,6 +5396,8 @@ export async function cleanupNovelDraw() {
     document.getElementById('xiaobaix-novel-draw-overlay')?.remove();
     delete window.xiaobaixNovelDraw;
     delete window._xbNovelEventsBound;
+    // 触控样式只属于 NovelAI 生图；不清掉会连带隐藏其他供应商的图片操作按钮
+    document.body.classList.remove('xb-nd-tap-controls');
 
     // 动态导入并清理
     try {
