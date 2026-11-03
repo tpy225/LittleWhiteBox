@@ -12,6 +12,8 @@ const DEFAULT_PROFILE = Object.freeze({
     centerMode: 'none',
     interactSyntax: 'plain',
     ucScope: 'global',
+    // 后端是否接收用户自定义的整图负向提示词；false 时编译层会丢弃该内容。
+    customUcSupported: true,
 });
 
 export function normalizeScenePlannerProfile(profile) {
@@ -24,5 +26,6 @@ export function normalizeScenePlannerProfile(profile) {
             ? source.interactSyntax
             : DEFAULT_PROFILE.interactSyntax,
         ucScope: UC_SCOPES.has(source.ucScope) ? source.ucScope : DEFAULT_PROFILE.ucScope,
+        customUcSupported: source.customUcSupported !== false,
     });
 }
