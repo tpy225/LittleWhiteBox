@@ -6,6 +6,7 @@ import {
 } from '../../shared/scene-planner-templates.js';
 import {
     getNovelModelCapability,
+    NOVEL_MODEL_IDS,
     NOVEL_PROMPT_GUIDES,
 } from './novel-model-capabilities.js';
 
@@ -46,12 +47,17 @@ export function getNovelPromptGuideId(model) {
 /** Frontend-only planner instructions, derived from the model's execution capabilities. */
 export function getNovelPlannerProfile(model) {
     const capability = getNovelModelCapability(model);
+    const isV5 = capability.promptGuide === NOVEL_PROMPT_GUIDES.V5;
+    const isMediumEffort = model === NOVEL_MODEL_IDS.V5_FULL_MEDIUM;
     return {
-        imageModelName: capability.promptGuide === NOVEL_PROMPT_GUIDES.V5
-            ? 'NovelAI Diffusion V5' : 'NovelAI Diffusion V4.5',
+        imageModelName: isV5
+            ? (isMediumEffort ? 'NovelAI Diffusion V5 Full Medium' : 'NovelAI Diffusion V5')
+            : 'NovelAI Diffusion V4.5',
         centerMode: capability.centerMode,
         interactSyntax: 'directional',
         ucScope: 'character',
+        // Medium Effort 不支持自定义 Undesired Content，编译层会丢弃整图负向。
+        customUcSupported: !isMediumEffort,
     };
 }
 

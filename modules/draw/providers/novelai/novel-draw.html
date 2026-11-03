@@ -5061,6 +5061,11 @@ function updateModelOptions() {
     lockControl($('nd_sampler_sel'), isMedium, isMedium ? 'k_euler_ancestral' : undefined);
     lockControl($('nd_cfg_rescale'), isMedium, isMedium ? 0 : undefined);
     lockControl($('nd_v5_uc'), isMedium, isMedium ? 'heavy' : undefined);
+    // Medium 不发送自定义整图负向，仅保留官方 heavy 预设；角色级 uc 不受影响。
+    const negEl = $('nd_negative');
+    if (negEl) {
+        negEl.title = isMedium ? 'Medium Effort 不支持自定义整图负向：此框内容不会发送，仅官方 Heavy 负面预设生效；角色级 uc 不受影响' : '';
+    }
 
     const characterLimit = capability.maxCharactersPerImage || 10;
     $('nd_max_chars').max = String(characterLimit);

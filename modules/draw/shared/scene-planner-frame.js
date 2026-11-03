@@ -31,7 +31,7 @@ function joinBlocks(blocks) {
 }
 
 export function buildScenePlannerFrameText(profile) {
-    const { imageModelName } = normalizeScenePlannerProfile(profile);
+    const { imageModelName, customUcSupported } = normalizeScenePlannerProfile(profile);
     return `## 你收到的材料
 - <worldInfo>：世界书。其中的 tag 组合、同人角色资料、姿势库是写 tag 时的参考来源；未知角色的外貌优先参考其中的数据。
 - <content>：本次唯一的叙事来源。开头是【已录入角色】列表，这些角色的身份与外貌由角色库注入，你只写他们在本图中的状态；列表之后可能紧跟【上镜锚点】（系统维护的跨楼层画面记忆，仅在历史中出现过该角色时存在）；正文里每个可插图的位置已标为【插图点 N】。
@@ -46,7 +46,11 @@ export function buildScenePlannerFrameText(profile) {
 - 锚点未覆盖的角色照常自由描述；正文事实与锚点冲突时，一律以正文为准。
 
 ## 你的输出去哪
-The app shows each image's title as the caption on the generated picture, and uses its scene and character fields, together with the character library and the user's generation settings, to build a request for ${imageModelName}. Field meanings and model-specific controls are described in submit_scene_plan.`;
+The app shows each image's title as the caption on the generated picture, and uses its scene and character fields, together with the character library and the user's generation settings, to build a request for ${imageModelName}. Field meanings and model-specific controls are described in submit_scene_plan.${customUcSupported ? '' : `
+
+## 负向限制
+${imageModelName} 不接收用户自定义的整图负向提示词：用户预设的负向内容不会随请求发送，只有官方内置负面预设生效。需要从画面排除的内容这样表达：整图层面的排除在 Scene 的 tag 里用负权重 \`-1::tag::\` 写出；角色专属的排除写进该角色的 uc。`}
+`;
 }
 
 export function buildScenePlannerSystemPrompt({ opening = '', guide = '', sceneRules = '', profile } = {}) {
