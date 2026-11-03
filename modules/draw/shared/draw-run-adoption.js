@@ -54,6 +54,7 @@ function normalizeMetadata(source) {
         positive: text(source?.positive),
         characterPrompts: source?.characterPrompts ?? null,
         negativePrompt: source?.negativePrompt ?? null,
+        continuityChars: Array.isArray(source?.continuityChars) ? source.continuityChars : null,
         providerMetadata,
     };
 }

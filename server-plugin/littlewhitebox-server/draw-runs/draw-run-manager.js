@@ -102,6 +102,8 @@ function buildDisplayMetadata(artifact = {}) {
         characterPrompts: cloneJson(promptData.characterPrompts || []),
         postPrompt: String(artifact.task?.post_prompt || ''),
         negativePrompt: String(promptData.negative || promptData.negativePrompt || ''),
+        // 规划时的原始角色快照，供浏览器侧成功入库后参与画面记忆（上镜锚点）
+        continuityChars: cloneJson(Array.isArray(artifact.task?.chars) ? artifact.task.chars : []),
     };
     if (artifact.providerMetadata && typeof artifact.providerMetadata === 'object') {
         metadata.providerMetadata = cloneJson(artifact.providerMetadata);

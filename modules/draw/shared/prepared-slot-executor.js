@@ -52,11 +52,11 @@ export async function executePreparedSlots({ items, backend, store, remove, sele
             select: () => select(item.slotId, item.imgId),
         });
         if (!delivered) {
-            results.set(index, { slotId: item.slotId, imgId: item.imgId, success: false, discarded: true });
+            results.set(index, { index, slotId: item.slotId, imgId: item.imgId, success: false, discarded: true });
             activity(item.slotId, null);
             return;
         }
-        results.set(index, { slotId: item.slotId, imgId: item.imgId, tags: item.tags,
+        results.set(index, { index, slotId: item.slotId, imgId: item.imgId, tags: item.tags,
             success: patch.status === PreviewStatus.SUCCESS, status: patch.status });
         activity(item.slotId, null);
         await refresh();
@@ -102,12 +102,14 @@ export async function executePreparedSlots({ items, backend, store, remove, sele
                 plan: {
                     delivery: { ...items[0].delivery, preserveSlotsOnCancel: true },
                     gallery: { chatId: items[0].chatId, messageId: String(items[0].messageId),
+                        swipeIndex: items[0].swipeIndex ?? items[0].delivery?.swipeIndex ?? null,
                         characterName: items[0].characterName },
                     items: items.map((item, index) => ({ index, slotId: item.slotId, imgId: item.imgId, discarded: item.discarded,
                         previewMetadata: { tags: item.tags, positive: item.positive,
                             characterPrompts: item.characterPrompts, negativePrompt: item.negativePrompt,
                             presetId: item.presetId || '', presetName: item.presetName || '',
-                            vibeNames: item.vibeNames || '' } })),
+                            vibeNames: item.vibeNames || '',
+                            continuityChars: Array.isArray(item.continuityChars) ? item.continuityChars : null } })),
                 },
                 commitPlacements: async () => {
                     // Deletion may precede journal creation while this batch waits

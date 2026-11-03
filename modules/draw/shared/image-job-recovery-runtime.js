@@ -122,6 +122,7 @@ function previewOptions(record, item, target) {
         ...record.gallery,
         chatId: record.gallery?.chatId || record.delivery?.chatId || '',
         messageId: target?.messageId ?? record.gallery?.messageId ?? record.delivery?.messageId ?? '',
+        swipeIndex: record.gallery?.swipeIndex ?? record.delivery?.swipeIndex ?? null,
         slotId: item.slotId,
         imgId: item.imgId,
         tags: item.previewMetadata?.tags || '',
@@ -132,6 +133,8 @@ function previewOptions(record, item, target) {
         presetId: item.previewMetadata?.presetId || '',
         presetName: item.previewMetadata?.presetName || '',
         vibeNames: item.previewMetadata?.vibeNames || '',
+        continuityChars: Array.isArray(item.previewMetadata?.continuityChars)
+            ? item.previewMetadata.continuityChars : null,
     };
 }
 

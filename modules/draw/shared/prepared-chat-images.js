@@ -78,6 +78,8 @@ export async function submitPreparedChatImages({ ctx, message, messageId, source
     const items = metadata.map((data, index) => ({ ...data, ...ids[index], messageId,
         presetId: String(presetId || ''), presetName: String(presetName || ''),
         vibeNames: String(vibeNames || ''),
+        // 顶层分支号随图入库，供画面记忆按「当前有效分支」过滤
+        swipeIndex: Number.isFinite(Number(swipeIndex)) ? Number(swipeIndex) : null,
         chatId, characterName: message.name || '',
         delivery: { mode: 'slots', chatId, messageId: String(messageId), swipeIndex,
             ...(nativeMessage ? { retainWithoutSlot: true } : {}) },
