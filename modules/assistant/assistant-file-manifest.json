@@ -3142,7 +3142,7 @@
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/modules/draw/shared/prompts/scene-rules.md",
       "relativePath": "modules/draw/shared/prompts/scene-rules.md",
       "extension": ".md",
-      "sizeBytes": 6351
+      "sizeBytes": 6609
     },
     {
       "source": "littlewhitebox",
@@ -17849,7 +17849,7 @@
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/plugin-entry.js",
       "relativePath": "plugin-entry.js",
       "extension": ".js",
-      "sizeBytes": 56889
+      "sizeBytes": 58414
     },
     {
       "source": "littlewhitebox",
@@ -17885,6 +17885,13 @@
       "relativePath": "scripts/build-novelai-vendor.mjs",
       "extension": ".mjs",
       "sizeBytes": 3287
+    },
+    {
+      "source": "littlewhitebox",
+      "publicPath": "scripts/extensions/third-party/LittleWhiteBox/scripts/build-pr-skip-checks.mjs",
+      "relativePath": "scripts/build-pr-skip-checks.mjs",
+      "extension": ".mjs",
+      "sizeBytes": 2553
     },
     {
       "source": "littlewhitebox",
@@ -18549,7 +18556,7 @@
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/vite.plugin.config.mjs",
       "relativePath": "vite.plugin.config.mjs",
       "extension": ".mjs",
-      "sizeBytes": 5395
+      "sizeBytes": 7305
     },
     {
       "source": "littlewhitebox",
