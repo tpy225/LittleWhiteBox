@@ -1826,14 +1826,14 @@
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/modules/draw/providers/novelai/novel-draw-page.js",
       "relativePath": "modules/draw/providers/novelai/novel-draw-page.js",
       "extension": ".js",
-      "sizeBytes": 264365
+      "sizeBytes": 266587
     },
     {
       "source": "littlewhitebox",
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/modules/draw/providers/novelai/novel-draw.html",
       "relativePath": "modules/draw/providers/novelai/novel-draw.html",
       "extension": ".html",
-      "sizeBytes": 113296
+      "sizeBytes": 116121
     },
     {
       "source": "littlewhitebox",
@@ -2764,7 +2764,7 @@
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/modules/draw/shared/gallery-metadata.js",
       "relativePath": "modules/draw/shared/gallery-metadata.js",
       "extension": ".js",
-      "sizeBytes": 902
+      "sizeBytes": 1826
     },
     {
       "source": "littlewhitebox",
@@ -17891,7 +17891,7 @@
       "publicPath": "scripts/extensions/third-party/LittleWhiteBox/scripts/build-pr-skip-checks.mjs",
       "relativePath": "scripts/build-pr-skip-checks.mjs",
       "extension": ".mjs",
-      "sizeBytes": 2590
+      "sizeBytes": 2553
     },
     {
       "source": "littlewhitebox",
