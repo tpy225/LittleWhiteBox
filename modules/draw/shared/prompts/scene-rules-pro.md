@@ -1,6 +1,6 @@
 # 进阶-构图强化｜像画师一样构思画面
 
-把一段文字变成一张画，中间隔着的是画师的构思。这份指南按画师动笔前的自然思路展开：先挑出值得画的瞬间，再想清楚画布上有什么，然后一张张脸一双手地画下去，最后决定光从哪里来。
+把一段文字变成一张画，中间隔着的是画师的构思。这份指南按画师动笔前的自然思路展开：先挑出值得画的瞬间，再想清楚画布上有什么，然后一张张脸一双手地画下去，最后决定光从哪里来。每张图都要画成一张值得收藏的剧照。
 
 ## 输入分级（先读）
 - sfw / nsfw 微裸（nsfw 降权约 0.5，权重写法见模型指南）/ nsfw（含性器官或性行为）
@@ -12,10 +12,13 @@
 文字是流动的，画是凝固的。动笔前先在剧情里找到那一秒——
 
 - 值得画的一秒通常长这样：情绪顶点、动作峰值、关系对峙、状态刚被改变的那一下
+- 一段正文里值得画的瞬间往往不止一个，按剧情分量挑：推动剧情的互动、改变局面或关系的那一下永远优先；顺手的小动作（接杯子、擦汗、整理衣角）画得再美也顶替不了它们，画面名额不落在次要瞬间上
+- 正文里的【插图点 N】只是落笔位置的编号，不代表重要性——选画面发生处之后最近的编号即可，绝不按编号顺序挨个画
 - 你的画笔落在同一秒里：手在做什么、身体是什么姿势、脸是什么表情，这些**同时成立**，全部照写。拥吻时手抚着后脑，就是一幅完整的画
 - 不该出现的只有时间先后：如果一件事必须等另一件做完才能发生（先脱衣再上床、先推开再拥抱），那就是另一张画的事
 - 想清楚这一秒里**最想让观众看到什么**——一个人、一个动作、一种情绪、一处身体、还是一片场景。答案只有一个，把它放在描述最前面
 - 没有表情、动作或环境变化的纯对话，留给文字去表达
+- 数量是名额，不是配额：本楼的高光不足以填满张数时，就围绕同一个重要瞬间把画铺开——动笔前的一瞬、峰值本身、落定后的余韵，或者换一个景别重画它；绝不为了凑数翻到无关段落，把过场小动作捧成主角
 
 ---
 
@@ -75,29 +78,28 @@
 ### 脸是角色的灵魂
 - 画布上每张看得见的脸都在传递两件事：**他此刻的心情**（表情词）和**他正在看谁**（视线词）。两者缺一，这张脸就呆滞了
 - 只有画不到脸的时候（背影、远景、遮挡、闭眼）才允许脸不上色
-- 心情从词表取：laughing, grin, smile, light smile, smug, seductive smile, blush, embarrassed, shy, surprised, worried, scared, sad, crying, tears, frown, pout, puffy cheeks, angry, serious, clenched teeth, half-closed eyes, open mouth, expressionless
+- 心情从词表取：laughing, grin, smile, light smile, smug, seductive smile, blush, embarrassed, shy, surprised, worried, scared, sad, crying, tears, frown, pout, puffy cheeks, angry, serious, pleasure, half-closed eyes, open mouth
 - 视线从词表取：looking at viewer, looking at another, looking away, looking to the side, looking up, looking down, looking back, closed eyes
 - 看不准他在看哪，让他看向同伴（looking at another）
 - 词表之外的自造短语（gentle loving gaze、soft tender expression 这类）画师不用——模型读不懂
 
 #### 唤起的脸（nsfw 与微裸）
 - 这种画面里没有一张脸可以是死的：所有入镜角色（含男性）都要有反应，只画女方陶醉而让男方面瘫是废稿
-- 表情（每人至少 1 个）: ahegao, torogao, naughty face, seductive smile, half-closed eyes, rolling eyes, parted lips, open mouth, drooling, saliva, licking lips, biting own lip
-- 身体反应（每人至少 1 个）: heavy breathing, blush（或 light blush / full-face blush）, sweat, steaming body, trembling
-- 男角的画法（不得留空）: heavy breathing, parted lips, half-closed eyes, closed eyes, blush, sweat, clenched teeth, furrowed brow, trembling
+- 表情（每人至少 1 个）: ahegao, torogao, naughty face, seductive smile, Coy smile, Horny, Moaning, pleasure, overwhelming, expressiveh, half-closed eyes, parted lips, open mouth, drooling, saliva, licking lips
+- 身体反应（每人至少 1 个）: heavy breathing, blush（或 light blush / full-face blush）, sweat, steaming body, trembling, Orgasm
+- 男角的画法（不得留空）: parted lips, half-closed eyes, closed eyes, blush, sweat, furrowed brow
 
 #### 读不出情绪的时候
-- 正文没给线索：sfw 画 smile 或 serious、视线看向同伴；nsfw 画 half-closed eyes + blush + heavy breathing
-- expressionless 只留给昏迷、刻意面瘫、或画不到的脸
+- 正文没给线索：sfw 画 smile 或 serious、视线看向同伴；nsfw 画 half-closed eyes + blush
 
 ### 身体与发型
-- 核心: 发长, 发色, 瞳色, 罩杯
+- 核心: 发型, 发长, 发色, 瞳色, 罩杯
 - 可选修饰: 年龄/职业/彩妆/印记/纹身/晒痕/非人特征
 - 有变体的发型要说到不会画错为止：马尾说清高低和长度，及腰及肩说清长短；bob cut 这类自带长度的不用啰嗦
 - 一个词能画出两种东西时补限定词：dress 是 mini 还是 evening gown，boots 是 ankle 还是 thigh-high
 
 ### 衣服随剧情走
-- 主角: 款式 + 颜色 + 1～3 个最显眼的细节 + 穿着状态
+- 主角: 款式 + 面料 + 纹理/印花 + 颜色 + 1～3 个细节 + 穿着状态
 - 配角: 款式 + 颜色
 - 有服装参考列表时，挑最贴当前场景的一套（或其变体）来画，按破损/敞开/掀起/滑落/湿透/解开等状态改；把几套衣服拼在一个人身上是灾难
 - 剧情换了衣服就画新衣服；同一处变化用 1～2 个准确表达，不重复啰嗦
@@ -137,12 +139,11 @@
 - 一张画只有一个主风格、一个色调倾向、一个构图焦点
 
 ### 动起来的画面（有动感才加，每图至多一种）
-- motion lines —— 局部肢体快速运动，如出拳、拉扯、甩头
+- motion blur —— 局部肢体快速运动的残影，如出拳、拉扯、甩头
 - speed lines —— 整个身体高速位移，如奔跑、坠落、冲刺
-- trembling lines —— 身体因情绪（恐惧、兴奋、强忍）而微颤
-- spoken heart —— 角色说出告白或心动台词的瞬间
 - sound effects —— 正文明确写出拟声词时才用
 - 安静的日常、肃穆沉重的场面，画笔是静的，别加
+- NSFW 高强度动态词（仅按正文强度选用，至多一个）: penetration, hardcore, extreme, hentai
 
 ---
 

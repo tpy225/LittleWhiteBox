@@ -126,7 +126,7 @@ test('a user on a current version keeps their custom preset while built-ins refr
     const custom = { id: 'mine', name: '我的自定义', topSystem: 'system', sceneRules: 'rules' };
     const result = migrateLegacyNovelPromptSettings({
         _promptTemplateVersion: TARGET,
-        _proPresetVersion: 3,
+        _proPresetVersion: 4,
         promptPresets: [builtin, custom],
         selectedPromptPresetId: 'mine',
     }, CURRENT, TARGET);
@@ -165,7 +165,7 @@ test('replaces an untouched released enhanced preset with the current rules', as
     assert.equal(pro.sceneRules, CURRENT.sceneRulesPro);
     assert.equal(pro.builtin, true);
     assert.equal(pro.topSystem, CURRENT.topSystem);
-    assert.equal(result.settings._proPresetVersion, 3);
+    assert.equal(result.settings._proPresetVersion, 4);
     assert.equal(result.settings._builtinPresetVersion, 1);
     assert.equal(result.migrated, true);
 });
@@ -186,7 +186,7 @@ test('force-overwrites an edited enhanced preset instead of appending a built-in
     assert.equal(pro.builtin, true);
     assert.equal(pro.sceneRules, CURRENT.sceneRulesPro);
     assert.equal(pro.topSystem, CURRENT.topSystem);
-    assert.equal(edited.settings._proPresetVersion, 3);
+    assert.equal(edited.settings._proPresetVersion, 4);
     assert.equal(edited.settings._builtinPresetVersion, 1);
     assert.equal(edited.migrated, true);
 });
@@ -206,7 +206,7 @@ test('does not recreate the enhanced preset when it was removed', () => {
     assert.equal(normal.builtin, true);
     assert.equal(normal.topSystem, CURRENT.topSystem);
     assert.equal(normal.sceneRules, CURRENT.sceneRules);
-    assert.equal(removed.settings._proPresetVersion, 3);
+    assert.equal(removed.settings._proPresetVersion, 4);
     assert.equal(removed.settings._builtinPresetVersion, 1);
     assert.equal(removed.migrated, true);
 });

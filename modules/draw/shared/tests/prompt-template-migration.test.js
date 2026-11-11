@@ -179,7 +179,7 @@ for (const [provider, targetVersion] of [
                 // NAI 强制刷新所有内置预设（含以 stock 名命名的用户副本），并补上进阶预设。
                 assert.equal(result.settings._promptTemplateVersion, targetVersion);
                 assert.equal(result.settings._builtinPresetVersion, 1);
-                assert.equal(result.settings._proPresetVersion, 3);
+                assert.equal(result.settings._proPresetVersion, 4);
                 const presets = result.settings.promptPresets;
                 assert.equal(presets.length, 6);
                 assert.deepEqual(presets[0], { ...normal, topSystem: defaults.topSystem });
@@ -232,7 +232,7 @@ for (const [provider, targetVersion] of [
             // NAI 不重建已删除的常规内置预设，但会确保进阶预设存在。
             assert.equal(result.settings._promptTemplateVersion, targetVersion);
             assert.equal(result.settings._builtinPresetVersion, 1);
-            assert.equal(result.settings._proPresetVersion, 3);
+            assert.equal(result.settings._proPresetVersion, 4);
             const presets = result.settings.promptPresets;
             assert.equal(presets.length, 2);
             assert.deepEqual(presets[0], saved.promptPresets[0]);

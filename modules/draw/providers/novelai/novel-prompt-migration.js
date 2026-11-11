@@ -235,7 +235,7 @@ function ensureOptionalProPreset(settings, currentDefaults) {
  */
 function refreshProPresetRules(settings, currentDefaults) {
     const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
-    if (Number(source._proPresetVersion) >= 3) {
+    if (Number(source._proPresetVersion) >= 4) {
         return { settings: source, replaced: false, appended: false };
     }
     if (typeof currentDefaults?.sceneRulesPro !== 'string' || !currentDefaults.sceneRulesPro.trim()) {
@@ -255,7 +255,7 @@ function refreshProPresetRules(settings, currentDefaults) {
         settings: {
             ...source,
             promptPresets: next,
-            _proPresetVersion: 3,
+            _proPresetVersion: 4,
         },
         replaced,
         appended: false,
