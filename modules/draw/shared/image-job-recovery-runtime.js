@@ -30,6 +30,7 @@ import { readPageFarewells } from './page-farewell.js';
 import { getPendingImageJob, listPendingImageJobs, PendingJobState } from './pending-image-jobs.js';
 import { removeSceneSlotPlaceholders } from './scene-placement.js';
 import { deliverPreparedImage } from './prepared-image-delivery.js';
+import { autoSaveDeliveredImage, imageFilePrefix } from './image-autosave.js';
 import {
     classifyError,
     ErrorType,
@@ -117,6 +118,21 @@ function requireAvailableTarget(record, item = null) {
     });
 }
 
+// 接回的图片送达后同样走「自动保存」，但以任务提交时刻为准：开关打开前提交的任务不算新图，不保存。
+// record 无 createdAt 时按送达时刻算；楼层目标在保存完成后再取，聊天已切走则只保存文件。
+function autoSaveRecoveredImage(record, item) {
+    autoSaveDeliveredImage({
+        imgId: item.imgId,
+        slotId: item.slotId,
+        filePrefix: imageFilePrefix(record.provider),
+        generatedAt: record.createdAt ?? Date.now(),
+        chatTarget: () => {
+            const target = record.delivery?.mode === 'slots' ? recordTarget(record, item) : null;
+            return target?.state === ImageJobDeliveryTargetState.ALIVE && target?.isActiveSwipe ? target : null;
+        },
+    }).catch(error => console.warn('[ImageAutoSave] 接回调度失败:', error));
+}
+
 function previewOptions(record, item, target) {
     return {
         ...record.gallery,
@@ -184,6 +200,7 @@ function createDeliveryAdapter() {
             await guard();
             if (record.delivery?.mode === 'gallery') {
                 await storePreview({ ...previewOptions(record, item, null), base64 });
+                autoSaveRecoveredImage(record, item);
                 return;
             }
             const committed = await deliverPreparedImage({
@@ -197,6 +214,7 @@ function createDeliveryAdapter() {
                 clearSelection: () => clearSlotSelection(item.slotId),
             });
             if (committed) {
+                autoSaveRecoveredImage(record, item);
                 await renderRecord(record);
             } else {
                 // The slot was removed while delivery was in flight. Do not

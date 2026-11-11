@@ -38,6 +38,7 @@ import {
     getThumbnailCandidates,
     getContinuityImageRecords,
 } from "../../shared/gallery-cache.js";
+import { autoSaveDeliveredImage, imageFilePrefix } from "../../shared/image-autosave.js";
 import { ScenePlannerError, generateAndParseScenePlan, prepareScenePlannerInput } from "../../shared/scene-planner.js";
 import { classifyScenePlannerErrorForUi } from "../../shared/scene-planner-error-ui.js";
 import {
@@ -3160,6 +3161,9 @@ async function generateImagesFromText(options = {}) {
                     vibeNames: vibeNamesForStore,
                 });
                 await setSlotSelection(item.slotId, imgId);
+                // 开了「自动保存新生成的图片」就在送达后存进酒馆；后台执行，不阻塞出图
+                autoSaveDeliveredImage({ imgId, slotId: item.slotId, filePrefix: imageFilePrefix('novelai') })
+                    .catch(error => console.warn('[ImageAutoSave] 调度失败:', error));
                 successCount++;
                 images[index] = {
                     slotId: item.slotId,
@@ -3595,6 +3599,7 @@ async function _doSendInitData() {
             maxImages: getSharedDrawSettings().maxImages,
             saveAsJpeg: getSharedDrawSettings().saveAsJpeg === true,
             jpegQuality: getSharedDrawSettings().jpegQuality,
+            autoSaveImages: getSharedDrawSettings().autoSaveImages === true,
             selectedParamsPresetId: settings.selectedParamsPresetId,
             paramsPresets: settings.paramsPresets,
             vibeLibrary: settings.vibeLibrary || { singles: [], groups: [] },
@@ -3991,6 +3996,20 @@ async function handleFrameMessage(event) {
             }, '已保存', { notify: false, silent: false });
             postStatus(ok ? 'success' : 'error',
                 ok ? (nextJpeg ? `已启用 JPEG（品質 ${nextQuality}）` : '已关闭 JPEG 转换') : '保存失败',
+                'gallery');
+            if (ok) sendInitData();
+            break;
+        }
+
+        case 'SAVE_AUTO_SAVE_IMAGES': {
+            const nextAutoSave = data.autoSaveImages === true;
+            const ok = await updateSharedDrawSettingsPersistent((settings) => {
+                // 记录开启时刻：开关打开之前生成的图不算「新图」，不会被自动保存；关闭则清零
+                settings.autoSaveImages = nextAutoSave;
+                settings.autoSaveImagesSince = nextAutoSave ? Date.now() : 0;
+            }, '已保存', { notify: false, silent: false });
+            postStatus(ok ? 'success' : 'error',
+                ok ? (nextAutoSave ? '已开启自动保存新图' : '已关闭自动保存新图') : '保存失败',
                 'gallery');
             if (ok) sendInitData();
             break;

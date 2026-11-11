@@ -947,6 +947,12 @@ select.input { cursor: pointer; }
                                     生成後存 JPEG（省空間）
                                 </label>
                             </div>
+                            <div style="display:flex;align-items:center;gap:6px;background:var(--bg-input);padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
+                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);" title="新生成的圖片自動保存到酒館（效果同手動點「保存」），開關開啟後生成的圖才會保存">
+                                    <input id="sd-gallery-auto-save" type="checkbox">
+                                    自動保存新圖到酒館
+                                </label>
+                            </div>
                             <div id="sd-gallery-status" class="status-text" style="flex:1 1 220px;min-width:180px;margin-top:0;"></div>
                             <button id="sd-gallery-batch" class="btn btn-sm"><i class="fa-solid fa-list-check"></i> 批量管理</button>
                             <button id="sd-gallery-clear-expired" class="btn btn-sm"><i class="fa-solid fa-broom"></i> 清理过期</button>

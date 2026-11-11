@@ -1788,6 +1788,12 @@ button.nd-vibe-badge:disabled { cursor: default; }
                                 生成後存 JPEG（省空間）
                             </label>
                         </div>
+                        <div style="display:flex;align-items:center;gap:6px;align-self:stretch;background:var(--bg-input);padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);" title="新生成的圖片自動保存到酒館（效果同手動點「保存」），開關開啟後生成的圖才會保存">
+                                <input id="nd_auto_save_images" type="checkbox">
+                                自動保存新圖到酒館
+                            </label>
+                        </div>
                         <button id="nd_convert_legacy_jpeg" class="btn btn-sm" style="align-self:stretch;height:auto;min-height:0;" title="把缓存里仍是 PNG 的旧图批量转成 JPEG 以节省空间"><i class="fa-solid fa-images"></i> 舊圖轉JPEG</button>
                         </div>
                         <div id="nd_gallery_status" class="status-text" style="width:100%;margin-top:0;"></div>
@@ -3907,6 +3913,7 @@ function applyStateToUI() {
         $('nd_delay').value = `${dMin}-${dMax}`;
         $('nd_cache_days').value = state.cacheDays >= 1 ? state.cacheDays : DEFAULTS.cacheDays;
         if ($('nd_save_as_jpeg')) $('nd_save_as_jpeg').checked = state.saveAsJpeg === true;
+        if ($('nd_auto_save_images')) $('nd_auto_save_images').checked = state.autoSaveImages === true;
         $('nd_image_title_mode').value = ['none', 'overlay', 'collapse'].includes(state.imageTitleMode)
             ? state.imageTitleMode
             : 'overlay';
@@ -5925,6 +5932,14 @@ document.addEventListener('DOMContentLoaded', () => {
             type: 'SAVE_JPEG',
             saveAsJpeg: $('nd_save_as_jpeg').checked,
             jpegQuality: 0.8,
+        });
+    });
+
+    $('nd_auto_save_images').addEventListener('change', () => {
+        if (suppressChangeEvents) return;
+        postToParent({
+            type: 'SAVE_AUTO_SAVE_IMAGES',
+            autoSaveImages: $('nd_auto_save_images').checked,
         });
     });
 

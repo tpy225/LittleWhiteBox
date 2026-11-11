@@ -25,10 +25,12 @@ const stubs = {
         export const createModuleEvents = () => ({ on() {}, cleanup() {} });
     `,
     'draw-run-recovery-runtime.js': 'export const runDrawRunRecoveryPass = async () => {};',
+    'draw-settings.js': 'export const getSharedDrawSettings = () => ({ autoSaveImages: false });',
     'draw-common.js': `
         export const isMessageBeingEdited = () => false;
         export const isAnyMessageBeingEdited = () => false;
         export const renderPreviewsForMessage = async () => {};
+        export const syncDrawSavedFromPreview = async () => false;
         export const ErrorType = { JOB_EXPIRED: { code: 'expired', label: 'expired', desc: 'expired' } };
         export const classifyError = () => ErrorType.JOB_EXPIRED;
     `,
@@ -40,6 +42,9 @@ const stubs = {
         export const deletePreview = async id => host.previews.delete(id);
         export const setSlotSelection = async (slot, id) => host.selections.set(slot, id);
         export const clearSlotSelection = async slot => host.selections.delete(slot);
+        // image-autosave 经 deliver 间接引用；接回测试里开关关闭，这些不应被真正调用。
+        export const getSlotSelection = async slot => host.selections.get(slot) ?? null;
+        export const savePreviewImage = async () => { throw new Error('自动保存不应在接回测试中被触发'); };
     `,
 };
 const bundle = await build({

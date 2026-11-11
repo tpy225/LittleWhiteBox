@@ -31,6 +31,9 @@ const DEFAULT_SHARED_DRAW_SETTINGS = {
     // 生成後自動轉存為 JPEG 以節省快取/伺服器空間（PNG→JPEG 約縮 80-90%）
     saveAsJpeg: false,
     jpegQuality: 0.8,
+    // 自動保存新生成的圖片到酒館（效果同手動點「保存」）；autoSaveImagesSince 記錄開啟時刻，之前的舊圖不自動保存
+    autoSaveImages: false,
+    autoSaveImagesSince: 0,
     updatedAt: 0,
 };
 
@@ -160,6 +163,10 @@ export function normalizeSharedDrawSettings(saved = {}) {
         },
         saveAsJpeg: source.saveAsJpeg === true,
         jpegQuality: Math.max(0.1, Math.min(1, Number(source.jpegQuality) || DEFAULT_SHARED_DRAW_SETTINGS.jpegQuality)),
+        autoSaveImages: source.autoSaveImages === true,
+        autoSaveImagesSince: Number.isFinite(Number(source.autoSaveImagesSince))
+            ? Math.max(0, Math.floor(Number(source.autoSaveImagesSince)))
+            : 0,
         updatedAt: Number(source.updatedAt) || 0,
     };
 }

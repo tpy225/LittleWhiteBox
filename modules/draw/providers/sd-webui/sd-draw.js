@@ -18,6 +18,7 @@ import {
     preloadPreviewDisplayUrl,
     warmSlotPreviewNeighbors,
 } from "../../shared/gallery-cache.js";
+import { autoSaveDeliveredImage, imageFilePrefix } from "../../shared/image-autosave.js";
 import { getContext } from "../../../../../../../extensions.js";
 import { saveBase64AsFile } from "../../../../../../../utils.js";
 import { getRequestHeaders, syncMesToSwipe } from "../../../../../../../../script.js";
@@ -963,6 +964,21 @@ function bindOverlayEvents() {
             statusEl.className = 'status-text' + (ok ? (nextJpeg ? ' success' : ' info') : ' error');
         }
     });
+    querySettings('#sd-gallery-auto-save')?.addEventListener('change', async (event) => {
+        const nextAutoSave = event.target?.checked === true;
+        const ok = await updateSharedDrawSettingsPersistent((settings) => {
+            // 记录开启时刻：开关打开之前生成的图不算「新图」，不会被自动保存；关闭则清零
+            settings.autoSaveImages = nextAutoSave;
+            settings.autoSaveImagesSince = nextAutoSave ? Date.now() : 0;
+        }, '自动保存设置已保存', { notify: false, silent: false });
+        const statusEl = document.getElementById('sd-gallery-status');
+        if (statusEl) {
+            statusEl.textContent = ok
+                ? (nextAutoSave ? '已开启自动保存新图' : '已关闭自动保存新图')
+                : '保存失败，请重试';
+            statusEl.className = 'status-text' + (ok ? (nextAutoSave ? ' success' : ' info') : ' error');
+        }
+    });
     querySettingsAll('[data-sd-mode]').forEach((button) => {
         button.addEventListener('click', async () => {
             const nextMode = button.dataset.sdMode === 'auto' ? 'auto' : 'manual';
@@ -1555,6 +1571,8 @@ async function renderGalleryManagement() {
     const settings = getSharedDrawSettings();
     if (cacheDaysEl) cacheDaysEl.value = String(settings.cacheDays);
     if (jpegCheckbox) jpegCheckbox.checked = settings.saveAsJpeg === true;
+    const autoSaveCheckbox = getSettingsElement('sd-gallery-auto-save');
+    if (autoSaveCheckbox) autoSaveCheckbox.checked = settings.autoSaveImages === true;
 
     container.textContent = '加载中...';
     empty.style.display = 'none';
@@ -3592,6 +3610,9 @@ export async function generateImagesFromText(options = {}) {
                 negativePrompt: promptData.negative,
             });
             await setSlotSelection(slotId, imgId);
+            // 开了「自动保存新生成的图片」就在送达后存进酒馆；后台执行，不阻塞出图
+            autoSaveDeliveredImage({ imgId, slotId, filePrefix: imageFilePrefix('sd-webui') })
+                .catch(error => console.warn('[ImageAutoSave] 调度失败:', error));
             successCount++;
             images.push({
                 slotId,
