@@ -3690,6 +3690,7 @@ async function runPreparedSdSlots(input) {
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: settings.useImageBackendJobs === true,
+            autoSaveFilePrefix: imageFilePrefix('sd-webui'),
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,
             run: handlers => runSdImageBatch({
                 ...handlers, requests, compiledBatch, generationConfig: settings,

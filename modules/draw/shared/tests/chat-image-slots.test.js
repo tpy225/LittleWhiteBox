@@ -22,7 +22,7 @@ host.format = value => markdown.makeHtml(value);
 const stubs = {
     'extensions.js': 'export const getContext = () => globalThis.__chatImageSlotsTest.ctx;',
     'script.js': 'export const messageFormatting = text => globalThis.__chatImageSlotsTest.format(text); export const getRequestHeaders = () => ({}); export const syncMesToSwipe = () => {};',
-    'utils.js': 'export const uuidv4 = () => crypto.randomUUID(); export const saveBase64AsFile = async () => { throw new Error("unexpected upload"); };',
+    'utils.js': 'export const uuidv4 = () => crypto.randomUUID(); export const saveBase64AsFile = async () => { throw new Error("unexpected upload"); }; export const debounce = (fn) => fn;',
     'event-manager.js': `
         const host = globalThis.__chatImageSlotsTest;
         export const event_types = new Proxy({}, { get: (_, key) => key });

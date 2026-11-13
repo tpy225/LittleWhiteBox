@@ -4454,6 +4454,7 @@ async function runPreparedComfySlots(input) {
             ctx, message, messageId, sourceText, tasks, metadata, swipeIndex: input.swipeIndex,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: settings.useImageBackendJobs === true,
+            autoSaveFilePrefix: imageFilePrefix('comfyui'),
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,
             run: handlers => runComfyImageBatch({
                 ...handlers, requests, compiledBatch, generationConfig: settings,

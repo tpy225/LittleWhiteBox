@@ -8,7 +8,8 @@ import { setActiveMessageText, insertScenePlacementsPreservingSlots, isSceneSlot
 import { findImageJobDeliverySlot } from './image-job-delivery-target.js';
 import { executePreparedSlots } from './prepared-slot-executor.js';
 import { setSlotActivity, clearSlotActivity } from './slot-activity.js';
-import { DRAW_SLOT_COPY } from './image-record.js';
+import { DRAW_SLOT_COPY, PreviewStatus } from './image-record.js';
+import { autoSaveDeliveredImage } from './image-autosave.js';
 import { commitChatImagePlacement, restoreChatImagePlacements } from './chat-image-placement.js';
 
 const providers = new Map();
@@ -69,7 +70,8 @@ export function placePreparedImageSlots(source, tasks, ids) {
 // batch runner. This is the only owner of pre-request chat placement for them.
 export async function submitPreparedChatImages({ ctx, message, messageId, sourceText,
     tasks, metadata, backend, run, signal, onStateChange, onPlacement, nativeMessage = false, onPrepared, placementSource,
-    swipeIndex = message.swipe_id ?? 0, presetId = '', presetName = '', vibeNames = '', manual = false }) {
+    swipeIndex = message.swipe_id ?? 0, presetId = '', presetName = '', vibeNames = '', manual = false,
+    autoSaveFilePrefix = '' }) {
     const chatId = String(ctx.chatId);
     const ids = tasks.map(task => ({ ...createImageIdentifiers(),
         ...(task.placement?.mode === 'existing' ? { slotId: task.placement.slotId } : {}) }));
@@ -119,7 +121,21 @@ export async function submitPreparedChatImages({ ctx, message, messageId, source
         signal?.throwIfAborted();
     };
     return executePreparedSlots({ items, backend, nativeMessage, onPrepared, manual,
-        store: storePreview, remove: deletePreview, clearSelection: clearSlotSelection,
+        store: async (item) => {
+            const stored = await storePreview(item);
+            // 开了「自动保存新生成的图片」就在成功送达后存进酒馆；后台执行，不阻塞出图。
+            // 生命周期里 PENDING/UNKNOWN/MANUAL/FAILED 都会过 store，只有带原图的成功记录才保存。
+            if (item.status === PreviewStatus.SUCCESS && item.base64 && autoSaveFilePrefix) {
+                autoSaveDeliveredImage({
+                    imgId: item.imgId,
+                    slotId: item.slotId,
+                    filePrefix: autoSaveFilePrefix,
+                    chatTarget: () => ({ messageId: item.messageId }),
+                }).catch(error => console.warn('[ImageAutoSave] 调度失败:', error));
+            }
+            return stored;
+        },
+        remove: deletePreview, clearSelection: clearSlotSelection,
         select: async (slotId, imgId) => {
             await setSlotSelection(slotId, imgId);
             const target = resolveTarget(slotId);

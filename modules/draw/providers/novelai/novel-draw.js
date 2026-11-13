@@ -3263,6 +3263,7 @@ async function runPreparedNovelSlots(input) {
             presetId: preset.id, presetName: preset.name, vibeNames, manual: input.manual === true,
             nativeMessage: input.nativeMessage, onPrepared: input.onPrepared, placementSource: input.placementSource,
             backend: resolveNovelImageTransport(settings) === 'backend-job',
+            autoSaveFilePrefix: imageFilePrefix('novelai'),
             signal: job.controller.signal, onStateChange, onPlacement: input.onPlacement,
             run: handlers => runNovelImageBatch({
                 ...handlers, requests, compiledBatch, generationConfig: settings,
